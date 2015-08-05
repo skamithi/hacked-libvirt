@@ -1,0 +1,37 @@
+From d70a51d5ea0b9aecb429334714e8331f44fb9df7 Mon Sep 17 00:00:00 2001
+From: Ian Campbell <Ian.Campbell@citrix.com>
+Date: Fri, 21 Nov 2014 14:32:53 +0000
+Subject: [PATCH] libxl: Allow libxl to find pygrub binary.
+
+Specifying an explicit path to pygrub (e.g. BINDIR "/pygrub") only works if
+Xen and libvirt happen to be installed to the same prefix. A more flexible
+approach is to simply specify "pygrub" which will cause libxl to use the
+correct path which it knows (since it is built with the same prefix as pygrub).
+
+This is particular problematic in the Debian packaging, since the Debian Xen
+package relocates pygrub into a libexec dir, however I think this change makes
+sense upstream.
+
+Signed-off-by: Ian Campbell <ian.campbell@citrix.com>
+Signed-off-by: Jim Fehlig <jfehlig@suse.com>
+Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+---
+ src/libxl/libxl_conf.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/libxl/libxl_conf.h b/src/libxl/libxl_conf.h
+index 25f77ea..5d6f87d 100644
+--- a/src/libxl/libxl_conf.h
++++ b/src/libxl/libxl_conf.h
+@@ -53,7 +53,7 @@
+ # define LIBXL_LIB_DIR LOCALSTATEDIR "/lib/libvirt/libxl"
+ # define LIBXL_SAVE_DIR LIBXL_LIB_DIR "/save"
+ # define LIBXL_DUMP_DIR LIBXL_LIB_DIR "/dump"
+-# define LIBXL_BOOTLOADER_PATH BINDIR "/pygrub"
++# define LIBXL_BOOTLOADER_PATH "pygrub"
+ 
+ /* libxl interface for setting VCPU affinity changed in 4.5. In fact, a new
+  * parameter has been added, representative of 'VCPU soft affinity'. If one
+-- 
+1.9.1
+

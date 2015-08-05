@@ -1,0 +1,16 @@
+Index: libvirt-1.2.8/src/lxc/lxc_driver.c
+===================================================================
+--- libvirt-1.2.8.orig/src/lxc/lxc_driver.c
++++ libvirt-1.2.8/src/lxc/lxc_driver.c
+@@ -1541,6 +1541,11 @@ lxcSecurityInit(virLXCDriverConfigPtr cf
+                                                       cfg->securityDefaultConfined,
+                                                       cfg->securityRequireConfined);
+     if (!mgr)
++        mgr = virSecurityManagerNew(NULL, LXC_DRIVER_NAME, false,
++                                                      cfg->securityDefaultConfined,
++                                                      cfg->securityRequireConfined);
++
++    if (!mgr)
+         goto error;
+ 
+     return mgr;

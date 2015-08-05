@@ -1,0 +1,22 @@
+Description: Extend libvirt checks for ubuntu machine types
+Author: Felix Geyer <debfx@ubuntu.com>
+Bug-Ubuntu: https://bugs.launchpad.net/bugs/1379346
+Last-Update: 2015-06-05
+diff -Naurp libvirt-1.2.16.orig/src/qemu/qemu_domain.c libvirt-1.2.16/src/qemu/qemu_domain.c
+--- libvirt-1.2.16.orig/src/qemu/qemu_domain.c	2015-05-23 08:56:12.000000000 -0400
++++ libvirt-1.2.16/src/qemu/qemu_domain.c	2015-06-05 10:25:38.187295013 -0400
+@@ -992,6 +992,7 @@ qemuDomainDefPostParse(virDomainDefPtr d
+             !STRPREFIX(def->os.machine, "pc-1.") &&
+             !STRPREFIX(def->os.machine, "pc-i440") &&
+             !STREQ(def->os.machine, "pc") &&
++			!STREQ(def->os.machine, "ubuntu") &&
+             !STRPREFIX(def->os.machine, "rhel"))
+             break;
+         addPCIRoot = true;
+@@ -3180,5 +3181,6 @@ qemuDomainMachineIsI440FX(const virDomai
+             STRPREFIX(def->os.machine, "pc-0.") ||
+             STRPREFIX(def->os.machine, "pc-1.") ||
+             STRPREFIX(def->os.machine, "pc-i440") ||
++			STREQ(def->os.machine, "ubuntu") ||
+             STRPREFIX(def->os.machine, "rhel"));
+ }

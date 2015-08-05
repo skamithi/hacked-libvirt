@@ -1,0 +1,55 @@
+From 0bcda653b86360f17cecf98c2531c8c4d3d9e0bf Mon Sep 17 00:00:00 2001
+From: Chris J Arges <chris.j.arges@canonical.com>
+Date: Tue, 30 Jun 2015 15:12:19 -0500
+Subject: [PATCH 2/2] tests: add vol-qcow2-zerocapacity test to
+ storagevolxml2argvtest
+
+Add a testcase for the previous change to ensure zero capacity volumes can be
+defined without a backing store.
+
+Signed-off-by: Chris J Arges <chris.j.arges@canonical.com>
+---
+ tests/storagevolxml2argvdata/qcow2-zerocapacity.argv | 1 +
+ tests/storagevolxml2argvtest.c                       | 3 +++
+ tests/storagevolxml2xmlin/vol-qcow2-zerocapacity.xml | 7 +++++++
+ 3 files changed, 11 insertions(+)
+ create mode 100644 tests/storagevolxml2argvdata/qcow2-zerocapacity.argv
+ create mode 100644 tests/storagevolxml2xmlin/vol-qcow2-zerocapacity.xml
+
+diff --git a/tests/storagevolxml2argvdata/qcow2-zerocapacity.argv b/tests/storagevolxml2argvdata/qcow2-zerocapacity.argv
+new file mode 100644
+index 0000000..d83b08b
+--- /dev/null
++++ b/tests/storagevolxml2argvdata/qcow2-zerocapacity.argv
+@@ -0,0 +1 @@
++qemu-img create -f qcow2 -o compat=0.10  0K
+diff --git a/tests/storagevolxml2argvtest.c b/tests/storagevolxml2argvtest.c
+index ed002ce..393123b 100644
+--- a/tests/storagevolxml2argvtest.c
++++ b/tests/storagevolxml2argvtest.c
+@@ -284,6 +284,9 @@ mymain(void)
+     DO_TEST("pool-dir", "vol-qcow2-nocapacity",
+             "pool-dir", "vol-file",
+             "qcow2-nocapacity-convert-prealloc", flags, FMT_OPTIONS);
++    DO_TEST("pool-dir", "vol-qcow2-zerocapacity",
++            NULL, NULL,
++            "qcow2-zerocapacity", 0, FMT_COMPAT);
+     DO_TEST_FULL(false, VIR_VOL_XML_PARSE_OPT_CAPACITY,
+                  "pool-dir", "vol-qcow2-nocapacity-backing", NULL, NULL,
+                  "qcow2-nocapacity", 0, FMT_OPTIONS);
+diff --git a/tests/storagevolxml2xmlin/vol-qcow2-zerocapacity.xml b/tests/storagevolxml2xmlin/vol-qcow2-zerocapacity.xml
+new file mode 100644
+index 0000000..1d1e6de
+--- /dev/null
++++ b/tests/storagevolxml2xmlin/vol-qcow2-zerocapacity.xml
+@@ -0,0 +1,7 @@
++<volume>
++  <name>OtherDemo.img</name>
++  <target>
++    <format type="qcow2"/>
++  </target>
++  <capacity>0</capacity>
++</volume>
+-- 
+1.9.1
+

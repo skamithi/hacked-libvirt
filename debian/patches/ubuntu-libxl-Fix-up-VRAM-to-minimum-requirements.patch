@@ -1,0 +1,75 @@
+From 73efd3699e8e1b1f4521af63401184e31dd3cd97 Mon Sep 17 00:00:00 2001
+From: Stefan Bader <stefan.bader@canonical.com>
+Date: Sat, 3 May 2014 17:10:29 -0400
+Subject: [PATCH 2/2] libxl: Fix up VRAM to minimum requirements
+
+This is a bit debatable. On one side it hides configuration errors
+in a way that makes them hard to spot. On the other side there is
+at least one issue with (maybe some older versions) virt-manager.
+Virt-manager sets VRAM directly, not using the default memory setting
+but uses too small values for libxl. Worse, those versions do not seem
+to allow to change VRAM from the GUI. So switching the video type to
+VGA makes the guest fail to start until one manually adapts the VRAM
+size in the XML definition.
+With this change this would not happen but VRAM will be bigger than
+the GUI says. This would not be that different from current Cirrus
+behaviour. Only that in that case qemu seems to ignore the provided
+size.
+
+Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+---
+ src/libxl/libxl_conf.c | 27 ++++++++++++++++++++++++++-
+ 1 file changed, 26 insertions(+), 1 deletion(-)
+
+Index: libvirt-1.2.8/src/libxl/libxl_conf.c
+===================================================================
+--- libvirt-1.2.8.orig/src/libxl/libxl_conf.c	2014-09-17 16:58:29.822989752 +0200
++++ libvirt-1.2.8/src/libxl/libxl_conf.c	2014-09-17 16:58:29.818989752 +0200
+@@ -1424,13 +1424,38 @@ libxlMakeVideo(virDomainDefPtr def, libx
+      * type xen and vga is mapped to cirrus.
+      */
+     if (def->nvideos) {
++        unsigned int min_vram = 8 * 1024;
++
+         switch (def->videos[0]->type) {
+             case VIR_DOMAIN_VIDEO_TYPE_VGA:
+             case VIR_DOMAIN_VIDEO_TYPE_XEN:
+                 b_info->u.hvm.vga.kind = LIBXL_VGA_INTERFACE_TYPE_STD;
++                /*
++                 * Libxl enforces a minimal VRAM size of 8M when using
++                 * LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN_TRADITIONAL or
++                 * 16M for LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN.
++                 * Avoid build failures and go with the minimum if less
++                 * is specified.
++                 */
++                switch (b_info->device_model_version) {
++                    case LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN_TRADITIONAL:
++                        min_vram = 8 * 1024;
++                        break;
++                    case LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN:
++                    default:
++                        min_vram = 16 * 1024;
++                }
+                 break;
+             case VIR_DOMAIN_VIDEO_TYPE_CIRRUS:
+                 b_info->u.hvm.vga.kind = LIBXL_VGA_INTERFACE_TYPE_CIRRUS;
++                switch (b_info->device_model_version) {
++                    case LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN_TRADITIONAL:
++                        min_vram = 4 * 1024; /* Actually the max, too */
++                        break;
++                    case LIBXL_DEVICE_MODEL_VERSION_QEMU_XEN:
++                    default:
++                        min_vram = 8 * 1024;
++                }
+                 break;
+             default:
+                 virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+@@ -1438,7 +1463,7 @@ libxlMakeVideo(virDomainDefPtr def, libx
+                                _("video type not supported by libxl"));
+                 return -1;
+         }
+-        b_info->video_memkb = def->videos[0]->vram ?
++        b_info->video_memkb = (def->videos[0]->vram >= min_vram) ?
+                               def->videos[0]->vram :
+                               LIBXL_MEMKB_DEFAULT;
+     } else {

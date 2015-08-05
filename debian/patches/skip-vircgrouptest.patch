@@ -1,0 +1,15 @@
+Description: Skip cgroup tests.
+Author: Chuck Short <zulcss@ubuntu.com>
+Forwarded: No
+diff -Naurp libvirt-1.2.12.orig/tests/vircgrouptest.c libvirt-1.2.12/tests/vircgrouptest.c
+--- libvirt-1.2.12.orig/tests/vircgrouptest.c	2015-01-27 02:07:53.000000000 -0500
++++ libvirt-1.2.12/tests/vircgrouptest.c	2015-02-03 14:26:31.377614454 -0500
+@@ -22,7 +22,7 @@
+ 
+ #include "testutils.h"
+ 
+-#ifdef __linux__
++#ifdef HAVE_SYSFS_MOCK
+ 
+ # include <stdlib.h>
+ 

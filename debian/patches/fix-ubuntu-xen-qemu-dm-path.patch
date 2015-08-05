@@ -1,0 +1,217 @@
+Description: Make hvmloader and qemu-dm paths relative
+ This is a refresh for the patch of the same name we were already
+ carrying but did just replace absolute paths by other absolute
+ ones which broke again.
+Forwarded: not-needed
+
+diff -Naurp libvirt-1.2.15.orig/docs/schemas/capability.rng libvirt-1.2.15/docs/schemas/capability.rng
+--- libvirt-1.2.15.orig/docs/schemas/capability.rng	2015-04-30 05:04:46.000000000 -0400
++++ libvirt-1.2.15/docs/schemas/capability.rng	2015-05-07 10:55:35.790498003 -0400
+@@ -294,13 +294,13 @@
+ 
+   <define name='emulator'>
+     <element name='emulator'>
+-      <ref name='absFilePath'/>
++      <ref name='filePath'/>
+     </element>
+   </define>
+ 
+   <define name='loader'>
+     <element name='loader'>
+-      <ref name='absFilePath'/>
++      <ref name='filePath'/>
+     </element>
+   </define>
+ 
+diff -Naurp libvirt-1.2.15.orig/src/xen/xen_hypervisor.c libvirt-1.2.15/src/xen/xen_hypervisor.c
+--- libvirt-1.2.15.orig/src/xen/xen_hypervisor.c	2015-04-27 21:15:40.000000000 -0400
++++ libvirt-1.2.15/src/xen/xen_hypervisor.c	2015-05-07 10:55:35.790498003 -0400
+@@ -2145,10 +2145,10 @@ xenHypervisorBuildCapabilities(virConnec
+                                              guest_archs[i].hvm ? VIR_DOMAIN_OSTYPE_HVM : VIR_DOMAIN_OSTYPE_XEN,
+                                              guest_archs[i].arch,
+                                              (hostarch == VIR_ARCH_X86_64 ?
+-                                              "/usr/lib64/xen/bin/qemu-dm" :
+-                                              "/usr/lib/xen/bin/qemu-dm"),
++                                              "qemu-dm" :
++                                              "qemu-dm"),
+                                              (guest_archs[i].hvm ?
+-                                              "/usr/lib/xen/boot/hvmloader" :
++                                              "hvmloader" :
+                                               NULL),
+                                              1,
+                                              machines)) == NULL) {
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-i686-pae-hvm.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae-hvm.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-i686-pae-hvm.xml	2015-05-07 10:55:35.790498003 -0400
+@@ -20,7 +20,7 @@
+     <os_type>xen</os_type>
+     <arch name='i686'>
+       <wordsize>32</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+@@ -33,8 +33,8 @@
+     <os_type>hvm</os_type>
+     <arch name='i686'>
+       <wordsize>32</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
+-      <loader>/usr/lib/xen/boot/hvmloader</loader>
++      <emulator>qemu-dm</emulator>
++      <loader>hvmloader</loader>
+       <machine>xenfv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae.xml libvirt-1.2.15/tests/xencapsdata/xen-i686-pae.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-i686-pae.xml	2015-05-07 10:55:35.790498003 -0400
+@@ -20,7 +20,7 @@
+     <os_type>xen</os_type>
+     <arch name='i686'>
+       <wordsize>32</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686.xml libvirt-1.2.15/tests/xencapsdata/xen-i686.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-i686.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-i686.xml	2015-05-07 10:55:35.790498003 -0400
+@@ -17,7 +17,7 @@
+     <os_type>xen</os_type>
+     <arch name='i686'>
+       <wordsize>32</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64-be-hvm.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be-hvm.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-ia64-be-hvm.xml	2015-05-07 10:55:35.790498003 -0400
+@@ -17,7 +17,7 @@
+     <os_type>xen</os_type>
+     <arch name='ia64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+@@ -30,8 +30,8 @@
+     <os_type>hvm</os_type>
+     <arch name='ia64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
+-      <loader>/usr/lib/xen/boot/hvmloader</loader>
++      <emulator>qemu-dm</emulator>
++      <loader>hvmloader</loader>
+       <machine>xenfv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64-be.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-ia64-be.xml	2015-05-07 10:55:35.790498003 -0400
+@@ -17,7 +17,7 @@
+     <os_type>xen</os_type>
+     <arch name='ia64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64-hvm.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-hvm.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-ia64-hvm.xml	2015-05-07 10:55:35.790498003 -0400
+@@ -17,7 +17,7 @@
+     <os_type>xen</os_type>
+     <arch name='ia64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+@@ -27,8 +27,8 @@
+     <os_type>hvm</os_type>
+     <arch name='ia64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
+-      <loader>/usr/lib/xen/boot/hvmloader</loader>
++      <emulator>qemu-dm</emulator>
++      <loader>hvmloader</loader>
+       <machine>xenfv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-ia64.xml	2015-05-07 10:55:35.790498003 -0400
+@@ -17,7 +17,7 @@
+     <os_type>xen</os_type>
+     <arch name='ia64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ppc64.xml libvirt-1.2.15/tests/xencapsdata/xen-ppc64.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-ppc64.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-ppc64.xml	2015-05-07 10:55:35.794498003 -0400
+@@ -17,7 +17,7 @@
+     <os_type>xen</os_type>
+     <arch name='ppc64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-x86_64-hvm.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64-hvm.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-x86_64-hvm.xml	2015-05-07 10:55:35.794498003 -0400
+@@ -20,7 +20,7 @@
+     <os_type>xen</os_type>
+     <arch name='x86_64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib64/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>
+@@ -30,8 +30,8 @@
+     <os_type>hvm</os_type>
+     <arch name='i686'>
+       <wordsize>32</wordsize>
+-      <emulator>/usr/lib64/xen/bin/qemu-dm</emulator>
+-      <loader>/usr/lib/xen/boot/hvmloader</loader>
++      <emulator>qemu-dm</emulator>
++      <loader>hvmloader</loader>
+       <machine>xenfv</machine>
+       <domain type='xen'/>
+     </arch>
+@@ -47,8 +47,8 @@
+     <os_type>hvm</os_type>
+     <arch name='x86_64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib64/xen/bin/qemu-dm</emulator>
+-      <loader>/usr/lib/xen/boot/hvmloader</loader>
++      <emulator>qemu-dm</emulator>
++      <loader>hvmloader</loader>
+       <machine>xenfv</machine>
+       <domain type='xen'/>
+     </arch>
+diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64.xml libvirt-1.2.15/tests/xencapsdata/xen-x86_64.xml
+--- libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64.xml	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.15/tests/xencapsdata/xen-x86_64.xml	2015-05-07 10:55:35.794498003 -0400
+@@ -20,7 +20,7 @@
+     <os_type>xen</os_type>
+     <arch name='x86_64'>
+       <wordsize>64</wordsize>
+-      <emulator>/usr/lib64/xen/bin/qemu-dm</emulator>
++      <emulator>qemu-dm</emulator>
+       <machine>xenpv</machine>
+       <domain type='xen'/>
+     </arch>

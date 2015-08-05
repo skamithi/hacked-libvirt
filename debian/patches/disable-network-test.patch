@@ -1,0 +1,11 @@
+diff -Naurp libvirt-1.2.12.orig/tests/networkxml2conftest.c libvirt-1.2.12/tests/networkxml2conftest.c
+--- libvirt-1.2.12.orig/tests/networkxml2conftest.c	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.12/tests/networkxml2conftest.c	2015-02-03 15:01:19.233549026 -0500
+@@ -103,6 +103,7 @@ testCompareXMLToConfHelper(const void *d
+ static int
+ mymain(void)
+ {
++	return 0;
+     int ret = 0;
+     dnsmasqCapsPtr restricted
+         = dnsmasqCapsNewFromBuffer("Dnsmasq version 2.48", DNSMASQ);

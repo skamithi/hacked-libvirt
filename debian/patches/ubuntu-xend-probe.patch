@@ -1,0 +1,89 @@
+Index: libvirt-1.2.6/src/libxl/libxl_driver.c
+===================================================================
+--- libvirt-1.2.6.orig/src/libxl/libxl_driver.c	2014-09-17 14:09:44.223088490 +0200
++++ libvirt-1.2.6/src/libxl/libxl_driver.c	2014-09-17 15:15:44.031049876 +0200
+@@ -227,6 +227,7 @@ libxlDriverShouldLoad(bool privileged)
+     bool ret = false;
+     int status;
+     char *output = NULL;
++    virCommandPtr cmd;
+ 
+     /* Don't load if non-root */
+     if (!privileged) {
+@@ -257,19 +258,23 @@ libxlDriverShouldLoad(bool privileged)
+     }
+ 
+     /* Don't load if legacy xen toolstack (xend) is in use */
+-    if (virFileExists("/usr/sbin/xend")) {
+-        virCommandPtr cmd;
++    cmd = virCommandNewArgList("/usr/lib/xen-common/bin/xen-toolstack", NULL);
++    virCommandSetOutputBuffer(cmd, &output);
++    if (virCommandRun(cmd, &status) == 0 && status == 0) {
++        int i, j;
++
++        for (i = 0, j = 0; output[i] != '\0'; i++)
++            if (output[i] == '/')
++                j = i + 1;
+ 
+-        cmd = virCommandNewArgList("/usr/sbin/xend", "status", NULL);
+-        if (virCommandRun(cmd, NULL) == 0) {
++        if (output[j] == 'x' && output[j+1] == 'l') {
++            ret = true;
++        } else {
+             VIR_INFO("Legacy xen tool stack seems to be in use, disabling "
+                      "libxenlight driver.");
+-        } else {
+-            ret = true;
+         }
++        VIR_FREE(output);
+         virCommandFree(cmd);
+-    } else {
+-        ret = true;
+     }
+ 
+     return ret;
+Index: libvirt-1.2.6/src/xen/xen_driver.c
+===================================================================
+--- libvirt-1.2.6.orig/src/xen/xen_driver.c	2014-09-17 14:09:44.223088490 +0200
++++ libvirt-1.2.6/src/xen/xen_driver.c	2014-09-17 15:21:18.311046617 +0200
+@@ -312,22 +312,36 @@ xenUnifiedProbe(void)
+ }
+ 
+ #ifdef WITH_LIBXL
++#define TOOLSTACK_PATH "/usr/lib/xen-common/bin/xen-toolstack"
+ static bool
+ xenUnifiedXendProbe(void)
+ {
+     bool ret = false;
++    char *output;
+ 
+-    if (virFileExists("/usr/sbin/xend")) {
++    if (virFileExists(TOOLSTACK_PATH)) {
+         virCommandPtr cmd;
++        int status;
+ 
+-        cmd = virCommandNewArgList("/usr/sbin/xend", "status", NULL);
+-        if (virCommandRun(cmd, NULL) == 0)
+-            ret = true;
++        cmd = virCommandNewArgList(TOOLSTACK_PATH,  NULL);
++        virCommandSetOutputBuffer(cmd, &output);
++        if (virCommandRun(cmd, &status) == 0 && status == 0) {
++            int i, j;
++
++            for (i = 0, j = 0; output[i] != '\0'; i++)
++                if (output[i] == '/')
++                    j = i + 1;
++
++            if (output[j] == 'x' && output[j+1] == 'm')
++                ret = true;
++        }
++        VIR_FREE(output);
+         virCommandFree(cmd);
+     }
+ 
+     return ret;
+ }
++#undef TOOLSTACK_PATH
+ #endif
+ 
+ 

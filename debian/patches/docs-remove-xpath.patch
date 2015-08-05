@@ -1,0 +1,75 @@
+Description: Remove XPath in favor of LibXML
+Author: Chuck Short <zulcss@ubuntu.com>
+Forwarded: No
+diff -Naurp libvirt-1.2.12.orig/docs/hvsupport.pl libvirt-1.2.12/docs/hvsupport.pl
+--- libvirt-1.2.12.orig/docs/hvsupport.pl	2015-01-23 06:46:24.000000000 -0500
++++ libvirt-1.2.12/docs/hvsupport.pl	2015-02-07 20:52:38.082011285 -0500
+@@ -4,12 +4,12 @@ use strict;
+ use warnings;
+ 
+ use File::Find;
+-use XML::XPath;
+-use XML::XPath::XMLParser;
++use XML::LibXML;
+ 
+ die "syntax: $0 SRCDIR\n" unless int(@ARGV) == 1;
+ 
+ my $srcdir = shift @ARGV;
++my $parser = XML::LibXML->new();
+ 
+ my $symslibvirt = "$srcdir/libvirt_public.syms";
+ my $symsqemu = "$srcdir/libvirt_qemu.syms";
+@@ -54,7 +54,7 @@ open FILE, "<$symslibvirt"
+ 
+ my $vers;
+ my $prevvers;
+-my $apixpath = XML::XPath->new(filename => "$srcdir/../docs/libvirt-api.xml");
++my $apixpath = $parser->parse_file("$srcdir/../docs/libvirt-api.xml");
+ while (defined($line = <FILE>)) {
+     chomp $line;
+     next if $line =~ /^\s*#/;
+@@ -78,7 +78,7 @@ while (defined($line = <FILE>)) {
+         $prevvers = $vers;
+         $vers = undef;
+     } elsif ($line =~ /\s*(\w+)\s*;\s*$/) {
+-        my $file = $apixpath->find("/api/symbols/function[\@name='$1']/\@file");
++        my $file = $apixpath->findnodes("/api/symbols/function[\@name='$1']/\@file");
+         $apis{$1} = {};
+         $apis{$1}->{vers} = $vers;
+         $apis{$1}->{file} = $file;
+@@ -97,7 +97,7 @@ open FILE, "<$symsqemu"
+ 
+ $prevvers = undef;
+ $vers = undef;
+-$apixpath = XML::XPath->new(filename => "$srcdir/../docs/libvirt-qemu-api.xml");
++$apixpath = $parser->parse_file("$srcdir/../docs/libvirt-qemu-api.xml");
+ while (defined($line = <FILE>)) {
+     chomp $line;
+     next if $line =~ /^\s*#/;
+@@ -121,7 +121,7 @@ while (defined($line = <FILE>)) {
+         $prevvers = $vers;
+         $vers = undef;
+     } elsif ($line =~ /\s*(\w+)\s*;\s*$/) {
+-        my $file = $apixpath->find("/api/symbols/function[\@name='$1']/\@file");
++        my $file = $apixpath->findnodes("/api/symbols/function[\@name='$1']/\@file");
+         $apis{$1} = {};
+         $apis{$1}->{vers} = $vers;
+         $apis{$1}->{file} = $file;
+@@ -140,7 +140,7 @@ open FILE, "<$symslxc"
+ 
+ $prevvers = undef;
+ $vers = undef;
+-$apixpath = XML::XPath->new(filename => "$srcdir/../docs/libvirt-lxc-api.xml");
++$apixpath = $parser->parse_file("$srcdir/../docs/libvirt-lxc-api.xml");
+ while (defined($line = <FILE>)) {
+     chomp $line;
+     next if $line =~ /^\s*#/;
+@@ -164,7 +164,7 @@ while (defined($line = <FILE>)) {
+         $prevvers = $vers;
+         $vers = undef;
+     } elsif ($line =~ /\s*(\w+)\s*;\s*$/) {
+-        my $file = $apixpath->find("/api/symbols/function[\@name='$1']/\@file");
++        my $file = $apixpath->findnodes("/api/symbols/function[\@name='$1']/\@file");
+         $apis{$1} = {};
+         $apis{$1}->{vers} = $vers;
+         $apis{$1}->{file} = $file;

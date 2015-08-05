@@ -1,0 +1,22 @@
+Description: enable apparmor confinement of containers by default
+Author: Serge Hallyn <serge.hallyn@ubuntu.com>
+Forwarded: no
+
+Index: libvirt-1.2.8/src/lxc/lxc.conf
+===================================================================
+--- libvirt-1.2.8.orig/src/lxc/lxc.conf
++++ libvirt-1.2.8/src/lxc/lxc.conf
+@@ -20,11 +20,13 @@
+ # to 'none' instead.
+ #
+ #security_driver = "selinux"
++security_driver = "apparmor"
+ 
+ # If set to non-zero, then the default security labeling
+ # will make guests confined. If set to zero, then guests
+ # will be unconfined by default. Defaults to 0.
+ #security_default_confined = 1
++security_default_confined = 1
+ 
+ # If set to non-zero, then attempts to create unconfined
+ # guests will be blocked. Defaults to 0.
