@@ -7,12 +7,15 @@ This allows the xen framework to figure it out itself. We already
 use the same approach for the xm stack.
 
 Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
- 
-Index: libvirt-1.1.4/src/libxl/libxl_conf.c
-===================================================================
---- libvirt-1.1.4.orig/src/libxl/libxl_conf.c	2013-11-12 11:48:40.239866983 -0600
-+++ libvirt-1.1.4/src/libxl/libxl_conf.c	2013-11-12 11:48:40.223866983 -0600
-@@ -366,12 +366,9 @@
+---
+ src/libxl/libxl_conf.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/src/libxl/libxl_conf.c b/src/libxl/libxl_conf.c
+index ade0a08..cd341df 100644
+--- a/src/libxl/libxl_conf.c
++++ b/src/libxl/libxl_conf.c
+@@ -370,12 +370,9 @@ libxlCapsInitGuests(libxl_ctx *ctx, virCapsPtr caps)
          if ((guest = virCapabilitiesAddGuest(caps,
                                               guest_archs[i].hvm ? "hvm" : "xen",
                                               guest_archs[i].arch,

@@ -1,8 +1,17 @@
-Index: libvirt-1.2.1/src/conf/cpu_conf.c
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: 9036-dont-fail-without-cpu-model
+
 ===================================================================
---- libvirt-1.2.1.orig/src/conf/cpu_conf.c	2013-12-03 20:44:44.000000000 +0400
-+++ libvirt-1.2.1/src/conf/cpu_conf.c	2014-01-17 15:33:37.493590025 +0400
-@@ -361,7 +361,8 @@
+---
+ src/conf/cpu_conf.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/conf/cpu_conf.c b/src/conf/cpu_conf.c
+index 3d015f2..c5f8e58 100644
+--- a/src/conf/cpu_conf.c
++++ b/src/conf/cpu_conf.c
+@@ -361,7 +361,8 @@ virCPUDefParseXML(xmlNodePtr node,
          goto error;
  
      if (n > 0) {
@@ -12,7 +21,7 @@ Index: libvirt-1.2.1/src/conf/cpu_conf.c
              virReportError(VIR_ERR_XML_ERROR, "%s",
                             _("Non-empty feature list specified without "
                               "CPU model"));
-@@ -576,6 +577,7 @@
+@@ -576,6 +577,7 @@ virCPUDefFormatBuf(virBufferPtr buf,
  
      if (!def->model &&
          def->mode != VIR_CPU_MODE_HOST_MODEL &&

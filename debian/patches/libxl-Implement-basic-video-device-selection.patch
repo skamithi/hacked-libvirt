@@ -22,11 +22,14 @@ a Cirrus or standard VGA emulation and to modify the VRAM within certain
 limits using libvirt.
 
 Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+---
+ src/libxl/libxl_conf.c | 85 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 85 insertions(+)
 
-Index: libvirt-1.2.2/src/libxl/libxl_conf.c
-===================================================================
---- libvirt-1.2.2.orig/src/libxl/libxl_conf.c	2014-03-26 16:24:45.711193823 +0100
-+++ libvirt-1.2.2/src/libxl/libxl_conf.c	2014-03-27 16:00:50.057693270 +0100
+diff --git a/src/libxl/libxl_conf.c b/src/libxl/libxl_conf.c
+index 43667a7..10dba19 100644
+--- a/src/libxl/libxl_conf.c
++++ b/src/libxl/libxl_conf.c
 @@ -1179,6 +1179,82 @@ error:
      return NULL;
  }
@@ -110,7 +113,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_conf.c
  int
  libxlBuildDomainConfig(libxlDriverPrivatePtr driver,
                         virDomainObjPtr vm, libxl_domain_config *d_config)
-@@ -1203,6 +1279,15 @@ libxlBuildDomainConfig(libxlDriverPrivat
+@@ -1203,6 +1279,15 @@ libxlBuildDomainConfig(libxlDriverPrivatePtr driver,
      if (libxlMakeVfbList(driver, def, d_config) < 0)
          return -1;
  

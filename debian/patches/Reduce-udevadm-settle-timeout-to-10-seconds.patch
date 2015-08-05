@@ -1,15 +1,19 @@
-From: =?UTF-8?q?Guido=20G=C3=BCnther?= <agx@sigxcpu.org>
+From: =?utf-8?q?Guido_G=C3=BCnther?= <agx@sigxcpu.org>
 Date: Mon, 4 Jun 2012 16:18:52 +0200
 Subject: Reduce udevadm settle timeout to 10 seconds
 
 This isn't a proper fix but it will make virt-manager at least start.
 
 Closes: #663931
-Index: libvirt-1.1.4/src/util/virutil.c
-===================================================================
---- libvirt-1.1.4.orig/src/util/virutil.c	2013-11-12 11:48:38.575866998 -0600
-+++ libvirt-1.1.4/src/util/virutil.c	2013-11-12 11:48:38.563866998 -0600
-@@ -1444,7 +1444,7 @@
+---
+ src/util/virutil.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/util/virutil.c b/src/util/virutil.c
+index 7a2fbb0..6a41d92 100644
+--- a/src/util/virutil.c
++++ b/src/util/virutil.c
+@@ -1444,7 +1444,7 @@ virSetUIDGIDWithCaps(uid_t uid, gid_t gid, gid_t *groups, int ngroups,
  void virFileWaitForDevices(void)
  {
  # ifdef UDEVADM

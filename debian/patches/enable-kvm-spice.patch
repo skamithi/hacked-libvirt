@@ -1,8 +1,17 @@
-Index: libvirt-1.1.4/src/qemu/qemu_capabilities.c
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:55 -0400
+Subject: enable-kvm-spice
+
 ===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_capabilities.c	2013-11-12 11:48:36.215867019 -0600
-+++ libvirt-1.1.4/src/qemu/qemu_capabilities.c	2013-11-12 11:48:36.203867019 -0600
-@@ -705,6 +705,7 @@
+---
+ src/qemu/qemu_capabilities.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/qemu/qemu_capabilities.c b/src/qemu/qemu_capabilities.c
+index d618b3f..e7bdc74 100644
+--- a/src/qemu/qemu_capabilities.c
++++ b/src/qemu/qemu_capabilities.c
+@@ -714,6 +714,7 @@ virQEMUCapsInitGuest(virCapsPtr caps,
      if (virQEMUCapsIsValidForKVM(hostarch, guestarch)) {
          const char *const kvmbins[] = { "/usr/libexec/qemu-kvm", /* RHEL */
                                          "qemu-kvm", /* Fedora */

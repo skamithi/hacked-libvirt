@@ -1,7 +1,6 @@
-From f68246ac94f7dd940ef85e0d4133d937c2b8f7a7 Mon Sep 17 00:00:00 2001
 From: Jim Fehlig <jfehlig@suse.com>
 Date: Fri, 7 Mar 2014 10:31:45 -0700
-Subject: [PATCH] libxl: support sexpr in native to XML conversion
+Subject: libxl: support sexpr in native to XML conversion
 
 Supporting sexpr in connectDomainXMLFromNative in the libxl driver
 adds flexibility for users importing legacy Xen configuration into
@@ -12,11 +11,11 @@ libvirt libxl driver.
 (cherry-picked from v1.2.3-rc1 upstream)
 Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
 ---
- src/libxl/libxl_driver.c |   40 +++++++++++++++++++++++++++-------------
+ src/libxl/libxl_driver.c | 40 +++++++++++++++++++++++++++-------------
  1 file changed, 27 insertions(+), 13 deletions(-)
 
 diff --git a/src/libxl/libxl_driver.c b/src/libxl/libxl_driver.c
-index a79efcb..65d80a2 100644
+index 424deda..21e6a15 100644
 --- a/src/libxl/libxl_driver.c
 +++ b/src/libxl/libxl_driver.c
 @@ -46,6 +46,7 @@
@@ -35,7 +34,7 @@ index a79efcb..65d80a2 100644
  
  /* Number of Xen scheduler parameters */
  #define XEN_SCHED_CREDIT_NPARAM   2
-@@ -2867,8 +2869,9 @@ libxlDomainGetXMLDesc(virDomainPtr dom, unsigned int flags)
+@@ -2888,8 +2890,9 @@ libxlDomainGetXMLDesc(virDomainPtr dom, unsigned int flags)
  }
  
  static char *
@@ -47,7 +46,7 @@ index a79efcb..65d80a2 100644
                                  unsigned int flags)
  {
      libxlDriverPrivatePtr driver = conn->privateData;
-@@ -2882,22 +2885,33 @@ libxlConnectDomainXMLFromNative(virConnectPtr conn, const char * nativeFormat,
+@@ -2903,22 +2906,33 @@ libxlConnectDomainXMLFromNative(virConnectPtr conn, const char * nativeFormat,
      if (virConnectDomainXMLFromNativeEnsureACL(conn) < 0)
          goto cleanup;
  
@@ -92,6 +91,3 @@ index a79efcb..65d80a2 100644
      xml = virDomainDefFormat(def, VIR_DOMAIN_XML_INACTIVE);
  
  cleanup:
--- 
-1.7.9.5
-

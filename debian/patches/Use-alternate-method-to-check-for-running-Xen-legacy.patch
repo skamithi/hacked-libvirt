@@ -16,12 +16,16 @@ For Ubuntu I also had to add "/usr/lib/xen-common/xen-toolstack" to
 the allowed callouts of apparmor.
 
 Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+---
+ src/libxl/libxl_driver.c | 23 ++++++++++++++++++-----
+ src/xen/xen_driver.c     | 17 ++++++++++++++---
+ 2 files changed, 32 insertions(+), 8 deletions(-)
 
-Index: libvirt-1.2.0/src/libxl/libxl_driver.c
-===================================================================
---- libvirt-1.2.0.orig/src/libxl/libxl_driver.c	2013-12-11 17:04:59.596600161 +0100
-+++ libvirt-1.2.0/src/libxl/libxl_driver.c	2013-12-11 17:05:25.648727525 +0100
-@@ -792,6 +792,7 @@ libxlDriverShouldLoad(bool privileged)
+diff --git a/src/libxl/libxl_driver.c b/src/libxl/libxl_driver.c
+index a79efcb..4a11e81 100644
+--- a/src/libxl/libxl_driver.c
++++ b/src/libxl/libxl_driver.c
+@@ -941,6 +941,7 @@ libxlDriverShouldLoad(bool privileged)
  {
      bool ret = false;
      virCommandPtr cmd;
@@ -29,7 +33,7 @@ Index: libvirt-1.2.0/src/libxl/libxl_driver.c
      int status;
  
      /* Don't load if non-root */
-@@ -809,14 +810,26 @@ libxlDriverShouldLoad(bool privileged)
+@@ -958,14 +959,26 @@ libxlDriverShouldLoad(bool privileged)
      }
  
      /* Don't load if legacy xen toolstack (xend) is in use */
@@ -61,11 +65,11 @@ Index: libvirt-1.2.0/src/libxl/libxl_driver.c
  
      return ret;
  }
-Index: libvirt-1.2.0/src/xen/xen_driver.c
-===================================================================
---- libvirt-1.2.0.orig/src/xen/xen_driver.c	2013-12-11 17:04:59.576600064 +0100
-+++ libvirt-1.2.0/src/xen/xen_driver.c	2013-12-16 14:09:25.946210255 +0100
-@@ -315,12 +315,23 @@ static int
+diff --git a/src/xen/xen_driver.c b/src/xen/xen_driver.c
+index 7506e8c..85a668f 100644
+--- a/src/xen/xen_driver.c
++++ b/src/xen/xen_driver.c
+@@ -312,12 +312,23 @@ static int
  xenUnifiedXendProbe(void)
  {
      virCommandPtr cmd;

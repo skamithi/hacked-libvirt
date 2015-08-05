@@ -6,11 +6,11 @@ Subject: Don't fail if we can't setup avahi
  src/rpc/virnetserver.c | 3 +--
  1 file changed, 1 insertion(+), 2 deletions(-)
 
-Index: libvirt-1.1.4/src/rpc/virnetserver.c
-===================================================================
---- libvirt-1.1.4.orig/src/rpc/virnetserver.c	2013-11-12 11:48:33.219867046 -0600
-+++ libvirt-1.1.4/src/rpc/virnetserver.c	2013-11-12 11:48:33.207867046 -0600
-@@ -1070,8 +1070,7 @@
+diff --git a/src/rpc/virnetserver.c b/src/rpc/virnetserver.c
+index f70e260..92072f6 100644
+--- a/src/rpc/virnetserver.c
++++ b/src/rpc/virnetserver.c
+@@ -1071,8 +1071,7 @@ void virNetServerRun(virNetServerPtr srv)
  
      virObjectLock(srv);
  

@@ -1,4 +1,4 @@
-From: =?UTF-8?q?Andreas=20Bie=C3=9Fmann?= <biessmann@corscience.de>
+From: =?utf-8?q?Andreas_Bie=C3=9Fmann?= <biessmann@corscience.de>
 Date: Thu, 18 Mar 2010 13:05:59 +0100
 Subject: patch qemuMonitorTextGetMigrationStatus to intercept unknown command
  'info migrate'
@@ -37,12 +37,15 @@ info migration  -- show migration information
 
 This patch triggers for 'info migration' in reply to 'info migrate' command
 to savely detect that the command 'info migrate' is not implemented.
+---
+ src/qemu/qemu_monitor_text.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
 
-Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.c
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_monitor_text.c	2013-11-12 11:48:32.027867056 -0600
-+++ libvirt-1.1.4/src/qemu/qemu_monitor_text.c	2013-11-12 11:48:32.015867056 -0600
-@@ -1533,7 +1533,15 @@
+diff --git a/src/qemu/qemu_monitor_text.c b/src/qemu/qemu_monitor_text.c
+index 7b81079..99f7641 100644
+--- a/src/qemu/qemu_monitor_text.c
++++ b/src/qemu/qemu_monitor_text.c
+@@ -1533,7 +1533,15 @@ int qemuMonitorTextGetMigrationStatus(qemuMonitorPtr mon,
              }
              status->disk_total *= 1024;
          }

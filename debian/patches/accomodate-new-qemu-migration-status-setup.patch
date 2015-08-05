@@ -1,7 +1,6 @@
-From 82865cf73a498cc6897edd52bb2b82e034f2a20d Mon Sep 17 00:00:00 2001
 From: Serge Hallyn <serge.hallyn@ubuntu.com>
 Date: Wed, 13 Nov 2013 13:44:05 -0600
-Subject: [PATCH 1/1] accomodate new qemu migration status 'setup'
+Subject: accomodate new qemu migration status 'setup'
 
 Treat it as active, but don't try to query for status info
 yet.
@@ -11,15 +10,18 @@ Signed-off-by: Serge Hallyn <serge.hallyn@ubuntu.com>
  src/qemu/qemu_migration.c    | 48 ++++++++++++++++++++++++++++----------------
  src/qemu/qemu_monitor.c      |  8 +++++---
  src/qemu/qemu_monitor.h      |  3 ++-
- src/qemu/qemu_monitor_json.c |  8 +++++++-
+ src/qemu/qemu_monitor_json.c | 13 +++++++++---
+ src/qemu/qemu_monitor_json.h |  3 ++-
  src/qemu/qemu_monitor_text.c |  9 ++++++++-
- 5 files changed, 53 insertions(+), 23 deletions(-)
+ src/qemu/qemu_monitor_text.h |  3 ++-
+ tests/qemumonitorjsontest.c  |  4 ++--
+ 8 files changed, 62 insertions(+), 29 deletions(-)
 
-Index: libvirt-1.1.4/src/qemu/qemu_migration.c
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_migration.c	2013-11-13 20:47:05.100085000 +0100
-+++ libvirt-1.1.4/src/qemu/qemu_migration.c	2013-11-13 20:47:05.092085000 +0100
-@@ -1614,7 +1614,7 @@
+diff --git a/src/qemu/qemu_migration.c b/src/qemu/qemu_migration.c
+index 54c6fec..e917ba7 100644
+--- a/src/qemu/qemu_migration.c
++++ b/src/qemu/qemu_migration.c
+@@ -1661,7 +1661,7 @@ qemuMigrationUpdateJobStatus(virQEMUDriverPtr driver,
                               enum qemuDomainAsyncJob asyncJob)
  {
      qemuDomainObjPrivatePtr priv = vm->privateData;
@@ -28,7 +30,7 @@ Index: libvirt-1.1.4/src/qemu/qemu_migration.c
      qemuMonitorMigrationStatus status;
  
      memset(&status, 0, sizeof(status));
-@@ -1624,7 +1624,7 @@
+@@ -1671,7 +1671,7 @@ qemuMigrationUpdateJobStatus(virQEMUDriverPtr driver,
          /* Guest already exited; nothing further to update.  */
          return -1;
      }
@@ -37,7 +39,7 @@ Index: libvirt-1.1.4/src/qemu/qemu_migration.c
  
      qemuDomainObjExitMonitor(driver, vm);
  
-@@ -1645,21 +1645,35 @@
+@@ -1696,21 +1696,35 @@ qemuMigrationUpdateJobStatus(virQEMUDriverPtr driver,
          break;
  
      case QEMU_MONITOR_MIGRATION_STATUS_ACTIVE:
@@ -88,11 +90,11 @@ Index: libvirt-1.1.4/src/qemu/qemu_migration.c
  
          ret = 0;
          break;
-Index: libvirt-1.1.4/src/qemu/qemu_monitor.c
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_monitor.c	2013-11-13 20:47:05.100085000 +0100
-+++ libvirt-1.1.4/src/qemu/qemu_monitor.c	2013-11-13 20:57:06.932085000 +0100
-@@ -2087,7 +2087,8 @@
+diff --git a/src/qemu/qemu_monitor.c b/src/qemu/qemu_monitor.c
+index a2769db..708d899 100644
+--- a/src/qemu/qemu_monitor.c
++++ b/src/qemu/qemu_monitor.c
+@@ -2095,7 +2095,8 @@ qemuMonitorSetMigrationCacheSize(qemuMonitorPtr mon,
  
  
  int qemuMonitorGetMigrationStatus(qemuMonitorPtr mon,
@@ -102,7 +104,7 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor.c
  {
      int ret;
      VIR_DEBUG("mon=%p", mon);
-@@ -2098,10 +2099,11 @@
+@@ -2106,10 +2107,11 @@ int qemuMonitorGetMigrationStatus(qemuMonitorPtr mon,
          return -1;
      }
  
@@ -116,11 +118,11 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor.c
      return ret;
  }
  
-Index: libvirt-1.1.4/src/qemu/qemu_monitor.h
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_monitor.h	2013-11-13 20:47:05.100085000 +0100
-+++ libvirt-1.1.4/src/qemu/qemu_monitor.h	2013-11-13 20:47:05.096085000 +0100
-@@ -432,7 +432,8 @@
+diff --git a/src/qemu/qemu_monitor.h b/src/qemu/qemu_monitor.h
+index eabf000..e6c93e3 100644
+--- a/src/qemu/qemu_monitor.h
++++ b/src/qemu/qemu_monitor.h
+@@ -434,7 +434,8 @@ struct _qemuMonitorMigrationStatus {
  };
  
  int qemuMonitorGetMigrationStatus(qemuMonitorPtr mon,
@@ -130,11 +132,11 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor.h
  int qemuMonitorGetSpiceMigrationStatus(qemuMonitorPtr mon,
                                         bool *spice_migrated);
  
-Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.c
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_monitor_json.c	2013-11-13 20:47:05.100085000 +0100
-+++ libvirt-1.1.4/src/qemu/qemu_monitor_json.c	2013-11-13 21:02:16.492085000 +0100
-@@ -2351,7 +2351,8 @@
+diff --git a/src/qemu/qemu_monitor_json.c b/src/qemu/qemu_monitor_json.c
+index 5e825ac..4aeceef 100644
+--- a/src/qemu/qemu_monitor_json.c
++++ b/src/qemu/qemu_monitor_json.c
+@@ -2353,7 +2353,8 @@ qemuMonitorJSONSetMigrationCacheSize(qemuMonitorPtr mon,
  
  static int
  qemuMonitorJSONGetMigrationStatusReply(virJSONValuePtr reply,
@@ -144,7 +146,7 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.c
  {
      virJSONValuePtr ret;
      const char *statusstr;
-@@ -2369,6 +2370,11 @@
+@@ -2371,6 +2372,11 @@ qemuMonitorJSONGetMigrationStatusReply(virJSONValuePtr reply,
          return -1;
      }
  
@@ -156,7 +158,7 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.c
      status->status = qemuMonitorMigrationStatusTypeFromString(statusstr);
      if (status->status < 0) {
          virReportError(VIR_ERR_INTERNAL_ERROR,
-@@ -2509,7 +2515,8 @@
+@@ -2511,7 +2517,8 @@ qemuMonitorJSONGetMigrationStatusReply(virJSONValuePtr reply,
  
  
  int qemuMonitorJSONGetMigrationStatus(qemuMonitorPtr mon,
@@ -166,7 +168,7 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.c
  {
      int ret;
      virJSONValuePtr cmd = qemuMonitorJSONMakeCommand("query-migrate",
-@@ -2527,7 +2534,7 @@
+@@ -2529,7 +2536,7 @@ int qemuMonitorJSONGetMigrationStatus(qemuMonitorPtr mon,
          ret = qemuMonitorJSONCheckError(cmd, reply);
  
      if (ret == 0 &&
@@ -175,11 +177,25 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.c
          ret = -1;
  
      if (ret < 0)
-Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.c
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_monitor_text.c	2013-11-13 20:47:05.100085000 +0100
-+++ libvirt-1.1.4/src/qemu/qemu_monitor_text.c	2013-11-13 20:47:05.096085000 +0100
-@@ -1419,7 +1419,8 @@
+diff --git a/src/qemu/qemu_monitor_json.h b/src/qemu/qemu_monitor_json.h
+index a93c51e..6ed464d 100644
+--- a/src/qemu/qemu_monitor_json.h
++++ b/src/qemu/qemu_monitor_json.h
+@@ -131,7 +131,8 @@ int qemuMonitorJSONSetMigrationCacheSize(qemuMonitorPtr mon,
+                                          unsigned long long cacheSize);
+ 
+ int qemuMonitorJSONGetMigrationStatus(qemuMonitorPtr mon,
+-                                      qemuMonitorMigrationStatusPtr status);
++                                      qemuMonitorMigrationStatusPtr status,
++                                      int *setting_up);
+ 
+ int qemuMonitorJSONGetMigrationCapability(qemuMonitorPtr mon,
+                                           qemuMonitorMigrationCaps capability);
+diff --git a/src/qemu/qemu_monitor_text.c b/src/qemu/qemu_monitor_text.c
+index 99f7641..42edf4c 100644
+--- a/src/qemu/qemu_monitor_text.c
++++ b/src/qemu/qemu_monitor_text.c
+@@ -1419,7 +1419,8 @@ cleanup:
  #define MIGRATION_DISK_TOTAL_PREFIX "total disk: "
  
  int qemuMonitorTextGetMigrationStatus(qemuMonitorPtr mon,
@@ -189,7 +205,7 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.c
  {
      char *reply;
      char *tmp;
-@@ -1441,6 +1442,12 @@
+@@ -1441,6 +1442,12 @@ int qemuMonitorTextGetMigrationStatus(qemuMonitorPtr mon,
          }
          *end = '\0';
  
@@ -202,47 +218,11 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.c
          status->status = qemuMonitorMigrationStatusTypeFromString(tmp);
          if (status->status < 0) {
              virReportError(VIR_ERR_INTERNAL_ERROR,
-Index: libvirt-1.1.4/tests/qemumonitorjsontest.c
-===================================================================
---- libvirt-1.1.4.orig/tests/qemumonitorjsontest.c	2013-10-18 23:15:06.000000000 +0200
-+++ libvirt-1.1.4/tests/qemumonitorjsontest.c	2013-11-13 20:58:46.348085000 +0100
-@@ -1660,7 +1660,7 @@
- {
-     virDomainXMLOptionPtr xmlopt = (virDomainXMLOptionPtr)data;
-     qemuMonitorTestPtr test = qemuMonitorTestNewSimple(true, xmlopt);
--    int ret = -1;
-+    int ret = -1, setting_up;
-     qemuMonitorMigrationStatus status, expectedStatus;
- 
-     if (!test)
-@@ -1689,7 +1689,7 @@
-                                "}") < 0)
-         goto cleanup;
- 
--    if (qemuMonitorJSONGetMigrationStatus(qemuMonitorTestGetMonitor(test), &status) < 0)
-+    if (qemuMonitorJSONGetMigrationStatus(qemuMonitorTestGetMonitor(test), &status, &setting_up) < 0)
-         goto cleanup;
- 
-     if (memcmp(&status, &expectedStatus, sizeof(status)) != 0) {
-Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.h
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_monitor_json.h	2013-11-13 21:00:07.052085000 +0100
-+++ libvirt-1.1.4/src/qemu/qemu_monitor_json.h	2013-11-13 21:00:42.028085000 +0100
-@@ -130,7 +130,8 @@
-                                          unsigned long long cacheSize);
- 
- int qemuMonitorJSONGetMigrationStatus(qemuMonitorPtr mon,
--                                      qemuMonitorMigrationStatusPtr status);
-+                                      qemuMonitorMigrationStatusPtr status,
-+                                      int *setting_up);
- 
- int qemuMonitorJSONGetMigrationCapability(qemuMonitorPtr mon,
-                                           qemuMonitorMigrationCaps capability);
-Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.h
-===================================================================
---- libvirt-1.1.4.orig/src/qemu/qemu_monitor_text.h	2013-11-13 21:00:15.432085000 +0100
-+++ libvirt-1.1.4/src/qemu/qemu_monitor_text.h	2013-11-13 21:01:00.124085000 +0100
-@@ -117,7 +117,8 @@
+diff --git a/src/qemu/qemu_monitor_text.h b/src/qemu/qemu_monitor_text.h
+index 5218a8b..8441c08 100644
+--- a/src/qemu/qemu_monitor_text.h
++++ b/src/qemu/qemu_monitor_text.h
+@@ -117,7 +117,8 @@ int qemuMonitorTextSetMigrationDowntime(qemuMonitorPtr mon,
                                          unsigned long long downtime);
  
  int qemuMonitorTextGetMigrationStatus(qemuMonitorPtr mon,
@@ -252,3 +232,25 @@ Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.h
  
  int qemuMonitorTextMigrate(qemuMonitorPtr mon,
                             unsigned int flags,
+diff --git a/tests/qemumonitorjsontest.c b/tests/qemumonitorjsontest.c
+index d7da5a8..c1fb198 100644
+--- a/tests/qemumonitorjsontest.c
++++ b/tests/qemumonitorjsontest.c
+@@ -1661,7 +1661,7 @@ testQemuMonitorJSONqemuMonitorJSONGetMigrationStatus(const void *data)
+ {
+     virDomainXMLOptionPtr xmlopt = (virDomainXMLOptionPtr)data;
+     qemuMonitorTestPtr test = qemuMonitorTestNewSimple(true, xmlopt);
+-    int ret = -1;
++    int ret = -1, setting_up;
+     qemuMonitorMigrationStatus status, expectedStatus;
+ 
+     if (!test)
+@@ -1690,7 +1690,7 @@ testQemuMonitorJSONqemuMonitorJSONGetMigrationStatus(const void *data)
+                                "}") < 0)
+         goto cleanup;
+ 
+-    if (qemuMonitorJSONGetMigrationStatus(qemuMonitorTestGetMonitor(test), &status) < 0)
++    if (qemuMonitorJSONGetMigrationStatus(qemuMonitorTestGetMonitor(test), &status, &setting_up) < 0)
+         goto cleanup;
+ 
+     if (memcmp(&status, &expectedStatus, sizeof(status)) != 0) {

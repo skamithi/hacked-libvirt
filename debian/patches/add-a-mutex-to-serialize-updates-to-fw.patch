@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:55 -0400
+Subject: add-a-mutex-to-serialize-updates-to-fw
+
 commit 925de19ed7f13e0d12d0b993496d314bab886589
 Author: Daniel P. Berrange <berrange@redhat.com>
 Date:   Wed Jan 22 18:13:30 2014 +0000
@@ -28,6 +32,11 @@ Date:   Wed Jan 22 18:13:30 2014 +0000
     execution of __virNWFilterInstantiateFilter.
     
     Signed-off-by: Daniel P. Berrange <berrange@redhat.com>
+---
+ src/nwfilter/nwfilter_driver.c         |  6 +++--
+ src/nwfilter/nwfilter_gentech_driver.c | 41 ++++++++++++++++++++++++++++++----
+ src/nwfilter/nwfilter_gentech_driver.h |  2 +-
+ 3 files changed, 42 insertions(+), 7 deletions(-)
 
 diff --git a/src/nwfilter/nwfilter_driver.c b/src/nwfilter/nwfilter_driver.c
 index 5908df7..2e89d07 100644

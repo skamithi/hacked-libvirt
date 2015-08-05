@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: numa-cgroups-fix-cpuset-mems-init
+
 commit aa668fccf078bf9833047776549a5a06435cf470
 Author: Martin Kletzander <mkletzan@redhat.com>
 Date:   Tue Jul 8 09:53:06 2014 +0200
@@ -23,12 +27,17 @@ Date:   Tue Jul 8 09:59:49 2014 +0200
     before vcpu and emulator sub-groups are created.
     
     Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+---
+ src/qemu/qemu_cgroup.c  | 33 ++++++++++++++++++++++++++++-----
+ src/qemu/qemu_cgroup.h  |  4 +++-
+ src/qemu/qemu_process.c |  4 ++++
+ 3 files changed, 35 insertions(+), 6 deletions(-)
 
-Index: libvirt-1.2.2/src/qemu/qemu_cgroup.c
-===================================================================
---- libvirt-1.2.2.orig/src/qemu/qemu_cgroup.c	2015-01-06 06:47:37.434342510 -0600
-+++ libvirt-1.2.2/src/qemu/qemu_cgroup.c	2015-01-06 06:49:01.738018370 -0600
-@@ -574,13 +574,11 @@
+diff --git a/src/qemu/qemu_cgroup.c b/src/qemu/qemu_cgroup.c
+index a97f184..a6f8eaf 100644
+--- a/src/qemu/qemu_cgroup.c
++++ b/src/qemu/qemu_cgroup.c
+@@ -574,13 +574,11 @@ cleanup:
  
  
  static int
@@ -44,7 +53,7 @@ Index: libvirt-1.2.2/src/qemu/qemu_cgroup.c
      int ret = -1;
  
      if (!virCgroupHasController(priv->cgroup, VIR_CGROUP_CONTROLLER_CPUSET))
-@@ -607,6 +605,25 @@
+@@ -607,6 +605,25 @@ qemuSetupCpusetCgroup(virDomainObjPtr vm,
              goto cleanup;
      }
  
@@ -70,7 +79,7 @@ Index: libvirt-1.2.2/src/qemu/qemu_cgroup.c
      if (vm->def->cpumask ||
          (vm->def->placement_mode == VIR_DOMAIN_CPU_PLACEMENT_MODE_AUTO)) {
  
-@@ -632,7 +649,6 @@
+@@ -632,7 +649,6 @@ qemuSetupCpusetCgroup(virDomainObjPtr vm,
  
      ret = 0;
  cleanup:
@@ -78,7 +87,7 @@ Index: libvirt-1.2.2/src/qemu/qemu_cgroup.c
      VIR_FREE(cpu_mask);
      return ret;
  }
-@@ -801,6 +817,13 @@
+@@ -801,6 +817,13 @@ cleanup:
  }
  
  int
@@ -92,10 +101,10 @@ Index: libvirt-1.2.2/src/qemu/qemu_cgroup.c
  qemuSetupCgroupVcpuBW(virCgroupPtr cgroup,
                        unsigned long long period,
                        long long quota)
-Index: libvirt-1.2.2/src/qemu/qemu_cgroup.h
-===================================================================
---- libvirt-1.2.2.orig/src/qemu/qemu_cgroup.h	2015-01-06 06:47:37.434342510 -0600
-+++ libvirt-1.2.2/src/qemu/qemu_cgroup.h	2015-01-06 06:47:37.434342510 -0600
+diff --git a/src/qemu/qemu_cgroup.h b/src/qemu/qemu_cgroup.h
+index 14404d1..40a031e 100644
+--- a/src/qemu/qemu_cgroup.h
++++ b/src/qemu/qemu_cgroup.h
 @@ -1,7 +1,7 @@
  /*
   * qemu_cgroup.h: QEMU cgroup management
@@ -105,7 +114,7 @@ Index: libvirt-1.2.2/src/qemu/qemu_cgroup.h
   * Copyright (C) 2006 Daniel P. Berrange
   *
   * This library is free software; you can redistribute it and/or
-@@ -44,6 +44,8 @@
+@@ -44,6 +44,8 @@ int qemuConnectCgroup(virQEMUDriverPtr driver,
  int qemuSetupCgroup(virQEMUDriverPtr driver,
                      virDomainObjPtr vm,
                      virBitmapPtr nodemask);
@@ -114,11 +123,11 @@ Index: libvirt-1.2.2/src/qemu/qemu_cgroup.h
  int qemuSetupCgroupVcpuBW(virCgroupPtr cgroup,
                            unsigned long long period,
                            long long quota);
-Index: libvirt-1.2.2/src/qemu/qemu_process.c
-===================================================================
---- libvirt-1.2.2.orig/src/qemu/qemu_process.c	2015-01-06 06:47:37.434342510 -0600
-+++ libvirt-1.2.2/src/qemu/qemu_process.c	2015-01-06 06:47:37.434342510 -0600
-@@ -4039,6 +4039,10 @@
+diff --git a/src/qemu/qemu_process.c b/src/qemu/qemu_process.c
+index ffa939a..1611d4b 100644
+--- a/src/qemu/qemu_process.c
++++ b/src/qemu/qemu_process.c
+@@ -4039,6 +4039,10 @@ int qemuProcessStart(virConnectPtr conn,
      if (!qemuProcessVerifyGuestCPU(driver, vm))
          goto cleanup;
  

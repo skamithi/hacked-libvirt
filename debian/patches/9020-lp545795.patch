@@ -1,14 +1,16 @@
-Author: John Ferlito <johnf@inodes.org>
-Description: add vendor and device to pciDeviceFileIterate(). Patch submitted
- upstream and they feel it is reasonable, but not committed yet.
-Bug: https://bugzilla.redhat.com/show_bug.cgi?id=624151
-Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/maverick/+source/libvirt/+bug/545795
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:55 -0400
+Subject: 9020-lp545795
 
-Index: libvirt-1.1.4/src/util/virpci.c
-===================================================================
---- libvirt-1.1.4.orig/src/util/virpci.c	2013-11-12 11:48:34.987867030 -0600
-+++ libvirt-1.1.4/src/util/virpci.c	2013-11-12 11:48:34.975867030 -0600
-@@ -1840,6 +1840,8 @@
+---
+ src/util/virpci.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/util/virpci.c b/src/util/virpci.c
+index 00d1064..5e519e7 100644
+--- a/src/util/virpci.c
++++ b/src/util/virpci.c
+@@ -1903,6 +1903,8 @@ int virPCIDeviceFileIterate(virPCIDevicePtr dev,
           */
          if (STREQ(ent->d_name, "config") ||
              STRPREFIX(ent->d_name, "resource") ||

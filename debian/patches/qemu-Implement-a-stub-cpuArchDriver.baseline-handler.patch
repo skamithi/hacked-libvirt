@@ -1,7 +1,6 @@
-From 72bddd5f2fb097013b4d97470ed6a472a4c15db3 Mon Sep 17 00:00:00 2001
 From: Oleg Strikov <oleg.strikov@canonical.com>
 Date: Mon, 3 Mar 2014 17:41:03 +0400
-Subject: [PATCH] qemu: Implement a stub cpuArchDriver.baseline() handler for arm
+Subject: qemu: Implement a stub cpuArchDriver.baseline() handler for arm
 
 Openstack Nova calls virConnectBaselineCPU() during initialization
 of the instance to get a full list of CPU features.
@@ -10,8 +9,8 @@ this request (no actual work is done).
 
 Signed-off-by: Oleg Strikov <oleg.strikov@canonical.com>
 ---
- src/cpu/cpu_arm.c |   25 ++++++++++++++++++++++++-
- 1 files changed, 24 insertions(+), 1 deletions(-)
+ src/cpu/cpu_arm.c | 25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
 
 diff --git a/src/cpu/cpu_arm.c b/src/cpu/cpu_arm.c
 index 5baff42..ec80b35 100644
@@ -56,6 +55,3 @@ index 5baff42..ec80b35 100644
      .update = ArmUpdate,
      .hasFeature = NULL,
  };
--- 
-1.7.1
-

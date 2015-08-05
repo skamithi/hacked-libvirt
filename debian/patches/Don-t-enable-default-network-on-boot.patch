@@ -8,11 +8,11 @@ to not interfere with existing network configurations
  src/Makefile.in | 3 ---
  2 files changed, 6 deletions(-)
 
-Index: libvirt-1.1.4/src/Makefile.am
-===================================================================
---- libvirt-1.1.4.orig/src/Makefile.am	2013-11-12 11:48:30.027867074 -0600
-+++ libvirt-1.1.4/src/Makefile.am	2013-11-12 11:48:30.003867074 -0600
-@@ -2545,9 +2545,6 @@
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 6ef32ee..ae9b7db 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -2607,9 +2607,6 @@ if WITH_NETWORK
  	    cp $(DESTDIR)$(confdir)/qemu/networks/default.xml.t \
  	      $(DESTDIR)$(confdir)/qemu/networks/default.xml && \
  	    rm $(DESTDIR)$(confdir)/qemu/networks/default.xml.t; }
@@ -22,11 +22,11 @@ Index: libvirt-1.1.4/src/Makefile.am
  endif WITH_NETWORK
  
  uninstall-local:: uninstall-init uninstall-systemd
-Index: libvirt-1.1.4/src/Makefile.in
-===================================================================
---- libvirt-1.1.4.orig/src/Makefile.in	2013-11-12 11:48:30.027867074 -0600
-+++ libvirt-1.1.4/src/Makefile.in	2013-11-12 11:48:30.015867074 -0600
-@@ -9594,9 +9594,6 @@
+diff --git a/src/Makefile.in b/src/Makefile.in
+index d5a6f62..9bf6aeb 100644
+--- a/src/Makefile.in
++++ b/src/Makefile.in
+@@ -9868,9 +9868,6 @@ install-data-local: install-init install-systemd
  @WITH_NETWORK_TRUE@	    cp $(DESTDIR)$(confdir)/qemu/networks/default.xml.t \
  @WITH_NETWORK_TRUE@	      $(DESTDIR)$(confdir)/qemu/networks/default.xml && \
  @WITH_NETWORK_TRUE@	    rm $(DESTDIR)$(confdir)/qemu/networks/default.xml.t; }

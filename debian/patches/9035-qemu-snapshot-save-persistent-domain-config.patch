@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: 9035-qemu-snapshot-save-persistent-domain-config
+
 commit 9036b31aeddb63db198576b8eaba331df105c0c6
 Author: Peter Krempa <pkrempa@redhat.com>
 Date:   Mon Jun 30 13:44:26 2014 +0200
@@ -15,12 +19,15 @@ Date:   Mon Jun 30 13:44:26 2014 +0200
     4) Restart libvirtd
     
     Also fix spurious blank line added by patch mentioned above.
+---
+ src/qemu/qemu_driver.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
 
 diff --git a/src/qemu/qemu_driver.c b/src/qemu/qemu_driver.c
-index d34da6f..775f6ab 100644
+index 10feaf6..761ea9b 100644
 --- a/src/qemu/qemu_driver.c
 +++ b/src/qemu/qemu_driver.c
-@@ -13126,8 +13126,10 @@ qemuDomainSnapshotCreateDiskActive(virQEMUDriverPtr driver,
+@@ -12970,8 +12970,10 @@ qemuDomainSnapshotCreateDiskActive(virQEMUDriverPtr driver,
              int indx = virDomainDiskIndexByName(vm->newDef,
                                                  vm->def->disks[i]->dst,
                                                  false);
@@ -32,7 +39,7 @@ index d34da6f..775f6ab 100644
          }
  
          ret = qemuDomainSnapshotCreateSingleDiskActive(driver, vm,
-@@ -13173,7 +13175,6 @@ qemuDomainSnapshotCreateDiskActive(virQEMUDriverPtr driver,
+@@ -13017,7 +13019,6 @@ qemuDomainSnapshotCreateDiskActive(virQEMUDriverPtr driver,
                          persistDisk = vm->newDef->disks[indx];
                          persist = true;
                      }

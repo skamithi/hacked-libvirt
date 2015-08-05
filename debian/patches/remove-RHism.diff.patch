@@ -3,14 +3,14 @@ Date: Fri, 7 Mar 2008 09:08:25 +0100
 Subject: remove-RHism.diff
 
 ---
- tools/virsh.pod |    2 +-
+ tools/virsh.pod | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-Index: libvirt-1.1.4/tools/virsh.pod
-===================================================================
---- libvirt-1.1.4.orig/tools/virsh.pod	2013-11-12 11:48:29.399867080 -0600
-+++ libvirt-1.1.4/tools/virsh.pod	2013-11-12 11:48:29.387867080 -0600
-@@ -107,7 +107,7 @@
+diff --git a/tools/virsh.pod b/tools/virsh.pod
+index ab9bdd9..9712174 100644
+--- a/tools/virsh.pod
++++ b/tools/virsh.pod
+@@ -107,7 +107,7 @@ alphabetic character, @, [, ], \, ^, _.
  
  Most B<virsh> operations rely upon the libvirt library being able to
  connect to an already running libvirtd service.  This can usually be

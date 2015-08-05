@@ -1,21 +1,20 @@
-Description: Support incoming migration from 12.04
- This implements a new flag in /etc/libvirt/qemu.conf,
- 'allow_incoming_qemukvm', default false.  When true, then any
- incoming migration of machine type pc-1.0 is assumed to come from
- qemu-kvm in precise.
- This depends on the qemu patch by Alex Bligh.
-Author: Serge Hallyn <serge.hallyn@ubuntu.com>
-Forwarded: no
-Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/libvirt/+bug/1291321
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: support-incoming-qemu-kvm
 
 Changelog:
    oct 6 2014 [seh]: rename assume_incoming_qemukvm to allow_incoming_qemukvm.
+---
+ src/qemu/qemu_conf.c      |  3 +++
+ src/qemu/qemu_conf.h      |  3 +++
+ src/qemu/qemu_migration.c | 18 ++++++++++++++++++
+ 3 files changed, 24 insertions(+)
 
-Index: libvirt-1.2.2/src/qemu/qemu_conf.c
-===================================================================
---- libvirt-1.2.2.orig/src/qemu/qemu_conf.c
-+++ libvirt-1.2.2/src/qemu/qemu_conf.c
-@@ -229,6 +229,8 @@ virQEMUDriverConfigPtr virQEMUDriverConf
+diff --git a/src/qemu/qemu_conf.c b/src/qemu/qemu_conf.c
+index 2c397b0..acaa717 100644
+--- a/src/qemu/qemu_conf.c
++++ b/src/qemu/qemu_conf.c
+@@ -229,6 +229,8 @@ virQEMUDriverConfigPtr virQEMUDriverConfigNew(bool privileged)
      cfg->migrationPortMin = QEMU_MIGRATION_PORT_MIN;
      cfg->migrationPortMax = QEMU_MIGRATION_PORT_MAX;
  
@@ -24,7 +23,7 @@ Index: libvirt-1.2.2/src/qemu/qemu_conf.c
  #if defined HAVE_MNTENT_H && defined HAVE_GETMNTENT_R
      /* For privileged driver, try and find hugepage mount automatically.
       * Non-privileged driver requires admin to create a dir for the
-@@ -352,6 +354,7 @@ int virQEMUDriverConfigLoadFile(virQEMUD
+@@ -352,6 +354,7 @@ int virQEMUDriverConfigLoadFile(virQEMUDriverConfigPtr cfg,
              goto cleanup;                  \
      }
  
@@ -32,10 +31,10 @@ Index: libvirt-1.2.2/src/qemu/qemu_conf.c
      GET_VALUE_BOOL("vnc_auto_unix_socket", cfg->vncAutoUnixSocket);
      GET_VALUE_BOOL("vnc_tls", cfg->vncTLS);
      GET_VALUE_BOOL("vnc_tls_x509_verify", cfg->vncTLSx509verify);
-Index: libvirt-1.2.2/src/qemu/qemu_conf.h
-===================================================================
---- libvirt-1.2.2.orig/src/qemu/qemu_conf.h
-+++ libvirt-1.2.2/src/qemu/qemu_conf.h
+diff --git a/src/qemu/qemu_conf.h b/src/qemu/qemu_conf.h
+index c181dc2..1391682 100644
+--- a/src/qemu/qemu_conf.h
++++ b/src/qemu/qemu_conf.h
 @@ -164,6 +164,9 @@ struct _virQEMUDriverConfig {
      char *migrationAddress;
      int migrationPortMin;
@@ -46,10 +45,10 @@ Index: libvirt-1.2.2/src/qemu/qemu_conf.h
  };
  
  /* Main driver state */
-Index: libvirt-1.2.2/src/qemu/qemu_migration.c
-===================================================================
---- libvirt-1.2.2.orig/src/qemu/qemu_migration.c
-+++ libvirt-1.2.2/src/qemu/qemu_migration.c
+diff --git a/src/qemu/qemu_migration.c b/src/qemu/qemu_migration.c
+index e917ba7..5eec741 100644
+--- a/src/qemu/qemu_migration.c
++++ b/src/qemu/qemu_migration.c
 @@ -2101,6 +2101,16 @@ static char
          if (!qemuDomainDefCheckABIStability(driver, vm->def, def))
              goto cleanup;
@@ -67,7 +66,7 @@ Index: libvirt-1.2.2/src/qemu/qemu_migration.c
          rv = qemuDomainDefFormatLive(driver, def, false, true);
      } else {
          rv = qemuDomainDefFormatLive(driver, vm->def, false, true);
-@@ -2431,6 +2441,14 @@ qemuMigrationPrepareAny(virQEMUDriverPtr
+@@ -2431,6 +2441,14 @@ qemuMigrationPrepareAny(virQEMUDriverPtr driver,
          goto endjob;
      }
  

@@ -1,0 +1,22 @@
+From: stanley karunditu <stanleyk@cumulusnetworks.com>
+Date: Wed, 5 Aug 2015 02:02:32 -0400
+Subject: fix compilation error due to
+ "accomodate-new-qemu-migration-status-setup.patch"
+
+---
+ src/qemu/qemu_monitor_json.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_monitor_json.c b/src/qemu/qemu_monitor_json.c
+index 4aeceef..bf0b6c7 100644
+--- a/src/qemu/qemu_monitor_json.c
++++ b/src/qemu/qemu_monitor_json.c
+@@ -2536,7 +2536,7 @@ int qemuMonitorJSONGetMigrationStatus(qemuMonitorPtr mon,
+         ret = qemuMonitorJSONCheckError(cmd, reply);
+ 
+     if (ret == 0 &&
+-        qemuMonitorJSONGetMigrationStatusReply(reply, status, &setting_up) < 0)
++        qemuMonitorJSONGetMigrationStatusReply(reply, status, setting_up) < 0)
+         ret = -1;
+ 
+     if (ret < 0)

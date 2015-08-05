@@ -1,7 +1,6 @@
-From d6b27d3e4c40946efa79e91d134616b41b1666c4 Mon Sep 17 00:00:00 2001
-From: Daniel P. Berrange <berrange@redhat.com>
+From: "Daniel P. Berrange" <berrange@redhat.com>
 Date: Tue, 15 Apr 2014 11:20:29 +0100
-Subject: [PATCH] LSN-2014-0003: Don't expand entities when parsing XML
+Subject: LSN-2014-0003: Don't expand entities when parsing XML
 
 If the XML_PARSE_NOENT flag is passed to libxml2, then any
 entities in the input document will be fully expanded. This
@@ -13,11 +12,11 @@ APIs.
 
 Signed-off-by: Daniel P. Berrange <berrange@redhat.com>
 ---
- src/util/virxml.c |    4 ++--
- 1 files changed, 2 insertions(+), 2 deletions(-)
+ src/util/virxml.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/src/util/virxml.c b/src/util/virxml.c
-index 9f00f62..34af64a 100644
+index dd530a6..88a1196 100644
 --- a/src/util/virxml.c
 +++ b/src/util/virxml.c
 @@ -746,11 +746,11 @@ virXMLParseHelper(int domcode,
@@ -34,6 +33,3 @@ index 9f00f62..34af64a 100644
                               XML_PARSE_NOWARNING);
      }
      if (!xml)
--- 
-1.7.1
-

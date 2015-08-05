@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: 9027-virt-aa-helper-allow-access-to-vhost-net
+
 commit c7abe7448c746cf0e3a6b7fab80e083afba5d5ae
 Author: Serge Hallyn <serge.hallyn@ubuntu.com>
 Date:   Wed Jun 18 03:20:59 2014 +0000
@@ -10,11 +14,14 @@ Date:   Wed Jun 18 03:20:59 2014 +0000
     This addresses https://bugs.launchpad.net/ubuntu/+source/libvirt/+bug/1322568
     
     Signed-off-by: Serge Hallyn <serge.hallyn@ubuntu.com>
+---
+ src/security/virt-aa-helper.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
 
-Index: libvirt-1.2.2/src/security/virt-aa-helper.c
-===================================================================
---- libvirt-1.2.2.orig/src/security/virt-aa-helper.c
-+++ libvirt-1.2.2/src/security/virt-aa-helper.c
+diff --git a/src/security/virt-aa-helper.c b/src/security/virt-aa-helper.c
+index 25a2317..5e80449 100644
+--- a/src/security/virt-aa-helper.c
++++ b/src/security/virt-aa-helper.c
 @@ -900,7 +900,7 @@ get_files(vahControl * ctl)
      size_t i;
      char *uuid;

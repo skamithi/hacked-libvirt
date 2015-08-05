@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: 9029-ovs-delete-port-if-it-exists-when-adding-new-one
+
 commit 33445ce8446d9d061a1620cd8ec5e81fcca127d9
 Author: Chunhe Li <lichunhe@huawei.com>
 Date:   Mon Jul 14 12:37:50 2014 +0200
@@ -20,9 +24,12 @@ Date:   Mon Jul 14 12:37:50 2014 +0200
     
     Signed-off-by: Chunhe Li <lichunhe@huawei.com>
     Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+---
+ src/util/virnetdevopenvswitch.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/src/util/virnetdevopenvswitch.c b/src/util/virnetdevopenvswitch.c
-index 9bcbfb1..8ea1def 100644
+index b4feb1e..b019db0 100644
 --- a/src/util/virnetdevopenvswitch.c
 +++ b/src/util/virnetdevopenvswitch.c
 @@ -84,8 +84,8 @@ int virNetDevOpenvswitchAddPort(const char *brname, const char *ifname,

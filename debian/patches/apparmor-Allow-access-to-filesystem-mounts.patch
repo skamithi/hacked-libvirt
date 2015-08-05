@@ -1,0 +1,83 @@
+From: Felix Geyer <debfx@fobos.de>
+Date: Sun, 26 Jan 2014 22:47:34 +0100
+Subject: apparmor: Allow access to filesystem mounts
+
+Make virt-aa-helper create rules to allow VMs access to filesystem
+mounts from the host.
+---
+ src/security/virt-aa-helper.c | 32 ++++++++++++++++++++++++++------
+ 1 file changed, 26 insertions(+), 6 deletions(-)
+
+diff --git a/src/security/virt-aa-helper.c b/src/security/virt-aa-helper.c
+index b9282b4..8f6ce95 100644
+--- a/src/security/virt-aa-helper.c
++++ b/src/security/virt-aa-helper.c
+@@ -578,9 +578,6 @@ valid_path(const char *path, const bool readonly)
+             return -1;
+ 
+         switch (sb.st_mode & S_IFMT) {
+-            case S_IFDIR:
+-                return 1;
+-                break;
+             case S_IFSOCK:
+                 return 1;
+                 break;
+@@ -747,7 +744,7 @@ get_definition(vahControl * ctl, const char *xmlStr)
+ }
+ 
+ static int
+-vah_add_file(virBufferPtr buf, const char *path, const char *perms)
++vah_add_path(virBufferPtr buf, const char *path, const char *perms, bool recursive)
+ {
+     char *tmp = NULL;
+     int rc = -1;
+@@ -788,10 +785,14 @@ vah_add_file(virBufferPtr buf, const char *path, const char *perms)
+         goto cleanup;
+     }
+ 
+-    virBufferAsprintf(buf, "  \"%s\" %s,\n", tmp, perms);
++    virBufferAsprintf(buf, "  \"%s%s\" %s,\n", tmp, recursive ? "/**" : "", perms);
+     if (readonly) {
+         virBufferAddLit(buf, "  # don't audit writes to readonly files\n");
+-        virBufferAsprintf(buf, "  deny \"%s\" w,\n", tmp);
++        virBufferAsprintf(buf, "  deny \"%s%s\" w,\n", tmp, recursive ? "/**" : "");
++    }
++    if (recursive) {
++        // allow reading (but not creating) the dir
++        virBufferAsprintf(buf, "  \"%s/\" r,\n", tmp);
+     }
+ 
+   cleanup:
+@@ -801,6 +802,12 @@ vah_add_file(virBufferPtr buf, const char *path, const char *perms)
+ }
+ 
+ static int
++vah_add_file(virBufferPtr buf, const char *path, const char *perms)
++{
++    return vah_add_path(buf, path, perms, false);
++}
++
++static int
+ vah_add_file_chardev(virBufferPtr buf,
+                      const char *path,
+                      const char *perms,
+@@ -1049,6 +1056,19 @@ get_files(vahControl * ctl)
+             } /* switch */
+         }
+ 
++    for (i = 0; i < ctl->def->nfss; i++) {
++        if (ctl->def->fss[i] &&
++                ctl->def->fss[i]->type == VIR_DOMAIN_FS_TYPE_MOUNT &&
++                (ctl->def->fss[i]->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_PATH ||
++                 ctl->def->fss[i]->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_DEFAULT) &&
++                ctl->def->fss[i]->src){
++            virDomainFSDefPtr fs = ctl->def->fss[i];
++
++            if (vah_add_path(&buf, fs->src, fs->readonly ? "r" : "rw", true) != 0)
++                goto cleanup;
++        }
++    }
++
+     if (ctl->newfile)
+         if (vah_add_file(&buf, ctl->newfile, "rw") != 0)
+             goto cleanup;

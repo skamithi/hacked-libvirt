@@ -13,11 +13,14 @@ This was caused both though libxlDomainGetInfo() only but there were
 a lot of places that might potentially cause issues, too.
 
 Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+---
+ src/libxl/libxl_driver.c | 75 ++++++++++++++++++++++++------------------------
+ 1 file changed, 38 insertions(+), 37 deletions(-)
 
-Index: libvirt-1.2.2/src/libxl/libxl_driver.c
-===================================================================
---- libvirt-1.2.2.orig/src/libxl/libxl_driver.c	2014-03-25 17:03:41.461521736 +0100
-+++ libvirt-1.2.2/src/libxl/libxl_driver.c	2014-03-25 17:22:12.170951716 +0100
+diff --git a/src/libxl/libxl_driver.c b/src/libxl/libxl_driver.c
+index 3658bd2..424deda 100644
+--- a/src/libxl/libxl_driver.c
++++ b/src/libxl/libxl_driver.c
 @@ -1496,10 +1496,10 @@ libxlDomainSuspend(virDomainPtr dom)
      priv = vm->privateData;
  
@@ -44,7 +47,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
              goto endjob;
          }
  
-@@ -1609,10 +1609,10 @@ libxlDomainShutdownFlags(virDomainPtr do
+@@ -1609,10 +1609,10 @@ libxlDomainShutdownFlags(virDomainPtr dom, unsigned int flags)
      }
  
      priv = vm->privateData;
@@ -57,7 +60,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          goto cleanup;
      }
  
-@@ -1656,10 +1656,10 @@ libxlDomainReboot(virDomainPtr dom, unsi
+@@ -1656,10 +1656,10 @@ libxlDomainReboot(virDomainPtr dom, unsigned int flags)
      }
  
      priv = vm->privateData;
@@ -70,7 +73,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          goto cleanup;
      }
      ret = 0;
-@@ -1700,7 +1700,7 @@ libxlDomainDestroyFlags(virDomainPtr dom
+@@ -1700,7 +1700,7 @@ libxlDomainDestroyFlags(virDomainPtr dom,
      priv = vm->privateData;
      if (libxl_domain_destroy(priv->ctx, vm->def->id, NULL) < 0) {
          virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -79,7 +82,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          goto cleanup;
      }
  
-@@ -1831,10 +1831,10 @@ libxlDomainSetMemoryFlags(virDomainPtr d
+@@ -1831,10 +1831,10 @@ libxlDomainSetMemoryFlags(virDomainPtr dom, unsigned long newmem,
  
          if (flags & VIR_DOMAIN_MEM_LIVE) {
              priv = vm->privateData;
@@ -92,7 +95,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
                  goto endjob;
              }
          }
-@@ -1864,13 +1864,13 @@ libxlDomainSetMemoryFlags(virDomainPtr d
+@@ -1864,13 +1864,13 @@ libxlDomainSetMemoryFlags(virDomainPtr dom, unsigned long newmem,
              priv = vm->privateData;
              /* Unlock virDomainObj while ballooning memory */
              virObjectUnlock(vm);
@@ -108,7 +111,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
                  goto endjob;
              }
          }
-@@ -1928,9 +1928,10 @@ libxlDomainGetInfo(virDomainPtr dom, vir
+@@ -1928,9 +1928,10 @@ libxlDomainGetInfo(virDomainPtr dom, virDomainInfoPtr info)
          info->memory = vm->def->mem.cur_balloon;
          info->maxMem = vm->def->mem.max_balloon;
      } else {
@@ -121,7 +124,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
              goto cleanup;
          }
          info->cpuTime = d_info.cpu_time;
-@@ -2209,11 +2210,11 @@ libxlDomainCoreDump(virDomainPtr dom, co
+@@ -2209,11 +2210,11 @@ libxlDomainCoreDump(virDomainPtr dom, const char *to, unsigned int flags)
  
      if (!(flags & VIR_DUMP_LIVE) &&
          virDomainObjGetState(vm, NULL) == VIR_DOMAIN_RUNNING) {
@@ -135,7 +138,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
              goto endjob;
          }
          virDomainObjSetState(vm, VIR_DOMAIN_PAUSED, VIR_DOMAIN_PAUSED_DUMP);
-@@ -2222,20 +2223,20 @@ libxlDomainCoreDump(virDomainPtr dom, co
+@@ -2222,20 +2223,20 @@ libxlDomainCoreDump(virDomainPtr dom, const char *to, unsigned int flags)
  
      /* Unlock virDomainObj while dumping core */
      virObjectUnlock(vm);
@@ -160,7 +163,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
              goto unpause;
          }
  
-@@ -2250,10 +2251,10 @@ libxlDomainCoreDump(virDomainPtr dom, co
+@@ -2250,10 +2251,10 @@ libxlDomainCoreDump(virDomainPtr dom, const char *to, unsigned int flags)
  
  unpause:
      if (virDomainObjIsActive(vm) && paused) {
@@ -173,7 +176,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          } else {
              virDomainObjSetState(vm, VIR_DOMAIN_RUNNING,
                                   VIR_DOMAIN_RUNNING_UNPAUSED);
-@@ -2512,19 +2513,19 @@ libxlDomainSetVcpusFlags(virDomainPtr do
+@@ -2512,19 +2513,19 @@ libxlDomainSetVcpusFlags(virDomainPtr dom, unsigned int nvcpus,
          break;
  
      case VIR_DOMAIN_VCPU_LIVE:
@@ -197,7 +200,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
              goto endjob;
          }
          def->vcpus = nvcpus;
-@@ -2660,7 +2661,7 @@ libxlDomainPinVcpuFlags(virDomainPtr dom
+@@ -2660,7 +2661,7 @@ libxlDomainPinVcpuFlags(virDomainPtr dom, unsigned int vcpu,
          libxlDomainObjPrivatePtr priv;
  
          priv = vm->privateData;
@@ -206,7 +209,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
              virReportError(VIR_ERR_INTERNAL_ERROR,
                             _("Failed to pin vcpu '%d' with libxenlight"),
                             vcpu);
-@@ -2825,11 +2826,11 @@ libxlDomainGetVcpus(virDomainPtr dom, vi
+@@ -2825,11 +2826,11 @@ libxlDomainGetVcpus(virDomainPtr dom, virVcpuInfoPtr info, int maxinfo,
      }
  
      priv = vm->privateData;
@@ -220,7 +223,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          goto cleanup;
      }
  
-@@ -4088,7 +4089,7 @@ libxlDomainGetSchedulerType(virDomainPtr
+@@ -4088,7 +4089,7 @@ libxlDomainGetSchedulerType(virDomainPtr dom, int *nparams)
      default:
          virReportError(VIR_ERR_INTERNAL_ERROR,
                     _("Failed to get scheduler id for domain '%d'"
@@ -229,7 +232,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          goto cleanup;
      }
  
-@@ -4139,10 +4140,10 @@ libxlDomainGetSchedulerParametersFlags(v
+@@ -4139,10 +4140,10 @@ libxlDomainGetSchedulerParametersFlags(virDomainPtr dom,
          goto cleanup;
      }
  
@@ -242,7 +245,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          goto cleanup;
      }
  
-@@ -4220,10 +4221,10 @@ libxlDomainSetSchedulerParametersFlags(v
+@@ -4220,10 +4221,10 @@ libxlDomainSetSchedulerParametersFlags(virDomainPtr dom,
          goto endjob;
      }
  
@@ -255,7 +258,7 @@ Index: libvirt-1.2.2/src/libxl/libxl_driver.c
          goto endjob;
      }
  
-@@ -4236,10 +4237,10 @@ libxlDomainSetSchedulerParametersFlags(v
+@@ -4236,10 +4237,10 @@ libxlDomainSetSchedulerParametersFlags(virDomainPtr dom,
              sc_info.cap = params[i].value.ui;
      }
  

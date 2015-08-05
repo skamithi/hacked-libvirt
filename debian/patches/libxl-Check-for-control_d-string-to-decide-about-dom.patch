@@ -1,7 +1,6 @@
-From 63203dc790819b07dbe529254aee65c77eab6865 Mon Sep 17 00:00:00 2001
 From: Stefan Bader <stefan.bader@canonical.com>
 Date: Wed, 12 Mar 2014 11:37:16 +0100
-Subject: [PATCH] libxl: Check for control_d string to decide about dom0
+Subject: libxl: Check for control_d string to decide about dom0
 
 As soon as any guest mounts xenfs to /proc/xen, there is a capabilities
 file in that directory. However it returns nothing when reading from it.
@@ -11,13 +10,13 @@ BugLink: http://bugs.launchpad.net/bugs/1248025
 
 Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
 ---
- src/libxl/libxl_driver.c |   14 ++++++++++++--
- 1 file changed, 12 insertions(+), 2 deletions(-)
+ src/libxl/libxl_driver.c | 18 ++++++++++++++++--
+ 1 file changed, 16 insertions(+), 2 deletions(-)
 
-Index: libvirt-1.2.2/src/libxl/libxl_driver.c
-===================================================================
---- libvirt-1.2.2.orig/src/libxl/libxl_driver.c	2014-03-17 13:07:05.000000000 +0100
-+++ libvirt-1.2.2/src/libxl/libxl_driver.c	2014-03-17 13:39:34.501563979 +0100
+diff --git a/src/libxl/libxl_driver.c b/src/libxl/libxl_driver.c
+index 4a11e81..ab1abd8 100644
+--- a/src/libxl/libxl_driver.c
++++ b/src/libxl/libxl_driver.c
 @@ -941,8 +941,8 @@ libxlDriverShouldLoad(bool privileged)
  {
      bool ret = false;

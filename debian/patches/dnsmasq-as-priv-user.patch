@@ -1,0 +1,204 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:55 -0400
+Subject: dnsmasq-as-priv-user
+
+---
+ src/network/bridge_driver.c                                       | 3 ++-
+ tests/networkxml2confdata/dhcp6-nat-network.conf                  | 1 +
+ tests/networkxml2confdata/dhcp6-network.conf                      | 1 +
+ tests/networkxml2confdata/dhcp6host-routed-network.conf           | 1 +
+ tests/networkxml2confdata/isolated-network.conf                   | 1 +
+ tests/networkxml2confdata/nat-network-dns-forward-plain.conf      | 1 +
+ tests/networkxml2confdata/nat-network-dns-forwarders.conf         | 1 +
+ tests/networkxml2confdata/nat-network-dns-hosts.conf              | 1 +
+ tests/networkxml2confdata/nat-network-dns-srv-record-minimal.conf | 1 +
+ tests/networkxml2confdata/nat-network-dns-srv-record.conf         | 1 +
+ tests/networkxml2confdata/nat-network-dns-txt-record.conf         | 1 +
+ tests/networkxml2confdata/nat-network.conf                        | 1 +
+ tests/networkxml2confdata/netboot-network.conf                    | 1 +
+ tests/networkxml2confdata/netboot-proxy-network.conf              | 1 +
+ tests/networkxml2confdata/routed-network.conf                     | 1 +
+ 15 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/src/network/bridge_driver.c b/src/network/bridge_driver.c
+index c797f8f..ccaad00 100644
+--- a/src/network/bridge_driver.c
++++ b/src/network/bridge_driver.c
+@@ -767,7 +767,8 @@ networkDnsmasqConfContents(virNetworkObjPtr network,
+                       "##    virsh net-edit %s\n"
+                       "## or other application using the libvirt API.\n"
+                       "##\n## dnsmasq conf file created by libvirt\n"
+-                      "strict-order\n",
++                      "strict-order\n"
++                      "user=libvirt-dnsmasq\n",
+                       network->def->name);
+ 
+     if (network->def->dns.forwarders) {
+diff --git a/tests/networkxml2confdata/dhcp6-nat-network.conf b/tests/networkxml2confdata/dhcp6-nat-network.conf
+index f270a43..faadec1 100644
+--- a/tests/networkxml2confdata/dhcp6-nat-network.conf
++++ b/tests/networkxml2confdata/dhcp6-nat-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-dynamic
+ interface=virbr0
+diff --git a/tests/networkxml2confdata/dhcp6-network.conf b/tests/networkxml2confdata/dhcp6-network.conf
+index f0a9660..1cbaf1c 100644
+--- a/tests/networkxml2confdata/dhcp6-network.conf
++++ b/tests/networkxml2confdata/dhcp6-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ domain=mynet
+ expand-hosts
+ except-interface=lo
+diff --git a/tests/networkxml2confdata/dhcp6host-routed-network.conf b/tests/networkxml2confdata/dhcp6host-routed-network.conf
+index ad6db36..08845ee 100644
+--- a/tests/networkxml2confdata/dhcp6host-routed-network.conf
++++ b/tests/networkxml2confdata/dhcp6host-routed-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-dynamic
+ interface=virbr1
+diff --git a/tests/networkxml2confdata/isolated-network.conf b/tests/networkxml2confdata/isolated-network.conf
+index 6ba34ae..b198bde 100644
+--- a/tests/networkxml2confdata/isolated-network.conf
++++ b/tests/networkxml2confdata/isolated-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-interfaces
+ listen-address=192.168.152.1
+diff --git a/tests/networkxml2confdata/nat-network-dns-forward-plain.conf b/tests/networkxml2confdata/nat-network-dns-forward-plain.conf
+index 9a000b8..97c0435 100644
+--- a/tests/networkxml2confdata/nat-network-dns-forward-plain.conf
++++ b/tests/networkxml2confdata/nat-network-dns-forward-plain.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-dynamic
+ interface=virbr0
+diff --git a/tests/networkxml2confdata/nat-network-dns-forwarders.conf b/tests/networkxml2confdata/nat-network-dns-forwarders.conf
+index 8bf3b9c..acc7064 100644
+--- a/tests/networkxml2confdata/nat-network-dns-forwarders.conf
++++ b/tests/networkxml2confdata/nat-network-dns-forwarders.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ no-resolv
+ server=8.8.8.8
+ server=8.8.4.4
+diff --git a/tests/networkxml2confdata/nat-network-dns-hosts.conf b/tests/networkxml2confdata/nat-network-dns-hosts.conf
+index 021316f..15b668a 100644
+--- a/tests/networkxml2confdata/nat-network-dns-hosts.conf
++++ b/tests/networkxml2confdata/nat-network-dns-hosts.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ domain=example.com
+ expand-hosts
+ domain-needed
+diff --git a/tests/networkxml2confdata/nat-network-dns-srv-record-minimal.conf b/tests/networkxml2confdata/nat-network-dns-srv-record-minimal.conf
+index ce4dd6f..b06e49b 100644
+--- a/tests/networkxml2confdata/nat-network-dns-srv-record-minimal.conf
++++ b/tests/networkxml2confdata/nat-network-dns-srv-record-minimal.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-interfaces
+ listen-address=192.168.122.1
+diff --git a/tests/networkxml2confdata/nat-network-dns-srv-record.conf b/tests/networkxml2confdata/nat-network-dns-srv-record.conf
+index b47cbe7..4f643f4 100644
+--- a/tests/networkxml2confdata/nat-network-dns-srv-record.conf
++++ b/tests/networkxml2confdata/nat-network-dns-srv-record.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-dynamic
+ interface=virbr0
+diff --git a/tests/networkxml2confdata/nat-network-dns-txt-record.conf b/tests/networkxml2confdata/nat-network-dns-txt-record.conf
+index ff53f4e..de41169 100644
+--- a/tests/networkxml2confdata/nat-network-dns-txt-record.conf
++++ b/tests/networkxml2confdata/nat-network-dns-txt-record.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-dynamic
+ interface=virbr0
+diff --git a/tests/networkxml2confdata/nat-network.conf b/tests/networkxml2confdata/nat-network.conf
+index ced4123..ac06a21 100644
+--- a/tests/networkxml2confdata/nat-network.conf
++++ b/tests/networkxml2confdata/nat-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-dynamic
+ interface=virbr0
+diff --git a/tests/networkxml2confdata/netboot-network.conf b/tests/networkxml2confdata/netboot-network.conf
+index 8ea1f67..70fb1e4 100644
+--- a/tests/networkxml2confdata/netboot-network.conf
++++ b/tests/networkxml2confdata/netboot-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ domain=example.com
+ expand-hosts
+ except-interface=lo
+diff --git a/tests/networkxml2confdata/netboot-proxy-network.conf b/tests/networkxml2confdata/netboot-proxy-network.conf
+index 4774a92..d7ba0e4 100644
+--- a/tests/networkxml2confdata/netboot-proxy-network.conf
++++ b/tests/networkxml2confdata/netboot-proxy-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ domain=example.com
+ expand-hosts
+ except-interface=lo
+diff --git a/tests/networkxml2confdata/routed-network.conf b/tests/networkxml2confdata/routed-network.conf
+index 970aa3c..caffaee 100644
+--- a/tests/networkxml2confdata/routed-network.conf
++++ b/tests/networkxml2confdata/routed-network.conf
+@@ -5,6 +5,7 @@
+ ##
+ ## dnsmasq conf file created by libvirt
+ strict-order
++user=libvirt-dnsmasq
+ except-interface=lo
+ bind-dynamic
+ interface=virbr1

@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:57 -0400
+Subject: storage_backend_rbd-correct-arg-order-to-rbd_create3
+
 commit 4cd508ba4fc3cc33c72629fe8b9012e73d8dd8bf
 Author: Steven McDonald <steven.mcdonald@anchor.net.au>
 Date:   Tue Apr 29 12:19:01 2014 +1000
@@ -10,12 +14,15 @@ Date:   Tue Apr 29 12:19:01 2014 +1000
     
     https://bugzilla.redhat.com/show_bug.cgi?id=1092208
     Signed-off-by: Steven McDonald <steven.mcdonald@anchor.net.au>
+---
+ src/storage/storage_backend_rbd.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-Index: libvirt-1.2.2/src/storage/storage_backend_rbd.c
-===================================================================
---- libvirt-1.2.2.orig/src/storage/storage_backend_rbd.c
-+++ libvirt-1.2.2/src/storage/storage_backend_rbd.c
-@@ -491,7 +491,7 @@ static int virStorageBackendRBDCreateIma
+diff --git a/src/storage/storage_backend_rbd.c b/src/storage/storage_backend_rbd.c
+index 22ed7de..b85af70 100644
+--- a/src/storage/storage_backend_rbd.c
++++ b/src/storage/storage_backend_rbd.c
+@@ -491,7 +491,7 @@ static int virStorageBackendRBDCreateImage(rados_ioctx_t io,
      uint64_t stripe_unit = 4194304;
  
      if (rbd_create3(io, name, capacity, features, &order,

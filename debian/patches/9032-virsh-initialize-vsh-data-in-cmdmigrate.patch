@@ -1,3 +1,10 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: 9032-virsh-initialize-vsh-data-in-cmdmigrate
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
 commit c285ffc4c2f042941acc44406bdd442252d1b0aa
 Author: Ján Tomko <jtomko@redhat.com>
 Date:   Tue Aug 26 13:18:43 2014 +0200
@@ -8,12 +15,15 @@ Date:   Tue Aug 26 13:18:43 2014 +0200
     virConnectClose on uninitialized data.
     
     Introduced by commit 7eabd55.
+---
+ tools/virsh-domain.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-Index: libvirt-1.2.2/tools/virsh-domain.c
-===================================================================
---- libvirt-1.2.2.orig/tools/virsh-domain.c
-+++ libvirt-1.2.2/tools/virsh-domain.c
-@@ -8817,7 +8817,7 @@ cmdMigrate(vshControl *ctl, const vshCmd
+diff --git a/tools/virsh-domain.c b/tools/virsh-domain.c
+index 9f23c25..38aaa56 100644
+--- a/tools/virsh-domain.c
++++ b/tools/virsh-domain.c
+@@ -8817,7 +8817,7 @@ cmdMigrate(vshControl *ctl, const vshCmd *cmd)
      bool functionReturn = false;
      int timeout = 0;
      bool live_flag = false;

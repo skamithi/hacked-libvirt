@@ -2,10 +2,14 @@ From: Guido Guenther <agx@sigxcpu.org>
 Date: Thu, 26 Jun 2008 20:01:38 +0200
 Subject: Allow libvirt group to access the socket
 
+---
+ daemon/libvirtd.conf | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
 
-diff -Naurp libvirt-1.2.2.orig/daemon/libvirtd.conf libvirt-1.2.2/daemon/libvirtd.conf
---- libvirt-1.2.2.orig/daemon/libvirtd.conf	2014-02-21 06:24:39.000000000 -0500
-+++ libvirt-1.2.2/daemon/libvirtd.conf	2014-03-03 13:55:23.602192862 -0500
+diff --git a/daemon/libvirtd.conf b/daemon/libvirtd.conf
+index 073c178..3de323b 100644
+--- a/daemon/libvirtd.conf
++++ b/daemon/libvirtd.conf
 @@ -78,14 +78,14 @@
  # without becoming root.
  #

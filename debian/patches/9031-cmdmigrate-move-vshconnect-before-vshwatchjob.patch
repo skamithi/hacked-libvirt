@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: 9031-cmdmigrate-move-vshconnect-before-vshwatchjob
+
 commit 7eabd5503e3de147b703c1a1e6dff81cdc46d1e7
 Author: Chunyan Liu <cyliu@suse.com>
 Date:   Fri Aug 8 16:44:36 2014 +0800
@@ -28,11 +32,15 @@ Date:   Fri Aug 8 16:44:36 2014 +0800
     this change, above problem does not exist.
     
     Signed-off-by: Chunyan Liu <cyliu@suse.com>
+---
+ tools/virsh-domain.c | 26 ++++++++++++++++++++------
+ tools/virsh.h        |  1 +
+ 2 files changed, 21 insertions(+), 6 deletions(-)
 
-Index: libvirt-1.2.2/tools/virsh-domain.c
-===================================================================
---- libvirt-1.2.2.orig/tools/virsh-domain.c
-+++ libvirt-1.2.2/tools/virsh-domain.c
+diff --git a/tools/virsh-domain.c b/tools/virsh-domain.c
+index f61c702..9f23c25 100644
+--- a/tools/virsh-domain.c
++++ b/tools/virsh-domain.c
 @@ -8663,6 +8663,7 @@ doMigrate(void *opaque)
      virTypedParameterPtr params = NULL;
      int nparams = 0;
@@ -60,7 +68,7 @@ Index: libvirt-1.2.2/tools/virsh-domain.c
      }
  
  out:
-@@ -8847,6 +8842,23 @@ cmdMigrate(vshControl *ctl, const vshCmd
+@@ -8847,6 +8842,23 @@ cmdMigrate(vshControl *ctl, const vshCmd *cmd)
      data.cmd = cmd;
      data.writefd = p[1];
  
@@ -84,7 +92,7 @@ Index: libvirt-1.2.2/tools/virsh-domain.c
      if (virThreadCreate(&workerThread,
                          true,
                          doMigrate,
-@@ -8858,6 +8870,8 @@ cmdMigrate(vshControl *ctl, const vshCmd
+@@ -8858,6 +8870,8 @@ cmdMigrate(vshControl *ctl, const vshCmd *cmd)
      virThreadJoin(&workerThread);
  
  cleanup:
@@ -93,10 +101,10 @@ Index: libvirt-1.2.2/tools/virsh-domain.c
      virDomainFree(dom);
      VIR_FORCE_CLOSE(p[0]);
      VIR_FORCE_CLOSE(p[1]);
-Index: libvirt-1.2.2/tools/virsh.h
-===================================================================
---- libvirt-1.2.2.orig/tools/virsh.h
-+++ libvirt-1.2.2/tools/virsh.h
+diff --git a/tools/virsh.h b/tools/virsh.h
+index 3e0251b..a9e5854 100644
+--- a/tools/virsh.h
++++ b/tools/virsh.h
 @@ -362,6 +362,7 @@ struct _vshCtrlData {
      vshControl *ctl;
      const vshCmd *cmd;

@@ -1,6 +1,6 @@
-Description: virObjectUnref() libvirtd killed by SIGSEGV
- While memory load is high, libvirtd could be crashed(segfault) if you 
- command something ( destroy, migrate, etc )
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:57 -0400
+Subject: fix_libvirtd_killed_by_sigsegv
 
 Author: Peter Krempa <pkrempa@redhat.com>
 
@@ -9,11 +9,17 @@ Origin: upstream, http://libvirt.org/git/?p=libvirt.git;a=commitdiff;h=ad886fa6c
         upstream, http://libvirt.org/git/?p=libvirt.git;a=commitdiff;h=a98129c0ee52b6a8fdd39988a6d090057f149ae9
 Bug-Ubuntu: https://bugs.launchpad.net/bugs/1464175
 Last-Update: 2015-07-08
-Index: libvirt-1.2.2/daemon/remote.c
-===================================================================
---- libvirt-1.2.2.orig/daemon/remote.c
-+++ libvirt-1.2.2/daemon/remote.c
-@@ -143,6 +143,7 @@ remoteRelayDomainEventCheckACL(virNetSer
+---
+ daemon/remote.c              | 1 +
+ src/rpc/virnetserverclient.c | 4 ++--
+ src/util/viridentity.c       | 3 ++-
+ 3 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/daemon/remote.c b/daemon/remote.c
+index 932f65f..3075bba 100644
+--- a/daemon/remote.c
++++ b/daemon/remote.c
+@@ -143,6 +143,7 @@ remoteRelayDomainEventCheckACL(virNetServerClientPtr client,
      /* For now, we just create a virDomainDef with enough contents to
       * satisfy what viraccessdriverpolkit.c references.  This is a bit
       * fragile, but I don't know of anything better.  */
@@ -21,11 +27,11 @@ Index: libvirt-1.2.2/daemon/remote.c
      def.name = dom->name;
      memcpy(def.uuid, dom->uuid, VIR_UUID_BUFLEN);
  
-Index: libvirt-1.2.2/src/rpc/virnetserverclient.c
-===================================================================
---- libvirt-1.2.2.orig/src/rpc/virnetserverclient.c
-+++ libvirt-1.2.2/src/rpc/virnetserverclient.c
-@@ -910,12 +910,12 @@ void virNetServerClientDispose(void *obj
+diff --git a/src/rpc/virnetserverclient.c b/src/rpc/virnetserverclient.c
+index 52b4941..7053686 100644
+--- a/src/rpc/virnetserverclient.c
++++ b/src/rpc/virnetserverclient.c
+@@ -910,12 +910,12 @@ void virNetServerClientDispose(void *obj)
      PROBE(RPC_SERVER_CLIENT_DISPOSE,
            "client=%p", client);
  
@@ -40,11 +46,11 @@ Index: libvirt-1.2.2/src/rpc/virnetserverclient.c
  #if WITH_SASL
      virObjectUnref(client->sasl);
  #endif
-Index: libvirt-1.2.2/src/util/viridentity.c
-===================================================================
---- libvirt-1.2.2.orig/src/util/viridentity.c
-+++ libvirt-1.2.2/src/util/viridentity.c
-@@ -110,14 +110,15 @@ int virIdentitySetCurrent(virIdentityPtr
+diff --git a/src/util/viridentity.c b/src/util/viridentity.c
+index 4f5127c..1fea044 100644
+--- a/src/util/viridentity.c
++++ b/src/util/viridentity.c
+@@ -110,14 +110,15 @@ int virIdentitySetCurrent(virIdentityPtr ident)
          return -1;
  
      old = virThreadLocalGet(&virIdentityCurrent);

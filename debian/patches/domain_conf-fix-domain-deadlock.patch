@@ -1,7 +1,6 @@
-From fc22b2e74890873848b43fffae43025d22053669 Mon Sep 17 00:00:00 2001
 From: Pavel Hrdina <phrdina@redhat.com>
 Date: Mon, 22 Sep 2014 18:19:07 +0200
-Subject: [PATCH] domain_conf: fix domain deadlock
+Subject: domain_conf: fix domain deadlock
 
 If you use public api virConnectListAllDomains() with second parameter
 set to NULL to get only the number of domains you will lock out all
@@ -11,14 +10,14 @@ Introduced by commit 2c680804.
 
 Signed-off-by: Pavel Hrdina <phrdina@redhat.com>
 ---
- src/conf/domain_conf.c |    2 +-
- 1 files changed, 1 insertions(+), 1 deletions(-)
+ src/conf/domain_conf.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-Index: libvirt-1.2.2/src/conf/domain_conf.c
-===================================================================
---- libvirt-1.2.2.orig/src/conf/domain_conf.c	2014-11-10 19:48:32.001702781 -0500
-+++ libvirt-1.2.2/src/conf/domain_conf.c	2014-11-10 19:48:31.993702727 -0500
-@@ -19112,7 +19112,7 @@
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 1d5cc14..a65f4e3 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -19112,7 +19112,7 @@ virDomainListPopulate(void *payload,
      /* just count the machines */
      if (!data->domains) {
          data->ndomains++;

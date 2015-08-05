@@ -1,3 +1,7 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:57 -0400
+Subject: qemu-filterref-crash
+
 If a domain network interface that contains a <filterref> is modified
 "live" using "virsh update-device --live", libvirtd would crash. This
 was because the code supporting live update of an interface's
@@ -12,11 +16,11 @@ This addresses https://bugzilla.redhat.com/show_bug.cgi?id=1093301
  src/qemu/qemu_hotplug.c | 3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)
 
-Index: libvirt-1.2.2/src/qemu/qemu_hotplug.c
-===================================================================
---- libvirt-1.2.2.orig/src/qemu/qemu_hotplug.c
-+++ libvirt-1.2.2/src/qemu/qemu_hotplug.c
-@@ -1814,7 +1814,8 @@ qemuDomainChangeNetFilter(virConnectPtr
+diff --git a/src/qemu/qemu_hotplug.c b/src/qemu/qemu_hotplug.c
+index 6703c92..69a1976 100644
+--- a/src/qemu/qemu_hotplug.c
++++ b/src/qemu/qemu_hotplug.c
+@@ -1814,7 +1814,8 @@ qemuDomainChangeNetFilter(virConnectPtr conn,
  
      virDomainConfNWFilterTeardown(olddev);
  

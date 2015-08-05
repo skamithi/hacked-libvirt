@@ -1,3 +1,10 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Wed, 5 Aug 2015 02:00:56 -0400
+Subject: 9026-fix-apparmor-profile-for-vfio-pci-passthrough
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+
 commit 74e86b6b2521881808bb93290bcebcb469ab7820
 Author: Cédric Bosdonnat <cbosdonnat@suse.com>
 Date:   Tue Mar 25 12:48:26 2014 +0100
@@ -10,11 +17,16 @@ Date:   Tue Mar 25 12:48:26 2014 +0100
     for vfio
     
     Signed-off-by: Eric Blake <eblake@redhat.com>
+---
+ examples/apparmor/libvirt-qemu      |  1 +
+ examples/apparmor/usr.sbin.libvirtd |  3 +++
+ src/security/virt-aa-helper.c       | 14 +++++++++++++-
+ 3 files changed, 17 insertions(+), 1 deletion(-)
 
-Index: libvirt-1.2.2/examples/apparmor/libvirt-qemu
-===================================================================
---- libvirt-1.2.2.orig/examples/apparmor/libvirt-qemu
-+++ libvirt-1.2.2/examples/apparmor/libvirt-qemu
+diff --git a/examples/apparmor/libvirt-qemu b/examples/apparmor/libvirt-qemu
+index e1980b7..83814ec 100644
+--- a/examples/apparmor/libvirt-qemu
++++ b/examples/apparmor/libvirt-qemu
 @@ -110,6 +110,7 @@
    /usr/bin/qemu-sparc32plus rmix,
    /usr/bin/qemu-sparc64 rmix,
@@ -23,10 +35,10 @@ Index: libvirt-1.2.2/examples/apparmor/libvirt-qemu
  
    # for save and resume
    /bin/dash rmix,
-Index: libvirt-1.2.2/examples/apparmor/usr.sbin.libvirtd
-===================================================================
---- libvirt-1.2.2.orig/examples/apparmor/usr.sbin.libvirtd
-+++ libvirt-1.2.2/examples/apparmor/usr.sbin.libvirtd
+diff --git a/examples/apparmor/usr.sbin.libvirtd b/examples/apparmor/usr.sbin.libvirtd
+index fd6def1..3011eff 100644
+--- a/examples/apparmor/usr.sbin.libvirtd
++++ b/examples/apparmor/usr.sbin.libvirtd
 @@ -25,6 +25,9 @@
    capability fsetid,
    capability audit_write,
@@ -37,10 +49,10 @@ Index: libvirt-1.2.2/examples/apparmor/usr.sbin.libvirtd
    network inet stream,
    network inet dgram,
    network inet6 stream,
-Index: libvirt-1.2.2/src/security/virt-aa-helper.c
-===================================================================
---- libvirt-1.2.2.orig/src/security/virt-aa-helper.c
-+++ libvirt-1.2.2/src/security/virt-aa-helper.c
+diff --git a/src/security/virt-aa-helper.c b/src/security/virt-aa-helper.c
+index 8f6ce95..25a2317 100644
+--- a/src/security/virt-aa-helper.c
++++ b/src/security/virt-aa-helper.c
 @@ -2,7 +2,7 @@
  /*
   * virt-aa-helper: wrapper program used by AppArmor security driver.
