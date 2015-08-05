@@ -30,12 +30,14 @@
 
 #include <stdlib.h>
 
-static virEventAddHandleFunc addHandleImpl = NULL;
-static virEventUpdateHandleFunc updateHandleImpl = NULL;
-static virEventRemoveHandleFunc removeHandleImpl = NULL;
-static virEventAddTimeoutFunc addTimeoutImpl = NULL;
-static virEventUpdateTimeoutFunc updateTimeoutImpl = NULL;
-static virEventRemoveTimeoutFunc removeTimeoutImpl = NULL;
+VIR_LOG_INIT("util.event");
+
+static virEventAddHandleFunc addHandleImpl;
+static virEventUpdateHandleFunc updateHandleImpl;
+static virEventRemoveHandleFunc removeHandleImpl;
+static virEventAddTimeoutFunc addTimeoutImpl;
+static virEventUpdateTimeoutFunc updateTimeoutImpl;
+static virEventRemoveTimeoutFunc removeTimeoutImpl;
 
 
 /*****************************************************
@@ -289,7 +291,7 @@ int virEventRegisterDefaultImpl(void)
  * function, as it will block forever if there are no
  * registered events.
  *
- *   static bool quit = false;
+ *   static bool quit;
  *
  *   while (!quit) {
  *     if (virEventRunDefaultImpl() < 0)

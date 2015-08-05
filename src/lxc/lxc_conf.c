@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Red Hat, Inc.
+ * Copyright (C) 2010, 2014 Red Hat, Inc.
  * Copyright IBM Corp. 2008
  *
  * lxc_conf.c: config functions for managing linux containers
@@ -38,8 +38,11 @@
 #include "lxc_container.h"
 #include "virnodesuspend.h"
 #include "virstring.h"
+#include "virfile.h"
 
 #define VIR_FROM_THIS VIR_FROM_LXC
+
+VIR_LOG_INIT("lxc.lxc_conf");
 
 static virClassPtr virLXCDriverConfigClass;
 static void virLXCDriverConfigDispose(void *obj);
@@ -64,13 +67,14 @@ virCapsPtr virLXCDriverCapsInit(virLXCDriverPtr driver)
     virCapsPtr caps;
     virCapsGuestPtr guest;
     virArch altArch;
+    char *lxc_path = NULL;
 
     if ((caps = virCapabilitiesNew(virArchFromHost(),
-                                   0, 0)) == NULL)
+                                   false, false)) == NULL)
         goto error;
 
     /* Some machines have problematic NUMA toplogy causing
-     * unexpected failures. We don't want to break the QEMU
+     * unexpected failures. We don't want to break the lxc
      * driver in this scenario, so log errors & carry on
      */
     if (nodeCapsInitNUMA(caps) < 0) {
@@ -78,7 +82,9 @@ virCapsPtr virLXCDriverCapsInit(virLXCDriverPtr driver)
         VIR_WARN("Failed to query host NUMA topology, disabling NUMA capabilities");
     }
 
-    if (virNodeSuspendGetTargetMask(&caps->host.powerMgmt) < 0)
+    /* Only probe for power management capabilities in the driver,
+     * not in the emulator */
+    if (driver && virNodeSuspendGetTargetMask(&caps->host.powerMgmt) < 0)
         VIR_WARN("Failed to get host power management capabilities");
 
     if (virGetHostUUID(caps->host.host_uuid)) {
@@ -87,17 +93,22 @@ virCapsPtr virLXCDriverCapsInit(virLXCDriverPtr driver)
         goto error;
     }
 
+    if (!(lxc_path = virFileFindResource("libvirt_lxc",
+                                         abs_topbuilddir "/src",
+                                         LIBEXECDIR)))
+        goto error;
+
     if ((guest = virCapabilitiesAddGuest(caps,
-                                         "exe",
+                                         VIR_DOMAIN_OSTYPE_EXE,
                                          caps->host.arch,
-                                         LIBEXECDIR "/libvirt_lxc",
+                                         lxc_path,
                                          NULL,
                                          0,
                                          NULL)) == NULL)
         goto error;
 
     if (virCapabilitiesAddGuestDomain(guest,
-                                      "lxc",
+                                      VIR_DOMAIN_VIRT_LXC,
                                       NULL,
                                       NULL,
                                       0,
@@ -107,22 +118,24 @@ virCapsPtr virLXCDriverCapsInit(virLXCDriverPtr driver)
     /* On 64-bit hosts, we can use personality() to request a 32bit process */
     if ((altArch = lxcContainerGetAlt32bitArch(caps->host.arch)) != VIR_ARCH_NONE) {
         if ((guest = virCapabilitiesAddGuest(caps,
-                                             "exe",
+                                             VIR_DOMAIN_OSTYPE_EXE,
                                              altArch,
-                                             LIBEXECDIR "/libvirt_lxc",
+                                             lxc_path,
                                              NULL,
                                              0,
                                              NULL)) == NULL)
             goto error;
 
         if (virCapabilitiesAddGuestDomain(guest,
-                                          "lxc",
+                                          VIR_DOMAIN_VIRT_LXC,
                                           NULL,
                                           NULL,
                                           0,
                                           NULL) == NULL)
             goto error;
     }
+
+    VIR_FREE(lxc_path);
 
     if (driver) {
         /* Security driver data */
@@ -155,7 +168,8 @@ virCapsPtr virLXCDriverCapsInit(virLXCDriverPtr driver)
 
     return caps;
 
-error:
+ error:
+    VIR_FREE(lxc_path);
     virObjectUnref(caps);
     return NULL;
 }
@@ -228,7 +242,7 @@ virLXCDriverConfigNew(void)
         goto error;
 
     return cfg;
-error:
+ error:
     virObjectUnref(cfg);
     return NULL;
 }
@@ -240,14 +254,14 @@ virLXCLoadDriverConfig(virLXCDriverConfigPtr cfg,
     virConfPtr conf;
     virConfValuePtr p;
 
-    /* Avoid error from non-existant or unreadable file. */
+    /* Avoid error from non-existent or unreadable file. */
     if (access(filename, R_OK) == -1)
         goto done;
     conf = virConfReadFile(filename, 0);
     if (!conf)
         goto done;
 
-#define CHECK_TYPE(name,typ) if (p && p->type != (typ)) {               \
+#define CHECK_TYPE(name, typ) if (p && p->type != (typ)) {              \
         virReportError(VIR_ERR_INTERNAL_ERROR,                          \
                        "%s: %s: expected type " #typ,                   \
                        filename, (name));                               \
@@ -256,7 +270,7 @@ virLXCLoadDriverConfig(virLXCDriverConfigPtr cfg,
     }
 
     p = virConfGetValue(conf, "log_with_libvirtd");
-    CHECK_TYPE("log_with_libvirtd", VIR_CONF_LONG);
+    CHECK_TYPE("log_with_libvirtd", VIR_CONF_ULONG);
     if (p) cfg->log_libvirtd = p->l;
 
     p = virConfGetValue(conf, "security_driver");
@@ -269,11 +283,11 @@ virLXCLoadDriverConfig(virLXCDriverConfigPtr cfg,
     }
 
     p = virConfGetValue(conf, "security_default_confined");
-    CHECK_TYPE("security_default_confined", VIR_CONF_LONG);
+    CHECK_TYPE("security_default_confined", VIR_CONF_ULONG);
     if (p) cfg->securityDefaultConfined = p->l;
 
     p = virConfGetValue(conf, "security_require_confined");
-    CHECK_TYPE("security_require_confined", VIR_CONF_LONG);
+    CHECK_TYPE("security_require_confined", VIR_CONF_ULONG);
     if (p) cfg->securityRequireConfined = p->l;
 
 
@@ -281,7 +295,7 @@ virLXCLoadDriverConfig(virLXCDriverConfigPtr cfg,
 
     virConfFree(conf);
 
-done:
+ done:
     return 0;
 }
 

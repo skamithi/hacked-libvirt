@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Copyright (C) 2010-2013 Red Hat, Inc.
+# Copyright (C) 2010-2015 Red Hat, Inc.
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -64,8 +64,13 @@ sub fixup_name {
     $name =~ s/Nmi$/NMI/;
     $name =~ s/Pm/PM/;
     $name =~ s/Fstrim$/FSTrim/;
+    $name =~ s/Fsfreeze$/FSFreeze/;
+    $name =~ s/Fsthaw$/FSThaw/;
+    $name =~ s/Fsinfo$/FSInfo/;
+    $name =~ s/Iothread$/IOThread/;
     $name =~ s/Scsi/SCSI/;
     $name =~ s/Wwn$/WWN/;
+    $name =~ s/Dhcp$/DHCP/;
 
     return $name;
 }
@@ -377,7 +382,7 @@ if ($mode eq "debug") {
     }
 }
 
-# Bodies for dispatch functions ("remote_dispatch_bodies.h").
+# Bodies for dispatch functions ("remote_dispatch.h").
 elsif ($mode eq "server") {
     my %generate = map { $_ => 1 } @autogen;
     my @keys = sort (keys %calls);
@@ -422,8 +427,11 @@ elsif ($mode eq "server") {
         print "    void *args$argann,\n";
         print "    void *ret$retann)\n";
         print "{\n";
-        print "  VIR_DEBUG(\"server=%p client=%p msg=%p rerr=%p args=%p ret=%p\", server, client, msg, rerr, args, ret);\n";
-        print "  return $name(server, client, msg, rerr";
+        print "  int rv;\n";
+        print "  virThreadJobSet(\"$name\");\n";
+        print "  VIR_DEBUG(\"server=%p client=%p msg=%p rerr=%p args=%p ret=%p\",\n";
+        print "            server, client, msg, rerr, args, ret);\n";
+        print "  rv = $name(server, client, msg, rerr";
         if ($argtype ne "void") {
             print ", args";
         }
@@ -431,6 +439,8 @@ elsif ($mode eq "server") {
             print ", ret";
         }
         print ");\n";
+        print "  virThreadJobClear(rv);\n";
+        print "  return rv;\n";
         print "}\n";
 
         # Finally we print out the dispatcher method body impl
@@ -465,8 +475,7 @@ elsif ($mode eq "server") {
                      "        goto cleanup;\n");
                 push(@args_list, "dev");
                 push(@free_list,
-                     "    if (dev)\n" .
-                     "        virNodeDeviceFree(dev);");
+                     "    virObjectUnref(dev);");
             }
 
             foreach my $args_member (@{$call->{args_members}}) {
@@ -482,8 +491,7 @@ elsif ($mode eq "server") {
                          "        goto cleanup;\n");
                     push(@args_list, "$2");
                     push(@free_list,
-                         "    if ($2)\n" .
-                         "        vir${type_name}Free($2);");
+                         "    virObjectUnref($2);");
                 } elsif ($args_member =~ m/^remote_nonnull_domain_snapshot /) {
                     push(@vars_list, "virDomainPtr dom = NULL");
                     push(@vars_list, "virDomainSnapshotPtr snapshot = NULL");
@@ -495,10 +503,8 @@ elsif ($mode eq "server") {
                          "        goto cleanup;\n");
                     push(@args_list, "snapshot");
                     push(@free_list,
-                         "    if (snapshot)\n" .
-                         "        virDomainSnapshotFree(snapshot);\n" .
-                         "    if (dom)\n" .
-                         "        virDomainFree(dom);");
+                         "    virObjectUnref(snapshot);\n" .
+                         "    virObjectUnref(dom);");
                 } elsif ($args_member =~ m/^(?:remote_string|remote_uuid) (\S+)<\S+>;/) {
                     if (! @args_list) {
                         push(@args_list, "priv->conn");
@@ -534,7 +540,7 @@ elsif ($mode eq "server") {
                     push(@args_list, "args->$1.$1_len");
                 } elsif ($args_member =~ m/^remote_typed_param (\S+)<(\S+)>;/) {
                     push(@vars_list, "virTypedParameterPtr $1 = NULL");
-                    push(@vars_list, "int n$1 = 0;");
+                    push(@vars_list, "int n$1 = 0");
                     if ($call->{ProcName} eq "NodeSetMemoryParameters") {
                         push(@args_list, "priv->conn");
                     }
@@ -690,8 +696,7 @@ elsif ($mode eq "server") {
                         push(@vars_list, "vir${type_name}Ptr $2 = NULL");
                         push(@ret_list, "make_nonnull_$1(&ret->$2, $2);");
                         push(@free_list,
-                             "    if ($2)\n" .
-                             "        vir${type_name}Free($2);");
+                             "    virObjectUnref($2);");
                         $single_ret_var = $2;
                         $single_ret_by_ref = 0;
                         $single_ret_check = " == NULL";
@@ -841,7 +846,7 @@ elsif ($mode eq "server") {
             push(@free_list_on_error, "    virStreamAbort(st);");
             push(@free_list_on_error, "    daemonFreeClientStream(client, stream);");
             push(@free_list_on_error, "} else {");
-            push(@free_list_on_error, "    virStreamFree(st);");
+            push(@free_list_on_error, "    virObjectUnref(st);");
             push(@free_list_on_error, "}");
         }
 
@@ -927,8 +932,9 @@ elsif ($mode eq "server") {
                 push(@args_list, "priv->conn");
             }
 
-            if ($structprefix eq "qemu" && $call->{ProcName} =~ /^Domain/) {
-                $proc_name =~ s/^(Domain)/${1}Qemu/;
+            if ($structprefix eq "qemu" &&
+                $call->{ProcName} =~ /^(Connect)?Domain/) {
+                $proc_name =~ s/^((Connect)?Domain)/${1}Qemu/;
             }
             if ($structprefix eq "lxc" && $call->{ProcName} =~ /^Domain/) {
                 $proc_name =~ s/^(Domain)/${1}Lxc/;
@@ -1086,7 +1092,6 @@ elsif ($mode eq "client") {
         my @setters_list2 = ();
         my @free_list = ();
         my $priv_src = "conn";
-        my $priv_name = "privateData";
         my $call_args = "&args";
 
         if ($argtype eq "void") {
@@ -1102,7 +1107,6 @@ elsif ($mode eq "client") {
                 !($argtype =~ m/^remote_node_device_lookup_by_name_/) and
                 !($argtype =~ m/^remote_node_device_create_xml_/)) {
                 $has_node_device = 1;
-                $priv_name = "nodeDevicePrivateData";
             }
 
             foreach my $args_member (@{$call->{args_members}}) {
@@ -1120,12 +1124,6 @@ elsif ($mode eq "client") {
                             $priv_src = "$arg_name->domain->conn";
                         } else {
                             $priv_src = "$arg_name->conn";
-                        }
-
-                        if ($name =~ m/^storage_/) {
-                            $priv_name = "storagePrivateData";
-                        } elsif (!($name =~ m/^domain/)) {
-                            $priv_name = "${name}PrivateData";
                         }
                     }
 
@@ -1254,16 +1252,6 @@ elsif ($mode eq "client") {
             push(@args_list, "virConnectPtr conn");
         }
 
-        # fix priv_name for the NumOf* functions
-        if ($priv_name eq "privateData" and
-            !($call->{ProcName} =~ m/(Domains|DomainSnapshot)/) and
-            ($call->{ProcName} =~ m/NumOf(Defined|Domain)*(\S+)s/ or
-             $call->{ProcName} =~ m/List(Defined|Domain)*(\S+)s/)) {
-            my $prefix = lc $2;
-            $prefix =~ s/(pool|vol)$//;
-            $priv_name = "${prefix}PrivateData";
-        }
-
         # handle return values of the function
         my @ret_list = ();
         my @ret_list2 = ();
@@ -1337,14 +1325,6 @@ elsif ($mode eq "client") {
                     my $name = $1;
                     my $arg_name = $2;
                     my $type_name = name_to_TypeName($name);
-
-                    if ($name eq "node_device") {
-                        $priv_name = "nodeDevicePrivateData";
-                    } elsif ($name =~ m/^storage_/) {
-                        $priv_name = "storagePrivateData";
-                    } elsif (!($name =~ m/^domain/)) {
-                        $priv_name = "${name}PrivateData";
-                    }
 
                     if ($call->{ProcName} eq "DomainCreateWithFlags") {
                         # SPECIAL: virDomainCreateWithFlags updates the given
@@ -1471,7 +1451,7 @@ elsif ($mode eq "client") {
         print ")\n";
         print "{\n";
         print "    $single_ret_var;\n";
-        print "    struct private_data *priv = $priv_src->$priv_name;\n";
+        print "    struct private_data *priv = $priv_src->privateData;\n";
 
         foreach my $var (@vars_list) {
             print "    $var;\n";
@@ -1704,7 +1684,7 @@ elsif ($mode eq "client") {
         if ($mode eq "aclsym") {
             my $apiname = "vir" . $call->{ProcName};
             if ($structprefix eq "qemu") {
-                $apiname =~ s/virDomain/virDomainQemu/;
+                $apiname =~ s/(vir(Connect)?Domain)/${1}Qemu/;
             } elsif ($structprefix eq "lxc") {
                 $apiname =~ s/virDomain/virDomainLxc/;
             }
@@ -1744,7 +1724,7 @@ elsif ($mode eq "client") {
 
             my $apiname = "vir" . $call->{ProcName};
             if ($structprefix eq "qemu") {
-                $apiname =~ s/virDomain/virDomainQemu/;
+                $apiname =~ s/(vir(Connect)?Domain)/${1}Qemu/;
             } elsif ($structprefix eq "lxc") {
                 $apiname =~ s/virDomain/virDomainLxc/;
             }
@@ -1856,7 +1836,7 @@ elsif ($mode eq "client") {
 
             my $apiname = "vir" . $call->{ProcName};
             if ($structprefix eq "qemu") {
-                $apiname =~ s/virDomain/virDomainQemu/;
+                $apiname =~ s/(vir(Connect)?Domain)/${1}Qemu/;
             } elsif ($structprefix eq "lxc") {
                 $apiname =~ s/virDomain/virDomainLxc/;
             }

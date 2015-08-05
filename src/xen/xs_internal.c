@@ -54,6 +54,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_XEN
 
+VIR_LOG_INIT("xen.xs_internal");
+
 static void xenStoreWatchEvent(int watch, int fd, int events, void *data);
 static void xenStoreWatchListFree(xenStoreWatchListPtr list);
 
@@ -222,7 +224,7 @@ int
 xenStoreNumOfDomains(virConnectPtr conn)
 {
     unsigned int num;
-    char **idlist = NULL, *endptr;
+    char **idlist = NULL;
     size_t i;
     int ret = -1, realnum = 0;
     long id;
@@ -231,8 +233,7 @@ xenStoreNumOfDomains(virConnectPtr conn)
     idlist = xs_directory(priv->xshandle, 0, "/local/domain", &num);
     if (idlist) {
         for (i = 0; i < num; i++) {
-            id = strtol(idlist[i], &endptr, 10);
-            if ((endptr == idlist[i]) || (*endptr != 0))
+            if (virStrToLong_l(idlist[i], NULL, 10, &id) < 0)
                 goto out;
 
             /* Sometimes xenstore has stale domain IDs, so filter
@@ -240,7 +241,7 @@ xenStoreNumOfDomains(virConnectPtr conn)
             if (xenHypervisorHasDomain(conn, (int)id))
                 realnum++;
         }
-out:
+ out:
         VIR_FREE(idlist);
         ret = realnum;
     }
@@ -264,7 +265,7 @@ xenStoreDoListDomains(virConnectPtr conn,
                       int *ids,
                       int maxids)
 {
-    char **idlist = NULL, *endptr;
+    char **idlist = NULL;
     unsigned int num;
     size_t i;
     int ret = -1;
@@ -275,8 +276,7 @@ xenStoreDoListDomains(virConnectPtr conn,
         goto out;
 
     for (ret = 0, i = 0; (i < num) && (ret < maxids); i++) {
-        id = strtol(idlist[i], &endptr, 10);
-        if ((endptr == idlist[i]) || (*endptr != 0))
+        if (virStrToLong_l(idlist[i], NULL, 10, &id) < 0)
             goto out;
 
         /* Sometimes xenstore has stale domain IDs, so filter
@@ -285,7 +285,7 @@ xenStoreDoListDomains(virConnectPtr conn,
             ids[ret++] = (int) id;
     }
 
-out:
+ out:
     VIR_FREE(idlist);
     return ret;
 }
@@ -335,10 +335,7 @@ xenStoreDomainGetVNCPort(virConnectPtr conn, int domid)
 
     tmp = virDomainDoStoreQuery(conn, domid, "console/vnc-port");
     if (tmp != NULL) {
-        char *end;
-        ret = strtol(tmp, &end, 10);
-        if (ret == 0 && end == tmp)
-            ret = -1;
+        ignore_value(virStrToLong_i(tmp, NULL, 10, &ret));
         VIR_FREE(tmp);
     }
     return ret;
@@ -353,7 +350,7 @@ xenStoreDomainGetVNCPort(virConnectPtr conn, int domid)
  * serial console is attached.
  *
  * Returns the path to the serial console. It is the callers
- * responsibilty to free() the return string. Returns NULL
+ * responsibility to free() the return string. Returns NULL
  * on error
  *
  * The caller must hold the lock on the privateData
@@ -374,7 +371,7 @@ xenStoreDomainGetConsolePath(virConnectPtr conn, int domid)
  * serial console is attached.
  *
  * Returns the path to the serial console. It is the callers
- * responsibilty to free() the return string. Returns NULL
+ * responsibility to free() the return string. Returns NULL
  * on error
  *
  * The caller must hold the lock on the privateData
@@ -666,17 +663,12 @@ xenStoreAddWatch(virConnectPtr conn,
         VIR_STRDUP(watch->token, token) < 0)
         goto error;
 
-    /* Make space on list */
-    n = list->count;
-    if (VIR_REALLOC_N(list->watches, n + 1) < 0)
+    if (VIR_APPEND_ELEMENT_COPY(list->watches, list->count, watch) < 0)
         goto error;
-
-    list->watches[n] = watch;
-    list->count++;
 
     return xs_watch(priv->xshandle, watch->path, watch->token);
 
-  error:
+ error:
     if (watch) {
         VIR_FREE(watch->path);
         VIR_FREE(watch->token);
@@ -719,17 +711,7 @@ xenStoreRemoveWatch(virConnectPtr conn, const char *path, const char *token)
             VIR_FREE(list->watches[i]->token);
             VIR_FREE(list->watches[i]);
 
-            if (i < (list->count - 1))
-                memmove(list->watches + i,
-                        list->watches + i + 1,
-                        sizeof(*(list->watches)) *
-                                (list->count - (i + 1)));
-
-            if (VIR_REALLOC_N(list->watches,
-                              list->count - 1) < 0) {
-                ; /* Failure to reduce memory allocation isn't fatal */
-            }
-            list->count--;
+            VIR_DELETE_ELEMENT(list->watches, i, list->count);
             return 0;
         }
     }
@@ -786,7 +768,7 @@ xenStoreWatchEvent(int watch ATTRIBUTE_UNUSED,
         sw->cb(conn, path, token, sw->opaque);
     VIR_FREE(event);
 
-cleanup:
+ cleanup:
     xenUnifiedUnlock(priv);
 }
 
@@ -810,7 +792,7 @@ xenStoreDomainIntroduced(virConnectPtr conn,
 
     xenUnifiedPrivatePtr priv = opaque;
 
-retry:
+ retry:
     new_domain_cnt = xenStoreNumOfDomains(conn);
     if (new_domain_cnt < 0)
         return -1;
@@ -893,7 +875,7 @@ xenStoreDomainReleased(virConnectPtr conn,
 
     if (!priv->activeDomainList->count) return 0;
 
-retry:
+ retry:
     new_domain_cnt = xenStoreNumOfDomains(conn);
     if (new_domain_cnt < 0)
         return -1;

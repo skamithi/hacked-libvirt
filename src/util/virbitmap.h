@@ -35,6 +35,7 @@ typedef virBitmap *virBitmapPtr;
 /*
  * Allocate a bitmap capable of containing @size bits.
  */
+virBitmapPtr virBitmapNewQuiet(size_t size) ATTRIBUTE_RETURN_CHECK;
 virBitmapPtr virBitmapNew(size_t size) ATTRIBUTE_RETURN_CHECK;
 
 /*
@@ -61,6 +62,11 @@ int virBitmapClearBit(virBitmapPtr bitmap, size_t b)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
 
 /*
+ * Get bit @b in @bitmap. Returns false if b is out of range.
+ */
+bool virBitmapIsBitSet(virBitmapPtr bitmap, size_t b)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
+/*
  * Get setting of bit position @b in @bitmap and store in @result
  */
 int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
@@ -69,8 +75,7 @@ int virBitmapGetBit(virBitmapPtr bitmap, size_t b, bool *result)
 char *virBitmapString(virBitmapPtr bitmap)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
 
-char *virBitmapFormat(virBitmapPtr bitmap)
-    ATTRIBUTE_NONNULL(1);
+char *virBitmapFormat(virBitmapPtr bitmap);
 
 int virBitmapParse(const char *str,
                    char sep,
@@ -85,8 +90,7 @@ virBitmapPtr virBitmapNewData(void *data, int len) ATTRIBUTE_NONNULL(1);
 int virBitmapToData(virBitmapPtr bitmap, unsigned char **data, int *dataLen)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
-bool virBitmapEqual(virBitmapPtr b1, virBitmapPtr b2)
-    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
+bool virBitmapEqual(virBitmapPtr b1, virBitmapPtr b2);
 
 size_t virBitmapSize(virBitmapPtr bitmap)
     ATTRIBUTE_NONNULL(1);
@@ -106,10 +110,20 @@ bool virBitmapIsAllClear(virBitmapPtr bitmap)
 ssize_t virBitmapNextSetBit(virBitmapPtr bitmap, ssize_t pos)
     ATTRIBUTE_NONNULL(1);
 
+ssize_t virBitmapLastSetBit(virBitmapPtr bitmap)
+    ATTRIBUTE_NONNULL(1);
+
 ssize_t virBitmapNextClearBit(virBitmapPtr bitmap, ssize_t pos)
     ATTRIBUTE_NONNULL(1);
 
 size_t virBitmapCountBits(virBitmapPtr bitmap)
     ATTRIBUTE_NONNULL(1);
+
+char *virBitmapDataToString(void *data,
+                            int len)
+    ATTRIBUTE_NONNULL(1);
+bool virBitmapOverlaps(virBitmapPtr b1,
+                       virBitmapPtr b2)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 
 #endif

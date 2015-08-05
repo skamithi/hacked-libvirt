@@ -1,7 +1,7 @@
 /*
  * virsh-network.c: Commands to manage network
  *
- * Copyright (C) 2005, 2007-2014 Red Hat, Inc.
+ * Copyright (C) 2005, 2007-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,16 +26,11 @@
 #include <config.h>
 #include "virsh-network.h"
 
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-#include <libxml/xpath.h>
-#include <libxml/xmlsave.h>
-
 #include "internal.h"
 #include "virbuffer.h"
 #include "viralloc.h"
 #include "virfile.h"
-#include "virxml.h"
+#include "virstring.h"
 #include "conf/network_conf.h"
 
 virNetworkPtr
@@ -46,9 +41,6 @@ vshCommandOptNetworkBy(vshControl *ctl, const vshCmd *cmd,
     const char *n = NULL;
     const char *optname = "network";
     virCheckFlags(VSH_BYUUID | VSH_BYNAME, NULL);
-
-    if (!vshCmdHasOption(ctl, cmd, optname))
-        return NULL;
 
     if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
         return NULL;
@@ -189,10 +181,11 @@ cmdNetworkCreate(vshControl *ctl, const vshCmd *cmd)
  */
 static const vshCmdInfo info_network_define[] = {
     {.name = "help",
-     .data = N_("define (but don't start) a network from an XML file")
+     .data = N_("define an inactive persistent virtual network or modify "
+                "an existing persistent one from an XML file")
     },
     {.name = "desc",
-     .data = N_("Define a network.")
+     .data = N_("Define or modify a persistent virtual network.")
     },
     {.name = NULL}
 };
@@ -480,7 +473,7 @@ vshNetworkListCollect(vshControl *ctl,
     goto cleanup;
 
 
-fallback:
+ fallback:
     /* fall back to old method (0.10.1 and older) */
     vshResetLibvirtError();
 
@@ -550,7 +543,7 @@ fallback:
     /* truncate networks that weren't found */
     deleted = nAllNets - list->nnets;
 
-filter:
+ filter:
     /* filter list the list if the list was acquired by fallback means */
     for (i = 0; i < list->nnets; i++) {
         net = list->nets[i];
@@ -581,14 +574,14 @@ filter:
         /* the pool matched all filters, it may stay */
         continue;
 
-remove_entry:
+ remove_entry:
         /* the pool has to be removed as it failed one of the filters */
         virNetworkFree(list->nets[i]);
         list->nets[i] = NULL;
         deleted++;
     }
 
-finished:
+ finished:
     /* sort the list */
     if (list->nets && list->nnets)
         qsort(list->nets, list->nnets,
@@ -600,7 +593,7 @@ finished:
 
     success = true;
 
-cleanup:
+ cleanup:
     for (i = 0; i < nAllNets; i++)
         VIR_FREE(names[i]);
     VIR_FREE(names);
@@ -798,10 +791,10 @@ cmdNetworkStart(vshControl *ctl, const vshCmd *cmd)
  */
 static const vshCmdInfo info_network_undefine[] = {
     {.name = "help",
-     .data = N_("undefine an inactive network")
+     .data = N_("undefine a persistent network")
     },
     {.name = "desc",
-     .data = N_("Undefine the configuration for an inactive network.")
+     .data = N_("Undefine the configuration for a persistent network.")
     },
     {.name = NULL}
 };
@@ -944,7 +937,9 @@ cmdNetworkUpdate(vshControl *ctl, const vshCmd *cmd)
     }
 
     if (vshCommandOptInt(cmd, "parent-index", &parentIndex) < 0) {
-        vshError(ctl, "%s", _("malformed parent-index argument"));
+        vshError(ctl,
+                 _("Numeric value for <%s> option is malformed or out of range"),
+                 "parent-index");
         goto cleanup;
     }
 
@@ -974,7 +969,7 @@ cmdNetworkUpdate(vshControl *ctl, const vshCmd *cmd)
     if (current) {
         if (live || config) {
             vshError(ctl, "%s", _("--current must be specified exclusively"));
-            return false;
+            goto cleanup;
         }
         flags |= VIR_NETWORK_UPDATE_AFFECT_CURRENT;
     } else {
@@ -1007,7 +1002,7 @@ cmdNetworkUpdate(vshControl *ctl, const vshCmd *cmd)
     vshPrint(ctl, _("Updated network %s %s"),
              virNetworkGetName(network), affected);
     ret = true;
-cleanup:
+ cleanup:
     vshReportError(ctl);
     virNetworkFree(network);
     VIR_FREE(xmlFromFile);
@@ -1105,15 +1100,15 @@ cmdNetworkEdit(vshControl *ctl, const vshCmd *cmd)
         goto cleanup;
 
 #define EDIT_GET_XML vshNetworkGetXMLDesc(network)
-#define EDIT_NOT_CHANGED \
-    vshPrint(ctl, _("Network %s XML configuration not changed.\n"), \
-             virNetworkGetName(network));                           \
-    ret = true; goto edit_cleanup;
+#define EDIT_NOT_CHANGED                                                \
+    do {                                                                \
+        vshPrint(ctl, _("Network %s XML configuration not changed.\n"), \
+                 virNetworkGetName(network));                           \
+        ret = true;                                                     \
+        goto edit_cleanup;                                              \
+    } while (0)
 #define EDIT_DEFINE \
     (network_edited = virNetworkDefineXML(ctl->conn, doc_edited))
-#define EDIT_FREE \
-    if (network_edited) \
-        virNetworkFree(network_edited);
 #include "virsh-edit.c"
 
     vshPrint(ctl, _("Network %s XML configuration edited.\n"),
@@ -1180,7 +1175,7 @@ vshEventLifecyclePrint(virConnectPtr conn ATTRIBUTE_UNUSED,
 }
 
 static const vshCmdInfo info_network_event[] = {
-    {.name = "net-event",
+    {.name = "help",
      .data = N_("Network Events")
     },
     {.name = "desc",
@@ -1191,11 +1186,11 @@ static const vshCmdInfo info_network_event[] = {
 
 static const vshCmdOptDef opts_network_event[] = {
     {.name = "network",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("filter by network name or uuid")
     },
     {.name = "event",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("which event type to wait for")
     },
     {.name = "loop",
@@ -1238,7 +1233,7 @@ cmdNetworkEvent(vshControl *ctl, const vshCmd *cmd)
         vshError(ctl, "%s", _("either --list or event type is required"));
         return false;
     }
-    if ((event = vshNetworkEventIdTypeFromString(eventName) < 0)) {
+    if ((event = vshNetworkEventIdTypeFromString(eventName)) < 0) {
         vshError(ctl, _("unknown event type %s"), eventName);
         return false;
     }
@@ -1274,7 +1269,7 @@ cmdNetworkEvent(vshControl *ctl, const vshCmd *cmd)
     if (data.count)
         ret = true;
 
-cleanup:
+ cleanup:
     vshEventCleanup(ctl);
     if (eventId >= 0 &&
         virConnectNetworkEventDeregisterAny(ctl->conn, eventId) < 0)
@@ -1284,6 +1279,121 @@ cleanup:
     return ret;
 }
 
+
+/*
+ * "net-dhcp-leases" command
+ */
+static const vshCmdInfo info_network_dhcp_leases[] = {
+    {.name = "help",
+     .data = N_("print lease info for a given network")
+    },
+    {.name = "desc",
+     .data = N_("Print lease info for a given network")
+    },
+    {.name = NULL}
+};
+
+static const vshCmdOptDef opts_network_dhcp_leases[] = {
+    {.name = "network",
+     .type = VSH_OT_DATA,
+     .flags = VSH_OFLAG_REQ,
+     .help = N_("network name or uuid")
+    },
+    {.name = "mac",
+     .type = VSH_OT_STRING,
+     .flags = VSH_OFLAG_NONE,
+     .help = N_("MAC address")
+    },
+    {.name = NULL}
+};
+
+static int
+vshNetworkDHCPLeaseSorter(const void *a, const void *b)
+{
+    int rv = -1;
+
+    virNetworkDHCPLeasePtr *lease1 = (virNetworkDHCPLeasePtr *) a;
+    virNetworkDHCPLeasePtr *lease2 = (virNetworkDHCPLeasePtr *) b;
+
+    if (*lease1 && !*lease2)
+        return -1;
+
+    if (!*lease1)
+        return *lease2 != NULL;
+
+    rv = vshStrcasecmp((*lease1)->mac, (*lease2)->mac);
+    return rv;
+}
+
+static bool
+cmdNetworkDHCPLeases(vshControl *ctl, const vshCmd *cmd)
+{
+    const char *name = NULL;
+    const char *mac = NULL;
+    virNetworkDHCPLeasePtr *leases = NULL;
+    int nleases = 0;
+    bool ret = false;
+    size_t i;
+    unsigned int flags = 0;
+    virNetworkPtr network = NULL;
+
+    if (vshCommandOptString(cmd, "mac", &mac) < 0)
+        return false;
+
+    if (!(network = vshCommandOptNetwork(ctl, cmd, &name)))
+        return false;
+
+    if ((nleases = virNetworkGetDHCPLeases(network, mac, &leases, flags)) < 0) {
+        vshError(ctl, _("Failed to get leases info for %s"), name);
+        goto cleanup;
+    }
+
+    /* Sort the list according to MAC Address/IAID */
+    qsort(leases, nleases, sizeof(*leases), vshNetworkDHCPLeaseSorter);
+
+    vshPrintExtra(ctl, " %-20s %-18s %-9s %-25s %-15s %s\n%s%s\n",
+                  _("Expiry Time"), _("MAC address"), _("Protocol"),
+                  _("IP address"), _("Hostname"), _("Client ID or DUID"),
+                  "----------------------------------------------------------",
+                  "---------------------------------------------------------");
+
+    for (i = 0; i < nleases; i++) {
+        const char *typestr = NULL;
+        char *cidr_format = NULL;
+        virNetworkDHCPLeasePtr lease = leases[i];
+        time_t expirytime_tmp = lease->expirytime;
+        struct tm ts;
+        char expirytime[32];
+        ts = *localtime_r(&expirytime_tmp, &ts);
+        strftime(expirytime, sizeof(expirytime), "%Y-%m-%d %H:%M:%S", &ts);
+
+        if (lease->type == VIR_IP_ADDR_TYPE_IPV4)
+            typestr = "ipv4";
+        else if (lease->type == VIR_IP_ADDR_TYPE_IPV6)
+            typestr = "ipv6";
+
+        ignore_value(virAsprintf(&cidr_format, "%s/%d",
+                                 lease->ipaddr, lease->prefix));
+
+        vshPrint(ctl, " %-20s %-18s %-9s %-25s %-15s %s\n",
+                 expirytime, EMPTYSTR(lease->mac),
+                 EMPTYSTR(typestr), cidr_format,
+                 EMPTYSTR(lease->hostname), EMPTYSTR(lease->clientid));
+
+        VIR_FREE(cidr_format);
+    }
+
+    ret = true;
+
+ cleanup:
+    if (leases) {
+        for (i = 0; i < nleases; i++)
+            virNetworkDHCPLeaseFree(leases[i]);
+        VIR_FREE(leases);
+    }
+    virNetworkFree(network);
+    return ret;
+}
 
 const vshCmdDef networkCmds[] = {
     {.name = "net-autostart",
@@ -1309,6 +1419,12 @@ const vshCmdDef networkCmds[] = {
      .opts = opts_network_destroy,
      .info = info_network_destroy,
      .flags = 0
+    },
+    {.name = "net-dhcp-leases",
+     .handler = cmdNetworkDHCPLeases,
+     .opts = opts_network_dhcp_leases,
+     .info = info_network_dhcp_leases,
+     .flags = 0,
     },
     {.name = "net-dumpxml",
      .handler = cmdNetworkDumpXML,

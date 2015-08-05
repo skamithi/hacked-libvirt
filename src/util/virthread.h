@@ -1,7 +1,7 @@
 /*
  * virthread.h: basic thread synchronization primitives
  *
- * Copyright (C) 2009-2011, 2013 Red Hat, Inc.
+ * Copyright (C) 2009-2011, 2013-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -71,6 +71,11 @@ struct virOnceControl {
 };
 
 
+# define VIR_MUTEX_INITIALIZER            \
+    {                                     \
+        .lock = PTHREAD_MUTEX_INITIALIZER \
+    }
+
 # define VIR_ONCE_CONTROL_INITIALIZER \
     {                                 \
         .once = PTHREAD_ONCE_INIT     \
@@ -83,10 +88,15 @@ void virThreadOnExit(void);
 
 typedef void (*virThreadFunc)(void *opaque);
 
-int virThreadCreate(virThreadPtr thread,
-                    bool joinable,
-                    virThreadFunc func,
-                    void *opaque) ATTRIBUTE_RETURN_CHECK;
+# define virThreadCreate(thread, joinable, func, opaque) \
+    virThreadCreateFull(thread, joinable, func, #func, false, opaque)
+
+int virThreadCreateFull(virThreadPtr thread,
+                        bool joinable,
+                        virThreadFunc func,
+                        const char *funcName,
+                        bool worker,
+                        void *opaque) ATTRIBUTE_RETURN_CHECK;
 void virThreadSelf(virThreadPtr thread);
 bool virThreadIsSelf(virThreadPtr thread);
 void virThreadJoin(virThreadPtr thread);
@@ -182,7 +192,7 @@ int virThreadLocalSet(virThreadLocalPtr l, void*) ATTRIBUTE_RETURN_CHECK;
  */
 # define VIR_ONCE_GLOBAL_INIT(classname)                                \
     static virOnceControl classname ## OnceControl = VIR_ONCE_CONTROL_INITIALIZER; \
-    static virErrorPtr classname ## OnceError = NULL;                   \
+    static virErrorPtr classname ## OnceError;                          \
                                                                         \
     static void classname ## Once(void)                                 \
     {                                                                   \

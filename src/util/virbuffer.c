@@ -1,7 +1,7 @@
 /*
  * virbuffer.c: buffers for libvirt
  *
- * Copyright (C) 2005-2008, 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2005-2008, 2010-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -32,6 +32,7 @@
 
 #include "virbuffer.h"
 #include "viralloc.h"
+#include "virerror.h"
 
 
 /* If adding more fields, ensure to edit buf.h to match
@@ -161,14 +162,54 @@ virBufferAdd(virBufferPtr buf, const char *str, int len)
         len = strlen(str);
 
     needSize = buf->use + indent + len + 2;
-    if (needSize > buf->size &&
-        virBufferGrow(buf, needSize - buf->use) < 0)
+    if (virBufferGrow(buf, needSize - buf->use) < 0)
         return;
 
     memset(&buf->content[buf->use], ' ', indent);
     memcpy(&buf->content[buf->use + indent], str, len);
     buf->use += indent + len;
     buf->content[buf->use] = '\0';
+}
+
+/**
+ * virBufferAddBuffer:
+ * @buf: the buffer to append to
+ * @toadd: the buffer to append
+ *
+ * Add a buffer into another buffer without need to go through:
+ * virBufferContentAndReset(), virBufferAdd(). Auto indentation
+ * is (intentionally) NOT applied!
+ *
+ * Moreover, be aware that @toadd is eaten with hair. IOW, the
+ * @toadd buffer is reset after this.
+ */
+void
+virBufferAddBuffer(virBufferPtr buf, virBufferPtr toadd)
+{
+    unsigned int needSize;
+
+    if (!toadd)
+        return;
+
+    if (!buf)
+        goto done;
+
+    if (buf->error || toadd->error) {
+        if (!buf->error)
+            buf->error = toadd->error;
+        goto done;
+    }
+
+    needSize = buf->use + toadd->use;
+    if (virBufferGrow(buf, needSize - buf->use) < 0)
+        goto done;
+
+    memcpy(&buf->content[buf->use], toadd->content, toadd->use);
+    buf->use += toadd->use;
+    buf->content[buf->use] = '\0';
+
+ done:
+    virBufferFreeAndReset(toadd);
 }
 
 /**
@@ -264,6 +305,36 @@ virBufferError(const virBuffer *buf)
 }
 
 /**
+ * virBufferCheckErrorInternal:
+ * @buf: the buffer
+ *
+ * Report an error if the buffer is in an error state.
+ *
+ * Return -1 if an error has been reported, 0 otherwise.
+ */
+int
+virBufferCheckErrorInternal(const virBuffer *buf,
+                            int domcode,
+                            const char *filename,
+                            const char *funcname,
+                            size_t linenr)
+{
+    if (buf->error == 0)
+        return 0;
+
+    if (buf->error == ENOMEM) {
+        virReportOOMErrorFull(domcode, filename, funcname, linenr);
+        errno = ENOMEM;
+    } else {
+        virReportErrorHelper(domcode, VIR_ERR_INTERNAL_ERROR, filename,
+                             funcname, linenr, "%s",
+                             _("Invalid buffer API usage"));
+        errno = EINVAL;
+    }
+    return -1;
+}
+
+/**
  * virBufferUse:
  * @buf: the usage of the string in the buffer
  *
@@ -337,9 +408,8 @@ virBufferVasprintf(virBufferPtr buf, const char *format, va_list argptr)
         buf->content[buf->use] = 0;
 
         grow_size = (count + 1 > 1000) ? count + 1 : 1000;
-        if (virBufferGrow(buf, grow_size) < 0) {
+        if (virBufferGrow(buf, grow_size) < 0)
             return;
-        }
 
         size = buf->size - buf->use;
         if ((count = vsnprintf(&buf->content[buf->use],
@@ -350,6 +420,15 @@ virBufferVasprintf(virBufferPtr buf, const char *format, va_list argptr)
     }
     buf->use += count;
 }
+
+/* Work around spurious strchr() diagnostics given by -Wlogical-op
+ * for gcc < 4.6.  Doing it via a local pragma keeps the damage
+ * smaller than disabling it on the package level.  Unfortunately, the
+ * affected GCCs don't allow diagnostic push/pop which would have
+ * further reduced the impact. */
+#if BROKEN_GCC_WLOGICALOP
+# pragma GCC diagnostic ignored "-Wlogical-op"
+#endif
 
 /**
  * virBufferEscapeString:
@@ -368,6 +447,13 @@ virBufferEscapeString(virBufferPtr buf, const char *format, const char *str)
     int len;
     char *escaped, *out;
     const char *cur;
+    const char forbidden_characters[] = {
+        0x01,   0x02,   0x03,   0x04,   0x05,   0x06,   0x07,   0x08,
+        /*\t*/  /*\n*/  0x0B,   0x0C,   /*\r*/  0x0E,   0x0F,   0x10,
+        0x11,   0x12,   0x13,   0x14,   0x15,   0x16,   0x17,   0x18,
+        0x19,   '"',    '&',    '\'',   '<',    '>',
+        '\0'
+    };
 
     if ((format == NULL) || (buf == NULL) || (str == NULL))
         return;
@@ -376,7 +462,7 @@ virBufferEscapeString(virBufferPtr buf, const char *format, const char *str)
         return;
 
     len = strlen(str);
-    if (strcspn(str, "<>&'\"") == len) {
+    if (strcspn(str, forbidden_characters) == len) {
         virBufferAsprintf(buf, format, str);
         return;
     }
@@ -420,8 +506,7 @@ virBufferEscapeString(virBufferPtr buf, const char *format, const char *str)
             *out++ = 'o';
             *out++ = 's';
             *out++ = ';';
-        } else if (((unsigned char)*cur >= 0x20) || (*cur == '\n') || (*cur == '\t') ||
-                   (*cur == '\r')) {
+        } else if (!strchr(forbidden_characters, *cur)) {
             /*
              * default case, just copy !
              * Note that character over 0x80 are likely to give problem
@@ -429,6 +514,8 @@ virBufferEscapeString(virBufferPtr buf, const char *format, const char *str)
              * it's hard to handle properly we have to assume it's UTF-8 too
              */
             *out++ = *cur;
+        } else {
+            /* silently ignore control characters */
         }
         cur++;
     }
@@ -457,15 +544,6 @@ virBufferEscapeSexpr(virBufferPtr buf,
     virBufferEscape(buf, '\\', "\\'", format, str);
 }
 
-/* Work around spurious strchr() diagnostics given by -Wlogical-op
- * for gcc < 4.6.  Doing it via a local pragma keeps the damage
- * smaller than disabling it on the package level.  Unfortunately, the
- * affected GCCs don't allow diagnostic push/pop which would have
- * further reduced the impact. */
-#if BROKEN_GCC_WLOGICALOP
-# pragma GCC diagnostic ignored "-Wlogical-op"
-#endif
-
 /**
  * virBufferEscape:
  * @buf: the buffer to append to
@@ -475,8 +553,9 @@ virBufferEscapeSexpr(virBufferPtr buf,
  * @str: the string argument which needs to be escaped
  *
  * Do a formatted print with a single string to a buffer.  Any characters
- * in the provided list are escaped with the given escape.  Auto indentation
- * may be applied.
+ * in the provided list that are contained in @str are escaped with the
+ * given escape.  Escaping is not applied to characters specified in @format.
+ * Auto indentation may be applied.
  */
 void
 virBufferEscape(virBufferPtr buf, char escape, const char *toescape,
@@ -554,9 +633,9 @@ virBufferURIEncodeString(virBufferPtr buf, const char *str)
         return;
 
     for (p = str; *p; ++p) {
-        if (c_isalnum(*p))
+        if (c_isalnum(*p)) {
             buf->content[buf->use++] = *p;
-        else {
+        } else {
             uc = (unsigned char) *p;
             buf->content[buf->use++] = '%';
             buf->content[buf->use++] = hex[uc >> 4];
@@ -684,4 +763,33 @@ virBufferTrim(virBufferPtr buf, const char *str, int len)
     }
     buf->use -= len < 0 ? len2 : len;
     buf->content[buf->use] = '\0';
+}
+
+
+/**
+ * virBufferAddStr:
+ * @buf: the buffer to append to
+ * @str: string to append
+ *
+ * Appends @str to @buffer. Applies autoindentation on the separate lines of
+ * @str.
+ */
+void
+virBufferAddStr(virBufferPtr buf,
+                const char *str)
+{
+    const char *end;
+
+    if (!buf || !str || buf->error)
+        return;
+
+    while (*str) {
+        if ((end = strchr(str, '\n'))) {
+            virBufferAdd(buf, str, (end - str) + 1);
+            str = end + 1;
+        } else {
+            virBufferAdd(buf, str, -1);
+            break;
+        }
+    }
 }

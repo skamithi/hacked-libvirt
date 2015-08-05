@@ -1,7 +1,7 @@
 /*
  * virusb.c: helper APIs for managing host USB devices
  *
- * Copyright (C) 2009-2013 Red Hat, Inc.
+ * Copyright (C) 2009-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -45,8 +45,9 @@
 #define USB_ID_LEN 10 /* "1234 5678" */
 #define USB_ADDR_LEN 8 /* "123:456" */
 
-/* For virReportOOMError()  and virReportSystemError() */
 #define VIR_FROM_THIS VIR_FROM_NONE
+
+VIR_LOG_INIT("util.usb");
 
 struct _virUSBDevice {
     unsigned int      bus;
@@ -55,7 +56,10 @@ struct _virUSBDevice {
     char          name[USB_ADDR_LEN]; /* domain:bus:slot.function */
     char          id[USB_ID_LEN];     /* product vendor */
     char          *path;
-    const char    *used_by;           /* name of the domain using this dev */
+
+    /* driver:domain using this dev */
+    char          *used_by_drvname;
+    char          *used_by_domname;
 };
 
 struct _virUSBDeviceList {
@@ -109,7 +113,7 @@ static int virUSBSysReadFile(const char *f_name, const char *d_name,
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FREE(filename);
     VIR_FREE(buf);
     return ret;
@@ -129,6 +133,7 @@ virUSBDeviceSearch(unsigned int vendor,
     struct dirent *de;
     virUSBDeviceListPtr list = NULL, ret = NULL;
     virUSBDevicePtr usb;
+    int direrr;
 
     if (!(list = virUSBDeviceListNew()))
         goto cleanup;
@@ -141,7 +146,7 @@ virUSBDeviceSearch(unsigned int vendor,
         goto cleanup;
     }
 
-    while ((de = readdir(dir))) {
+    while ((direrr = virDirRead(dir, &de, USB_SYSFS "/devices")) > 0) {
         unsigned int found_prod, found_vend, found_bus, found_devno;
         char *tmpstr = de->d_name;
 
@@ -192,9 +197,11 @@ virUSBDeviceSearch(unsigned int vendor,
         if (found)
             break;
     }
+    if (direrr < 0)
+        goto cleanup;
     ret = list;
 
-cleanup:
+ cleanup:
     if (dir) {
         int saved_errno = errno;
         closedir(dir);
@@ -375,19 +382,33 @@ virUSBDeviceFree(virUSBDevicePtr dev)
         return;
     VIR_DEBUG("%s %s: freeing", dev->id, dev->name);
     VIR_FREE(dev->path);
+    VIR_FREE(dev->used_by_drvname);
+    VIR_FREE(dev->used_by_domname);
     VIR_FREE(dev);
 }
 
-
-void virUSBDeviceSetUsedBy(virUSBDevicePtr dev,
-                           const char *name)
+int
+virUSBDeviceSetUsedBy(virUSBDevicePtr dev,
+                      const char *drv_name,
+                      const char *dom_name)
 {
-    dev->used_by = name;
+    VIR_FREE(dev->used_by_drvname);
+    VIR_FREE(dev->used_by_domname);
+    if (VIR_STRDUP(dev->used_by_drvname, drv_name) < 0)
+        return -1;
+    if (VIR_STRDUP(dev->used_by_domname, dom_name) < 0)
+        return -1;
+
+    return 0;
 }
 
-const char * virUSBDeviceGetUsedBy(virUSBDevicePtr dev)
+void
+virUSBDeviceGetUsedBy(virUSBDevicePtr dev,
+                      const char **drv_name,
+                      const char **dom_name)
 {
-    return dev->used_by;
+    *drv_name = dev->used_by_drvname;
+    *dom_name = dev->used_by_domname;
 }
 
 const char *virUSBDeviceGetName(virUSBDevicePtr dev)

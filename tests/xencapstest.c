@@ -18,7 +18,6 @@ static int
 testCompareFiles(virArch hostmachine, const char *xml_rel,
                  const char *cpuinfo_rel, const char *capabilities_rel)
 {
-  char *expectxml = NULL;
   char *actualxml = NULL;
   FILE *fp1 = NULL, *fp2 = NULL;
   virCapsPtr caps = NULL;
@@ -34,9 +33,6 @@ testCompareFiles(virArch hostmachine, const char *xml_rel,
       virAsprintf(&capabilities, "%s/%s", abs_srcdir, capabilities_rel) < 0)
       goto fail;
 
-  if (virtTestLoadFile(xml, &expectxml) < 0)
-      goto fail;
-
   if (!(fp1 = fopen(cpuinfo, "r")))
       goto fail;
 
@@ -49,15 +45,12 @@ testCompareFiles(virArch hostmachine, const char *xml_rel,
   if (!(actualxml = virCapabilitiesFormatXML(caps)))
       goto fail;
 
-  if (STRNEQ(expectxml, actualxml)) {
-      virtTestDifference(stderr, expectxml, actualxml);
+  if (virtTestCompareToFile(actualxml, xml) < 0)
       goto fail;
-  }
 
   ret = 0;
 
  fail:
-  VIR_FREE(expectxml);
   VIR_FREE(actualxml);
   VIR_FREE(xml);
   VIR_FREE(cpuinfo);
@@ -69,21 +62,24 @@ testCompareFiles(virArch hostmachine, const char *xml_rel,
   return ret;
 }
 
-static int testXeni686(const void *data ATTRIBUTE_UNUSED) {
+static int testXeni686(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_I686,
                             "xencapsdata/xen-i686.xml",
                             "xencapsdata/xen-i686.cpuinfo",
                             "xencapsdata/xen-i686.caps");
 }
 
-static int testXeni686PAE(const void *data ATTRIBUTE_UNUSED) {
+static int testXeni686PAE(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_I686,
                             "xencapsdata/xen-i686-pae.xml",
                             "xencapsdata/xen-i686-pae.cpuinfo",
                             "xencapsdata/xen-i686-pae.caps");
 }
 
-static int testXeni686PAEHVM(const void *data ATTRIBUTE_UNUSED) {
+static int testXeni686PAEHVM(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_I686,
                             "xencapsdata/xen-i686-pae-hvm.xml",
                             "xencapsdata/xen-i686-pae-hvm.cpuinfo",
@@ -93,7 +89,8 @@ static int testXeni686PAEHVM(const void *data ATTRIBUTE_UNUSED) {
 /* No PAE + HVM is non-sensical - all VMX capable
    CPUs have PAE */
 /*
-static int testXeni686HVM(const void *data ATTRIBUTE_UNUSED) {
+static int testXeni686HVM(const void *data ATTRIBUTE_UNUSED)
+{
   return testCompareFiles(VIR_ARCH_I686,
                           "xencapsdata/xen-i686-hvm.xml",
                           "xencapsdata/xen-i686.cpuinfo",
@@ -101,46 +98,53 @@ static int testXeni686HVM(const void *data ATTRIBUTE_UNUSED) {
 }
 */
 
-static int testXenx86_64(const void *data ATTRIBUTE_UNUSED) {
+static int testXenx86_64(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_X86_64,
                             "xencapsdata/xen-x86_64.xml",
                             "xencapsdata/xen-x86_64.cpuinfo",
                             "xencapsdata/xen-x86_64.caps");
 }
-static int testXenx86_64HVM(const void *data ATTRIBUTE_UNUSED) {
+static int testXenx86_64HVM(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_X86_64,
                             "xencapsdata/xen-x86_64-hvm.xml",
                             "xencapsdata/xen-x86_64-hvm.cpuinfo",
                             "xencapsdata/xen-x86_64-hvm.caps");
 }
 
-static int testXenia64(const void *data ATTRIBUTE_UNUSED) {
+static int testXenia64(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_ITANIUM,
                             "xencapsdata/xen-ia64.xml",
                             "xencapsdata/xen-ia64.cpuinfo",
                             "xencapsdata/xen-ia64.caps");
 }
-static int testXenia64BE(const void *data ATTRIBUTE_UNUSED) {
+static int testXenia64BE(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_ITANIUM,
                             "xencapsdata/xen-ia64-be.xml",
                             "xencapsdata/xen-ia64-be.cpuinfo",
                             "xencapsdata/xen-ia64-be.caps");
 }
 
-static int testXenia64HVM(const void *data ATTRIBUTE_UNUSED) {
+static int testXenia64HVM(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_ITANIUM,
                             "xencapsdata/xen-ia64-hvm.xml",
                             "xencapsdata/xen-ia64-hvm.cpuinfo",
                             "xencapsdata/xen-ia64-hvm.caps");
 }
-static int testXenia64BEHVM(const void *data ATTRIBUTE_UNUSED) {
+static int testXenia64BEHVM(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_ITANIUM,
                             "xencapsdata/xen-ia64-be-hvm.xml",
                             "xencapsdata/xen-ia64-be-hvm.cpuinfo",
                             "xencapsdata/xen-ia64-be-hvm.caps");
 }
 
-static int testXenppc64(const void *data ATTRIBUTE_UNUSED) {
+static int testXenppc64(const void *data ATTRIBUTE_UNUSED)
+{
     return testCompareFiles(VIR_ARCH_PPC64,
                             "xencapsdata/xen-ppc64.xml",
                             "xencapsdata/xen-ppc64.cpuinfo",
@@ -214,7 +218,7 @@ mymain(void)
         ret = -1;
 
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

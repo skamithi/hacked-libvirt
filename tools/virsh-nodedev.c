@@ -26,16 +26,11 @@
 #include <config.h>
 #include "virsh-nodedev.h"
 
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-#include <libxml/xpath.h>
-#include <libxml/xmlsave.h>
-
 #include "internal.h"
 #include "virbuffer.h"
 #include "viralloc.h"
 #include "virfile.h"
-#include "virxml.h"
+#include "virstring.h"
 #include "conf/node_device_conf.h"
 
 /*
@@ -160,9 +155,10 @@ cmdNodeDeviceDestroy(vshControl *ctl, const vshCmd *cmd)
     }
 
     ret = true;
-cleanup:
+ cleanup:
     virStringFreeList(arr);
-    virNodeDeviceFree(dev);
+    if (dev)
+        virNodeDeviceFree(dev);
     return ret;
 }
 
@@ -249,7 +245,7 @@ vshNodeDeviceListCollect(vshControl *ctl,
     goto cleanup;
 
 
-fallback:
+ fallback:
     /* fall back to old method (0.10.1 and older) */
     vshResetLibvirtError();
 
@@ -329,14 +325,14 @@ fallback:
         /* the device matched all filters, it may stay */
         continue;
 
-remove_entry:
+ remove_entry:
         /* the device has to be removed as it failed one of the filters */
         virNodeDeviceFree(list->devices[i]);
         list->devices[i] = NULL;
         deleted++;
     }
 
-finished:
+ finished:
     /* sort the list */
     if (list->devices && list->ndevices)
         qsort(list->devices, list->ndevices,
@@ -348,7 +344,7 @@ finished:
 
     success = true;
 
-cleanup:
+ cleanup:
     for (i = 0; ndevices != -1 && i < ndevices; i++)
         VIR_FREE(names[i]);
     VIR_FREE(names);
@@ -500,7 +496,7 @@ cmdNodeListDevices(vshControl *ctl, const vshCmd *cmd ATTRIBUTE_UNUSED)
             vshPrint(ctl, "%s\n", virNodeDeviceGetName(list->devices[i]));
     }
 
-cleanup:
+ cleanup:
     virStringFreeList(caps);
     vshNodeDeviceListFree(list);
     return ret;
@@ -568,10 +564,11 @@ cmdNodeDeviceDumpXML(vshControl *ctl, const vshCmd *cmd)
     vshPrint(ctl, "%s\n", xml);
 
     ret = true;
-cleanup:
+ cleanup:
     virStringFreeList(arr);
     VIR_FREE(xml);
-    virNodeDeviceFree(device);
+    if (device)
+        virNodeDeviceFree(device);
     return ret;
 }
 

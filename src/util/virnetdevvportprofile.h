@@ -35,12 +35,13 @@ enum virNetDevVPortProfile {
     VIR_NETDEV_VPORT_PROFILE_8021QBG,
     VIR_NETDEV_VPORT_PROFILE_8021QBH,
     VIR_NETDEV_VPORT_PROFILE_OPENVSWITCH,
+    VIR_NETDEV_VPORT_PROFILE_MIDONET,
 
     VIR_NETDEV_VPORT_PROFILE_LAST,
 };
 VIR_ENUM_DECL(virNetDevVPort)
 
-enum virNetDevVPortProfileOp {
+typedef enum {
     VIR_NETDEV_VPORT_PROFILE_OP_CREATE,
     VIR_NETDEV_VPORT_PROFILE_OP_SAVE,
     VIR_NETDEV_VPORT_PROFILE_OP_RESTORE,
@@ -51,7 +52,7 @@ enum virNetDevVPortProfileOp {
     VIR_NETDEV_VPORT_PROFILE_OP_NO_OP,
 
     VIR_NETDEV_VPORT_PROFILE_OP_LAST
-};
+} virNetDevVPortProfileOp;
 VIR_ENUM_DECL(virNetDevVPortProfileOp)
 
 /* profile data for macvtap (VEPA) and openvswitch */
@@ -73,7 +74,7 @@ struct _virNetDevVPortProfile {
     /* this is a null-terminated character string */
     char          profileID[LIBVIRT_IFLA_VF_PORT_PROFILE_MAX];
 
-    /* this member is used when virtPortType == openvswitch */
+    /* this member is used when virtPortType == openvswitch|midonet */
     unsigned char interfaceID[VIR_UUID_BUFLEN];
     bool          interfaceID_specified;
     /* NB - if virtPortType == NONE, any/all of the items could be used */
@@ -98,7 +99,7 @@ int virNetDevVPortProfileAssociate(const char *ifname,
                                    const char *linkdev,
                                    int vf,
                                    const unsigned char *vmuuid,
-                                   enum virNetDevVPortProfileOp vmOp,
+                                   virNetDevVPortProfileOp vmOp,
                                    bool setlink_only)
     ATTRIBUTE_NONNULL(3) ATTRIBUTE_NONNULL(4) ATTRIBUTE_NONNULL(6)
     ATTRIBUTE_RETURN_CHECK;
@@ -108,7 +109,7 @@ int virNetDevVPortProfileDisassociate(const char *ifname,
                                       const virMacAddr *macaddr,
                                       const char *linkdev,
                                       int vf,
-                                      enum virNetDevVPortProfileOp vmOp)
+                                      virNetDevVPortProfileOp vmOp)
     ATTRIBUTE_NONNULL(3) ATTRIBUTE_NONNULL(4)
     ATTRIBUTE_RETURN_CHECK;
 

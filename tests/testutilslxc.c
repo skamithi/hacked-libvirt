@@ -8,29 +8,32 @@
 # include "domain_conf.h"
 
 
-virCapsPtr testLXCCapsInit(void) {
+virCapsPtr testLXCCapsInit(void)
+{
     virCapsPtr caps;
     virCapsGuestPtr guest;
 
     if ((caps = virCapabilitiesNew(VIR_ARCH_X86_64,
-                                   0, 0)) == NULL)
+                                   false, false)) == NULL)
         return NULL;
 
-    if ((guest = virCapabilitiesAddGuest(caps, "exe", VIR_ARCH_I686,
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_EXE,
+                                         VIR_ARCH_I686,
                                          "/usr/libexec/libvirt_lxc", NULL,
                                          0, NULL)) == NULL)
         goto error;
 
-    if (!virCapabilitiesAddGuestDomain(guest, "lxc", NULL, NULL, 0, NULL))
+    if (!virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_LXC, NULL, NULL, 0, NULL))
         goto error;
 
 
-    if ((guest = virCapabilitiesAddGuest(caps, "exe", VIR_ARCH_X86_64,
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_EXE,
+                                         VIR_ARCH_X86_64,
                                          "/usr/libexec/libvirt_lxc", NULL,
                                          0, NULL)) == NULL)
         goto error;
 
-    if (!virCapabilitiesAddGuestDomain(guest, "lxc", NULL, NULL, 0, NULL))
+    if (!virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_LXC, NULL, NULL, 0, NULL))
         goto error;
 
 
@@ -41,14 +44,14 @@ virCapsPtr testLXCCapsInit(void) {
         if (!caps_str)
             goto error;
 
-        fprintf(stderr, "LXC driver capabilities:\n%s", caps_str);
+        VIR_TEST_DEBUG("LXC driver capabilities:\n%s", caps_str);
 
         VIR_FREE(caps_str);
     }
 
     return caps;
 
-error:
+ error:
     virObjectUnref(caps);
     return NULL;
 }

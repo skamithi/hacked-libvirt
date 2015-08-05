@@ -34,8 +34,6 @@ static int testCompareXMLToArgvFiles(const char *xml,
                                      bool json,
                                      bool expectError)
 {
-    char *expectargv = NULL;
-    int len;
     char *actualargv = NULL;
     int ret = -1;
     virDomainDefPtr vmdef = NULL;
@@ -48,19 +46,12 @@ static int testCompareXMLToArgvFiles(const char *xml,
     if (!(conn = virGetConnect()))
         goto fail;
 
-    len = virtTestLoadFile(cmdline, &expectargv);
-    if (len < 0)
-        goto fail;
-    if (len && expectargv[len - 1] == '\n')
-        expectargv[len - 1] = '\0';
-
     if (!(vmdef = virDomainDefParseFile(xml, driver.caps, driver.xmlopt,
-                                        QEMU_EXPECTED_VIRT_TYPES,
-                                        VIR_DOMAIN_XML_INACTIVE)))
+                                        VIR_DOMAIN_DEF_PARSE_INACTIVE)))
         goto fail;
 
     if (!virDomainDefCheckABIStability(vmdef, vmdef)) {
-        fprintf(stderr, "ABI stability check failed on %s", xml);
+        VIR_TEST_DEBUG("ABI stability check failed on %s", xml);
         goto fail;
     }
 
@@ -84,10 +75,7 @@ static int testCompareXMLToArgvFiles(const char *xml,
             goto fail;
     }
 
-    if (virQEMUCapsGet(extraFlags, QEMU_CAPS_DOMID))
-        vmdef->id = 6;
-    else
-        vmdef->id = -1;
+    vmdef->id = -1;
 
     memset(&monitor_chr, 0, sizeof(monitor_chr));
     monitor_chr.type = VIR_DOMAIN_CHR_TYPE_UNIX;
@@ -119,13 +107,14 @@ static int testCompareXMLToArgvFiles(const char *xml,
                                      vmdef, &monitor_chr, json, extraFlags,
                                      migrateFrom, migrateFd, NULL,
                                      VIR_NETDEV_VPORT_PROFILE_OP_NO_OP,
-                                     &testCallbacks)))
+                                     &testCallbacks, false, false, NULL,
+                                     NULL, NULL)))
         goto fail;
 
     if (!virtTestOOMActive()) {
         if (!!virGetLastError() != expectError) {
-            if (virTestGetDebug() && (log = virtTestLogContentAndReset()))
-                fprintf(stderr, "\n%s", log);
+            if ((log = virtTestLogContentAndReset()))
+                VIR_TEST_DEBUG("\n%s", log);
             goto fail;
         }
 
@@ -147,17 +136,14 @@ static int testCompareXMLToArgvFiles(const char *xml,
         memmove(start_skip, end_skip, strlen(end_skip) + 1);
     }
 
-    if (STRNEQ(expectargv, actualargv)) {
-        virtTestDifference(stderr, expectargv, actualargv);
+    if (virtTestCompareToFile(actualargv, cmdline) < 0)
         goto fail;
-    }
 
     ret = 0;
 
  fail:
     VIR_FREE(log);
     VIR_FREE(emulator);
-    VIR_FREE(expectargv);
     VIR_FREE(actualargv);
     virCommandFree(cmd);
     virDomainDefFree(vmdef);
@@ -193,7 +179,7 @@ testCompareXMLToArgvHelper(const void *data)
                                        info->migrateFrom, info->migrateFd,
                                        info->json, info->expectError);
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
     VIR_FREE(args);
     return result;
@@ -205,23 +191,18 @@ static int
 mymain(void)
 {
     int ret = 0;
-    char *map = NULL;
     bool json = false;
 
     abs_top_srcdir = getenv("abs_top_srcdir");
     if (!abs_top_srcdir)
         abs_top_srcdir = abs_srcdir "/..";
 
-    driver.config = virQEMUDriverConfigNew(false);
+    if (!(driver.config = virQEMUDriverConfigNew(false)))
+        return EXIT_FAILURE;
     if ((driver.caps = testQemuCapsInit()) == NULL)
         return EXIT_FAILURE;
     if (!(driver.xmlopt = virQEMUDriverCreateXMLConf(&driver)))
         return EXIT_FAILURE;
-    if (virAsprintf(&map, "%s/src/cpu/cpu_map.xml", abs_top_srcdir) < 0 ||
-        cpuMapOverride(map) < 0) {
-        VIR_FREE(map);
-        return EXIT_FAILURE;
-    }
 
 # define DO_TEST_FULL(name, migrateFrom, migrateFd, expectError, ...)   \
     do {                                                                \
@@ -266,9 +247,8 @@ mymain(void)
     virObjectUnref(driver.config);
     virObjectUnref(driver.caps);
     virObjectUnref(driver.xmlopt);
-    VIR_FREE(map);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

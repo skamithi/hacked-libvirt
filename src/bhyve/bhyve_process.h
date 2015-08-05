@@ -27,10 +27,20 @@
 int virBhyveProcessStart(virConnectPtr conn,
                          bhyveConnPtr driver,
                          virDomainObjPtr vm,
-                         virDomainRunningReason reason);
+                         virDomainRunningReason reason,
+                         unsigned int flags);
 
 int virBhyveProcessStop(bhyveConnPtr driver,
                         virDomainObjPtr vm,
                         virDomainShutoffReason reason);
+
+int virBhyveGetDomainTotalCpuStats(virDomainObjPtr vm,
+                                   unsigned long long *cpustats);
+
+void virBhyveProcessReconnectAll(bhyveConnPtr driver);
+
+typedef enum {
+    VIR_BHYVE_PROCESS_START_AUTODESTROY = 1 << 0,
+} bhyveProcessStartFlags;
 
 #endif /* __BHYVE_PROCESS_H__ */

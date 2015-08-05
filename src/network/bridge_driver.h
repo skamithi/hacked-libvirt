@@ -1,7 +1,7 @@
 /*
- * network_driver.h: core driver methods for managing networks
+ * bridge_driver.h: core driver methods for managing networks
  *
- * Copyright (C) 2006-2013 Red Hat, Inc.
+ * Copyright (C) 2006-2015 Red Hat, Inc.
  * Copyright (C) 2006 Daniel P. Berrange
  *
  * This library is free software; you can redistribute it and/or
@@ -55,16 +55,26 @@ int networkDnsmasqConfContents(virNetworkObjPtr network,
 # else
 /* Define no-op replacements that don't drag in any link dependencies.  */
 #  define networkAllocateActualDevice(dom, iface) 0
-#  define networkNotifyActualDevice(dom, iface) (dom=dom, iface=iface, 0)
-#  define networkReleaseActualDevice(dom, iface) (dom=dom, iface=iface, 0)
 #  define networkGetNetworkAddress(netname, netaddr) (-2)
 #  define networkDnsmasqConfContents(network, pidfile, configstr, \
                     dctx, caps) 0
+
+static inline int
+networkNotifyActualDevice(virDomainDefPtr dom ATTRIBUTE_UNUSED,
+                          virDomainNetDefPtr iface ATTRIBUTE_UNUSED)
+{
+    return 0;
+}
+
+static inline int
+networkReleaseActualDevice(virDomainDefPtr dom ATTRIBUTE_UNUSED,
+                          virDomainNetDefPtr iface ATTRIBUTE_UNUSED)
+{
+    return 0;
+}
+
 # endif
 
 typedef char *(*networkDnsmasqLeaseFileNameFunc)(const char *netname);
-
-/* this allows the testsuite to replace the lease filename resolver function */
-extern networkDnsmasqLeaseFileNameFunc networkDnsmasqLeaseFileName;
 
 #endif /* __VIR_NETWORK__DRIVER_H */

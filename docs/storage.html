@@ -284,6 +284,8 @@
         <a href="#StorageBackendSheepdog" shape="rect">Sheepdog backend</a>
       </li><li>
         <a href="#StorageBackendGluster" shape="rect">Gluster backend</a>
+      </li><li>
+        <a href="#StorageBackendZFS" shape="rect">ZFS backend</a>
       </li></ul>
         <h2>
           <a name="StorageBackendDir" shape="rect" id="StorageBackendDir">Directory pool</a>
@@ -456,11 +458,10 @@
       &lt;/pool&gt;</pre>
         <h3>Valid pool format types</h3>
         <p>
-      The logical volume pool supports the following formats:
+      The logical volume pool supports only the <code>lvm2</code> format,
+      although not supplying a format value will result in automatic
+      selection of the<code>lvm2</code> format.
     </p>
-        <ul><li><code>auto</code> - automatically determine format</li><li>
-        <code>lvm2</code>
-      </li></ul>
         <h3>Valid volume format types</h3>
         <p>
       The logical volume pool does not use the volume format type element.
@@ -475,6 +476,7 @@
       on the size and placement of volumes. The 'free extents'
       information will detail the regions which are available for creating
       new volumes. A volume cannot span across 2 different free extents.
+      It will default to using <code>msdos</code> as the pool source format.
     </p>
         <h3>Example pool input</h3>
         <pre xml:space="preserve">
@@ -547,13 +549,19 @@
       to use <code>/dev/disk/by-path</code> or <code>/dev/disk/by-id</code>
       for the target path. These provide persistent stable naming for LUNs
     </p>
+        <p>
+      The libvirt iSCSI storage backend does not resolve the provided
+      host name or IP address when finding the available target IQN's
+      on the host; therefore, defining two pools to use the same IQN
+      on the same host will fail the duplicate source pool checks.
+    </p>
         <h3>Example pool input</h3>
         <pre xml:space="preserve">
       &lt;pool type="iscsi"&gt;
         &lt;name&gt;virtimages&lt;/name&gt;
         &lt;source&gt;
           &lt;host name="iscsi.example.com"/&gt;
-          &lt;device path="demo-target"/&gt;
+          &lt;device path="iqn.2013-06.com.example:iscsi-pool"/&gt;
         &lt;/source&gt;
         &lt;target&gt;
           &lt;path&gt;/dev/disk/by-path&lt;/path&gt;
@@ -656,12 +664,12 @@
         &lt;name&gt;myrbdpool&lt;/name&gt;
         &lt;source&gt;
           &lt;name&gt;rbdpool&lt;/name&gt;
-            &lt;host name='1.2.3.4' port='6789'/&gt;
-            &lt;host name='my.ceph.monitor' port='6789'/&gt;
-            &lt;host name='third.ceph.monitor' port='6789'/&gt;
-            &lt;auth username='admin' type='ceph'&gt;
-              &lt;secret uuid='2ec115d7-3a88-3ceb-bc12-0ac909a6fd87'/&gt;
-            &lt;/auth&gt;
+          &lt;host name='1.2.3.4' port='6789'/&gt;
+          &lt;host name='my.ceph.monitor' port='6789'/&gt;
+          &lt;host name='third.ceph.monitor' port='6789'/&gt;
+          &lt;auth username='admin' type='ceph'&gt;
+            &lt;secret uuid='2ec115d7-3a88-3ceb-bc12-0ac909a6fd87'/&gt;
+          &lt;/auth&gt;
         &lt;/source&gt;
       &lt;/pool&gt;</pre>
         <h3>Example volume output</h3>
@@ -808,12 +816,14 @@
       correspond to the files that can be found when mounting the
       gluster volume.  The <code>name</code> is the path relative to
       the effective mount specified for the pool; and
-      the <code>key</code> is a path including the gluster volume
-      name and any subdirectory specified by the pool.</p>
+      the <code>key</code> is a string that identifies a single volume
+      uniquely. Currently the <code>key</code> attribute consists of the
+      URI of the volume but it may be changed to a UUID of the volume
+      in the future.</p>
         <pre xml:space="preserve">
        &lt;volume&gt;
          &lt;name&gt;myfile&lt;/name&gt;
-         &lt;key&gt;volname/myfile&lt;/key&gt;
+         &lt;key&gt;gluster://localhost/volname/myfile&lt;/key&gt;
          &lt;source&gt;
          &lt;/source&gt;
          &lt;capacity unit='bytes'&gt;53687091200&lt;/capacity&gt;
@@ -833,6 +843,41 @@
         <p>
       The valid volume types are the same as for the <code>directory</code>
       pool type.
+    </p>
+        <h2>
+          <a name="StorageBackendZFS" shape="rect" id="StorageBackendZFS">ZFS pools</a>
+          <a class="headerlink" href="#StorageBackendZFS" title="Permalink to this headline">¶</a>
+        </h2>
+        <p>
+      This provides a pool based on the ZFS filesystem. It is currently
+      supported on FreeBSD only.
+    </p>
+        <p>A pool could either be created manually using the <code>zpool create</code>
+      command and its name specified in the source section or <span class="since">
+      since 1.2.9</span> source devices could be specified to create a pool using
+      libvirt.
+    </p>
+        <p>Please refer to the ZFS documentation for details on a pool creation.</p>
+        <p>
+          <span class="since">Since 1.2.8</span>
+        </p>
+        <h3>Example pool input</h3>
+        <pre xml:space="preserve">
+      &lt;pool type="zfs"&gt;
+        &lt;name&gt;myzfspool&lt;/name&gt;
+        &lt;source&gt;
+          &lt;name&gt;zpoolname&lt;/name&gt;
+          &lt;device path="/dev/ada1"/&gt;
+          &lt;device path="/dev/ada2"/&gt;
+        &lt;/source&gt;
+      &lt;/pool&gt;</pre>
+        <h3>Valid pool format types</h3>
+        <p>
+      The ZFS volume pool does not use the pool format type element.
+    </p>
+        <h3>Valid pool format types</h3>
+        <p>
+      The ZFS volume pool does not use the volume format type element.
     </p>
       </div>
     </div>

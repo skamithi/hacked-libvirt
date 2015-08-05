@@ -1,7 +1,7 @@
 /*
  * datatypes.h: management of structs for public data types
  *
- * Copyright (C) 2006-2014 Red Hat, Inc.
+ * Copyright (C) 2006-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -27,6 +27,7 @@
 # include "driver.h"
 # include "virthread.h"
 # include "virobject.h"
+# include "viruuid.h"
 
 extern virClassPtr virConnectClass;
 extern virClassPtr virDomainClass;
@@ -327,20 +328,22 @@ struct _virConnectCloseCallbackData {
  * Internal structure associated to a connection
  */
 struct _virConnect {
-    virObject object;
-    /* All the variables from here, until the 'lock' declaration
-     * are setup at time of connection open, and never changed
-     * since. Thus no need to lock when accessing them
+    virObjectLockable object;
+
+    /* All the variables from here, until declared otherwise in one of
+     * the following comments, are setup at time of connection open
+     * and never changed since. Thus no need to lock when accessing
+     * them.
      */
     unsigned int flags;     /* a set of connection flags */
     virURIPtr uri;          /* connection URI */
 
     /* The underlying hypervisor driver and network driver. */
-    virDriverPtr      driver;
+    virHypervisorDriverPtr driver;
     virNetworkDriverPtr networkDriver;
     virInterfaceDriverPtr interfaceDriver;
     virStorageDriverPtr storageDriver;
-    virNodeDeviceDriverPtr  nodeDeviceDriver;
+    virNodeDeviceDriverPtr nodeDeviceDriver;
     virSecretDriverPtr secretDriver;
     virNWFilterDriverPtr nwfilterDriver;
 
@@ -349,20 +352,12 @@ struct _virConnect {
      * NB: 'private' is a reserved word in C++.
      */
     void *            privateData;
-    void *            networkPrivateData;
-    void *            interfacePrivateData;
-    void *            storagePrivateData;
-    void *            nodeDevicePrivateData;
-    void *            secretPrivateData;
-    void *            nwfilterPrivateData;
 
     /*
-     * The lock mutex must be acquired before accessing/changing
-     * any of members following this point, or changing the ref
-     * count of any virDomain/virNetwork object associated with
-     * this connection
+     * Object lock must be acquired before accessing/changing any of
+     * members following this point, or changing the ref count of any
+     * virDomain/virNetwork object associated with this connection.
      */
-    virMutex lock;
 
     /* Per-connection error. */
     virError err;           /* the last error */
@@ -469,7 +464,7 @@ struct _virNodeDevice {
 struct _virSecret {
     virObject object;
     virConnectPtr conn;                  /* pointer back to the connection */
-    unsigned char uuid[VIR_UUID_BUFLEN]; /* the domain unique identifier */
+    unsigned char uuid[VIR_UUID_BUFLEN]; /* the secret unique identifier */
     int usageType;                       /* the type of usage */
     char *usageID;                       /* the usage's unique identifier */
 };

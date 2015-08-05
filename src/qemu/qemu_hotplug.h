@@ -29,13 +29,14 @@
 # include "domain_conf.h"
 
 int qemuDomainChangeEjectableMedia(virQEMUDriverPtr driver,
+                                   virConnectPtr conn,
                                    virDomainObjPtr vm,
                                    virDomainDiskDefPtr disk,
-                                   virDomainDiskDefPtr orig_disk,
+                                   virStorageSourcePtr newsrc,
                                    bool force);
 int qemuDomainCheckEjectableMedia(virQEMUDriverPtr driver,
                                   virDomainObjPtr vm,
-                                  enum qemuDomainAsyncJob asyncJob);
+                                  qemuDomainAsyncJob asyncJob);
 int qemuDomainAttachControllerDevice(virQEMUDriverPtr driver,
                                      virDomainObjPtr vm,
                                      virDomainControllerDefPtr controller);
@@ -50,9 +51,18 @@ int qemuDomainAttachNetDevice(virConnectPtr conn,
 int qemuDomainAttachRedirdevDevice(virQEMUDriverPtr driver,
                                    virDomainObjPtr vm,
                                    virDomainRedirdevDefPtr hostdev);
-int qemuDomainAttachHostDevice(virQEMUDriverPtr driver,
+int qemuDomainAttachHostDevice(virConnectPtr conn,
+                               virQEMUDriverPtr driver,
                                virDomainObjPtr vm,
                                virDomainHostdevDefPtr hostdev);
+int qemuDomainFindGraphicsIndex(virDomainDefPtr def,
+                                virDomainGraphicsDefPtr dev);
+int qemuDomainAttachMemory(virQEMUDriverPtr driver,
+                           virDomainObjPtr vm,
+                           virDomainMemoryDefPtr mem);
+int qemuDomainDetachMemoryDevice(virQEMUDriverPtr driver,
+                                 virDomainObjPtr vm,
+                                 virDomainMemoryDefPtr memdef);
 int qemuDomainChangeGraphics(virQEMUDriverPtr driver,
                              virDomainObjPtr vm,
                              virDomainGraphicsDefPtr dev);
@@ -60,10 +70,10 @@ int qemuDomainChangeGraphicsPasswords(virQEMUDriverPtr driver,
                                       virDomainObjPtr vm,
                                       int type,
                                       virDomainGraphicsAuthDefPtr auth,
-                                      const char *defaultPasswd);
+                                      const char *defaultPasswd,
+                                      int asyncJob);
 int qemuDomainChangeNet(virQEMUDriverPtr driver,
                         virDomainObjPtr vm,
-                        virDomainPtr dom,
                         virDomainDeviceDefPtr dev);
 int qemuDomainChangeNetLinkState(virQEMUDriverPtr driver,
                                  virDomainObjPtr vm,
@@ -93,7 +103,12 @@ int qemuDomainAttachChrDevice(virQEMUDriverPtr driver,
 int qemuDomainDetachChrDevice(virQEMUDriverPtr driver,
                               virDomainObjPtr vm,
                               virDomainChrDefPtr chr);
-
+int qemuDomainAttachRNGDevice(virQEMUDriverPtr driver,
+                              virDomainObjPtr vm,
+                              virDomainRNGDefPtr rng);
+int qemuDomainDetachRNGDevice(virQEMUDriverPtr driver,
+                              virDomainObjPtr vm,
+                              virDomainRNGDefPtr rng);
 
 int
 qemuDomainChrInsert(virDomainDefPtr vmdef,
@@ -102,11 +117,11 @@ virDomainChrDefPtr
 qemuDomainChrRemove(virDomainDefPtr vmdef,
                     virDomainChrDefPtr chr);
 
-void qemuDomainRemoveDevice(virQEMUDriverPtr driver,
-                            virDomainObjPtr vm,
-                            virDomainDeviceDefPtr dev);
+int qemuDomainRemoveDevice(virQEMUDriverPtr driver,
+                           virDomainObjPtr vm,
+                           virDomainDeviceDefPtr dev);
 
-void qemuDomainSignalDeviceRemoval(virDomainObjPtr vm,
+bool qemuDomainSignalDeviceRemoval(virDomainObjPtr vm,
                                    const char *devAlias);
 
 #endif /* __QEMU_HOTPLUG_H__ */

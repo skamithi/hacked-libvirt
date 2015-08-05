@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2012 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  * Copyright IBM Corp. 2008
  *
  * lxc_cgroup.c: LXC cgroup helpers
@@ -32,13 +32,22 @@
 
 #define VIR_FROM_THIS VIR_FROM_LXC
 
+VIR_LOG_INIT("lxc.lxc_cgroup");
+
 static int virLXCCgroupSetupCpuTune(virDomainDefPtr def,
                                     virCgroupPtr cgroup)
 {
     int ret = -1;
-    if (def->cputune.shares != 0 &&
-        virCgroupSetCpuShares(cgroup, def->cputune.shares) < 0)
-        goto cleanup;
+
+    if (def->cputune.sharesSpecified) {
+        unsigned long long val;
+        if (virCgroupSetCpuShares(cgroup, def->cputune.shares) < 0)
+            goto cleanup;
+
+        if (virCgroupGetCpuShares(cgroup, &val) < 0)
+            goto cleanup;
+        def->cputune.shares = val;
+    }
 
     if (def->cputune.quota != 0 &&
         virCgroupSetCpuCfsQuota(cgroup, def->cputune.quota) < 0)
@@ -49,7 +58,7 @@ static int virLXCCgroupSetupCpuTune(virDomainDefPtr def,
         goto cleanup;
 
     ret = 0;
-cleanup:
+ cleanup:
     return ret;
 }
 
@@ -60,42 +69,34 @@ static int virLXCCgroupSetupCpusetTune(virDomainDefPtr def,
 {
     int ret = -1;
     char *mask = NULL;
+    virDomainNumatuneMemMode mode;
 
     if (def->placement_mode != VIR_DOMAIN_CPU_PLACEMENT_MODE_AUTO &&
         def->cpumask) {
-        mask = virBitmapFormat(def->cpumask);
-        if (!mask) {
-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("failed to convert cpumask"));
+        if (!(mask = virBitmapFormat(def->cpumask)))
             return -1;
-        }
 
         if (virCgroupSetCpusetCpus(cgroup, mask) < 0)
             goto cleanup;
+        /* free mask to make sure we won't use it in a wrong way later */
+        VIR_FREE(mask);
     }
 
-    if ((def->numatune.memory.nodemask ||
-         (def->numatune.memory.placement_mode ==
-          VIR_NUMA_TUNE_MEM_PLACEMENT_MODE_AUTO)) &&
-          def->numatune.memory.mode == VIR_DOMAIN_NUMATUNE_MEM_STRICT) {
-        if (def->numatune.memory.placement_mode ==
-            VIR_NUMA_TUNE_MEM_PLACEMENT_MODE_AUTO)
-            mask = virBitmapFormat(nodemask);
-        else
-            mask = virBitmapFormat(def->numatune.memory.nodemask);
-
-        if (!mask) {
-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("failed to convert memory nodemask"));
-            return -1;
-        }
-
-        if (virCgroupSetCpusetMems(cgroup, mask) < 0)
-            goto cleanup;
+    if (virDomainNumatuneGetMode(def->numa, -1, &mode) < 0 ||
+        mode == VIR_DOMAIN_NUMATUNE_MEM_STRICT) {
+        ret = 0;
+        goto cleanup;
     }
+
+    if (virDomainNumatuneMaybeFormatNodeset(def->numa, nodemask,
+                                            &mask, -1) < 0)
+        goto cleanup;
+
+    if (mask && virCgroupSetCpusetMems(cgroup, mask) < 0)
+        goto cleanup;
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FREE(mask);
     return ret;
 }
@@ -150,23 +151,23 @@ static int virLXCCgroupSetupMemTune(virDomainDefPtr def,
 {
     int ret = -1;
 
-    if (virCgroupSetMemory(cgroup, def->mem.max_balloon) < 0)
+    if (virCgroupSetMemory(cgroup, virDomainDefGetMemoryInitial(def)) < 0)
         goto cleanup;
 
-    if (def->mem.hard_limit &&
-        virCgroupSetMemoryHardLimit(cgroup, def->mem.hard_limit) < 0)
-        goto cleanup;
+    if (virMemoryLimitIsSet(def->mem.hard_limit))
+        if (virCgroupSetMemoryHardLimit(cgroup, def->mem.hard_limit) < 0)
+            goto cleanup;
 
-    if (def->mem.soft_limit &&
-        virCgroupSetMemorySoftLimit(cgroup, def->mem.soft_limit) < 0)
-        goto cleanup;
+    if (virMemoryLimitIsSet(def->mem.soft_limit))
+        if (virCgroupSetMemorySoftLimit(cgroup, def->mem.soft_limit) < 0)
+            goto cleanup;
 
-    if (def->mem.swap_hard_limit &&
-        virCgroupSetMemSwapHardLimit(cgroup, def->mem.swap_hard_limit) < 0)
-        goto cleanup;
+    if (virMemoryLimitIsSet(def->mem.swap_hard_limit))
+        if (virCgroupSetMemSwapHardLimit(cgroup, def->mem.swap_hard_limit) < 0)
+            goto cleanup;
 
     ret = 0;
-cleanup:
+ cleanup:
     return ret;
 }
 
@@ -261,7 +262,7 @@ static int virLXCCgroupGetMemStat(virCgroupPtr cgroup,
     }
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(line);
     VIR_FREE(statFile);
     VIR_FORCE_FCLOSE(statfd);
@@ -286,11 +287,14 @@ int virLXCCgroupGetMeminfo(virLXCMeminfoPtr meminfo)
     if (virLXCCgroupGetMemUsage(cgroup, meminfo) < 0)
         goto cleanup;
 
-    virLXCCgroupGetMemSwapTotal(cgroup, meminfo);
-    virLXCCgroupGetMemSwapUsage(cgroup, meminfo);
+    if (virLXCCgroupGetMemSwapTotal(cgroup, meminfo) < 0)
+        goto cleanup;
+
+    if (virLXCCgroupGetMemSwapUsage(cgroup, meminfo) < 0)
+        goto cleanup;
 
     ret = 0;
-cleanup:
+ cleanup:
     virCgroupFree(&cgroup);
     return ret;
 }
@@ -308,7 +312,7 @@ struct _virLXCCgroupDevicePolicy {
 
 
 int
-virLXCSetupHostUsbDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
+virLXCSetupHostUSBDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
                                const char *path,
                                void *opaque)
 {
@@ -316,7 +320,7 @@ virLXCSetupHostUsbDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
 
     VIR_DEBUG("Process path '%s' for USB device", path);
     if (virCgroupAllowDevicePath(cgroup, path,
-                                 VIR_CGROUP_DEVICE_RW) < 0)
+                                 VIR_CGROUP_DEVICE_RWM) < 0)
         return -1;
 
     return 0;
@@ -324,7 +328,7 @@ virLXCSetupHostUsbDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
 
 
 int
-virLXCTeardownHostUsbDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
+virLXCTeardownHostUSBDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
                                   const char *path,
                                   void *opaque)
 {
@@ -332,7 +336,7 @@ virLXCTeardownHostUsbDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
 
     VIR_DEBUG("Process path '%s' for USB device", path);
     if (virCgroupDenyDevicePath(cgroup, path,
-                                VIR_CGROUP_DEVICE_RW) < 0)
+                                VIR_CGROUP_DEVICE_RWM) < 0)
         return -1;
 
     return 0;
@@ -342,6 +346,7 @@ virLXCTeardownHostUsbDeviceCgroup(virUSBDevicePtr dev ATTRIBUTE_UNUSED,
 static int virLXCCgroupSetupDeviceACL(virDomainDefPtr def,
                                       virCgroupPtr cgroup)
 {
+    int capMknod = def->caps_features[VIR_DOMAIN_CAPS_FEATURE_MKNOD];
     int ret = -1;
     size_t i;
     static virLXCCgroupDevicePolicy devices[] = {
@@ -358,6 +363,13 @@ static int virLXCCgroupSetupDeviceACL(virDomainDefPtr def,
     if (virCgroupDenyAllDevices(cgroup) < 0)
         goto cleanup;
 
+    /* white list mknod if CAP_MKNOD has to be kept */
+    if (capMknod == VIR_TRISTATE_SWITCH_ON) {
+        if (virCgroupAllowAllDevices(cgroup,
+                                    VIR_CGROUP_DEVICE_MKNOD) < 0)
+            goto cleanup;
+    }
+
     for (i = 0; devices[i].type != 0; i++) {
         virLXCCgroupDevicePolicyPtr dev = &devices[i];
         if (virCgroupAllowDevice(cgroup,
@@ -370,12 +382,12 @@ static int virLXCCgroupSetupDeviceACL(virDomainDefPtr def,
 
     VIR_DEBUG("Allowing any disk block devs");
     for (i = 0; i < def->ndisks; i++) {
-        if (def->disks[i]->type != VIR_DOMAIN_DISK_TYPE_BLOCK)
+        if (!virDomainDiskSourceIsBlockType(def->disks[i]->src))
             continue;
 
         if (virCgroupAllowDevicePath(cgroup,
-                                     def->disks[i]->src,
-                                     (def->disks[i]->readonly ?
+                                     virDomainDiskGetSource(def->disks[i]),
+                                     (def->disks[i]->src->readonly ?
                                       VIR_CGROUP_DEVICE_READ :
                                       VIR_CGROUP_DEVICE_RW) |
                                      VIR_CGROUP_DEVICE_MKNOD) < 0)
@@ -398,6 +410,7 @@ static int virLXCCgroupSetupDeviceACL(virDomainDefPtr def,
     VIR_DEBUG("Allowing any hostdev block devs");
     for (i = 0; i < def->nhostdevs; i++) {
         virDomainHostdevDefPtr hostdev = def->hostdevs[i];
+        virDomainHostdevSubsysUSBPtr usbsrc = &hostdev->source.subsys.u.usb;
         virUSBDevicePtr usb;
 
         switch (hostdev->mode) {
@@ -407,12 +420,11 @@ static int virLXCCgroupSetupDeviceACL(virDomainDefPtr def,
             if (hostdev->missing)
                 continue;
 
-            if ((usb = virUSBDeviceNew(hostdev->source.subsys.u.usb.bus,
-                                       hostdev->source.subsys.u.usb.device,
+            if ((usb = virUSBDeviceNew(usbsrc->bus, usbsrc->device,
                                        NULL)) == NULL)
                 goto cleanup;
 
-            if (virUSBDeviceFileIterate(usb, virLXCSetupHostUsbDeviceCgroup,
+            if (virUSBDeviceFileIterate(usb, virLXCSetupHostUSBDeviceCgroup,
                                         cgroup) < 0) {
                 virUSBDeviceFree(usb);
                 goto cleanup;
@@ -450,12 +462,15 @@ static int virLXCCgroupSetupDeviceACL(virDomainDefPtr def,
     VIR_DEBUG("Device whitelist complete");
 
     ret = 0;
-cleanup:
+ cleanup:
     return ret;
 }
 
 
-virCgroupPtr virLXCCgroupCreate(virDomainDefPtr def)
+virCgroupPtr virLXCCgroupCreate(virDomainDefPtr def,
+                                pid_t initpid,
+                                size_t nnicindexes,
+                                int *nicindexes)
 {
     virCgroupPtr cgroup = NULL;
 
@@ -466,19 +481,14 @@ virCgroupPtr virLXCCgroupCreate(virDomainDefPtr def)
         goto cleanup;
     }
 
-    /*
-     * XXX
-     * We should pass the PID of the LXC init process
-     * not ourselves, but this requires some more
-     * refactoring. We should also pass the root dir
-     */
     if (virCgroupNewMachine(def->name,
                             "lxc",
                             true,
                             def->uuid,
                             NULL,
-                            getpid(),
+                            initpid,
                             true,
+                            nnicindexes, nicindexes,
                             def->resource->partition,
                             -1,
                             &cgroup) < 0)
@@ -496,7 +506,7 @@ virCgroupPtr virLXCCgroupCreate(virDomainDefPtr def)
         }
     }
 
-cleanup:
+ cleanup:
     return cgroup;
 }
 
@@ -524,6 +534,6 @@ int virLXCCgroupSetup(virDomainDefPtr def,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     return ret;
 }

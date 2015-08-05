@@ -1,7 +1,7 @@
 /*
  * virhook.c: implementation of the synchronous hooks support
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  * Copyright (C) 2010 Daniel Veillard
  *
  * This library is free software; you can redistribute it and/or
@@ -41,6 +41,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_HOOK
 
+VIR_LOG_INIT("util.hook");
+
 #define LIBVIRT_HOOK_DIR SYSCONFDIR "/libvirt/hooks"
 
 VIR_ENUM_DECL(virHookDriver)
@@ -75,7 +77,8 @@ VIR_ENUM_IMPL(virHookQemuOp, VIR_HOOK_QEMU_OP_LAST,
               "migrate",
               "started",
               "reconnect",
-              "attach")
+              "attach",
+              "restore")
 
 VIR_ENUM_IMPL(virHookLxcOp, VIR_HOOK_LXC_OP_LAST,
               "start",
@@ -105,7 +108,8 @@ static int virHooksFound = -1;
  * Returns 1 if found, 0 if not found, and -1 in case of error
  */
 static int
-virHookCheck(int no, const char *driver) {
+virHookCheck(int no, const char *driver)
+{
     char *path;
     int ret;
 
@@ -147,7 +151,8 @@ virHookCheck(int no, const char *driver) {
  * Returns the number of hooks found or -1 in case of failure
  */
 int
-virHookInitialize(void) {
+virHookInitialize(void)
+{
     size_t i;
     int res, ret = 0;
 
@@ -175,7 +180,8 @@ virHookInitialize(void) {
  * Returns 1 if present, 0 otherwise
  */
 int
-virHookPresent(int driver) {
+virHookPresent(int driver)
+{
     if ((driver < VIR_HOOK_DRIVER_DAEMON) ||
         (driver >= VIR_HOOK_DRIVER_LAST))
         return 0;
@@ -294,7 +300,8 @@ virHookCall(int driver,
     if (ret < 0) {
         /* Convert INTERNAL_ERROR into known error.  */
         virErrorPtr err = virGetLastError();
-        virReportError(VIR_ERR_HOOK_SCRIPT_FAILED, "%s", err->message);
+        virReportError(VIR_ERR_HOOK_SCRIPT_FAILED, "%s",
+                       err ? err->message : _("unknown error"));
     }
 
     virCommandFree(cmd);

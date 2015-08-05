@@ -1,7 +1,7 @@
 /*
  * capabilities.c: hypervisor capabilities
  *
- * Copyright (C) 2006-2008, 2010-2011, 2013 Red Hat, Inc.
+ * Copyright (C) 2006-2014 Red Hat, Inc.
  * Copyright (C) 2006-2008 Daniel P. Berrange
  *
  * This library is free software; you can redistribute it and/or
@@ -32,6 +32,7 @@
 #include "cpu_conf.h"
 #include "virerror.h"
 #include "virstring.h"
+#include "domain_conf.h"
 
 #define VIR_FROM_THIS VIR_FROM_CAPABILITIES
 
@@ -58,15 +59,15 @@ VIR_ONCE_GLOBAL_INIT(virCapabilities)
 /**
  * virCapabilitiesNew:
  * @hostarch: host machine architecture
- * @offlineMigrate: non-zero if offline migration is available
- * @liveMigrate: non-zero if live migration is available
+ * @offlineMigrate: true if offline migration is available
+ * @liveMigrate: true if live migration is available
  *
  * Allocate a new capabilities object
  */
 virCapsPtr
 virCapabilitiesNew(virArch hostarch,
-                   int offlineMigrate,
-                   int liveMigrate)
+                   bool offlineMigrate,
+                   bool liveMigrate)
 {
     virCapsPtr caps;
 
@@ -107,6 +108,8 @@ virCapabilitiesFreeHostNUMACell(virCapsHostNUMACellPtr cell)
     virCapabilitiesClearHostNUMACellCPUTopology(cell->cpus, cell->ncpus);
 
     VIR_FREE(cell->cpus);
+    VIR_FREE(cell->siblings);
+    VIR_FREE(cell->pageinfo);
     VIR_FREE(cell);
 }
 
@@ -132,7 +135,6 @@ virCapabilitiesFreeGuestDomain(virCapsGuestDomainPtr dom)
     for (i = 0; i < dom->info.nmachines; i++)
         virCapabilitiesFreeGuestMachine(dom->info.machines[i]);
     VIR_FREE(dom->info.machines);
-    VIR_FREE(dom->type);
 
     VIR_FREE(dom);
 }
@@ -152,8 +154,6 @@ virCapabilitiesFreeGuest(virCapsGuestPtr guest)
     size_t i;
     if (guest == NULL)
         return;
-
-    VIR_FREE(guest->ostype);
 
     VIR_FREE(guest->arch.defaultInfo.emulator);
     VIR_FREE(guest->arch.defaultInfo.loader);
@@ -217,14 +217,13 @@ virCapabilitiesDispose(void *object)
         VIR_FREE(caps->host.migrateTrans[i]);
     VIR_FREE(caps->host.migrateTrans);
 
-    for (i = 0; i < caps->host.nsecModels; i++) {
+    for (i = 0; i < caps->host.nsecModels; i++)
         virCapabilitiesClearSecModel(&caps->host.secModels[i]);
-    }
     VIR_FREE(caps->host.secModels);
 
+    VIR_FREE(caps->host.pagesSize);
     virCPUDefFree(caps->host.cpu);
 }
-
 
 /**
  * virCapabilitiesAddHostFeature:
@@ -275,9 +274,13 @@ virCapabilitiesAddHostMigrateTransport(virCapsPtr caps,
  * virCapabilitiesAddHostNUMACell:
  * @caps: capabilities to extend
  * @num: ID number of NUMA cell
- * @ncpus: number of CPUs in cell
  * @mem: Total size of memory in the NUMA node (in KiB)
+ * @ncpus: number of CPUs in cell
  * @cpus: array of CPU definition structures, the pointer is stolen
+ * @nsiblings: number of sibling NUMA nodes
+ * @siblings: info on sibling NUMA nodes
+ * @npageinfo: number of pages at node @num
+ * @pageinfo: info on each single memory page
  *
  * Registers a new NUMA cell for a host, passing in a
  * array of CPU IDs belonging to the cell
@@ -285,9 +288,13 @@ virCapabilitiesAddHostMigrateTransport(virCapsPtr caps,
 int
 virCapabilitiesAddHostNUMACell(virCapsPtr caps,
                                int num,
-                               int ncpus,
                                unsigned long long mem,
-                               virCapsHostNUMACellCPUPtr cpus)
+                               int ncpus,
+                               virCapsHostNUMACellCPUPtr cpus,
+                               int nsiblings,
+                               virCapsHostNUMACellSiblingInfoPtr siblings,
+                               int npageinfo,
+                               virCapsHostNUMACellPageInfoPtr pageinfo)
 {
     virCapsHostNUMACellPtr cell;
 
@@ -298,10 +305,14 @@ virCapabilitiesAddHostNUMACell(virCapsPtr caps,
     if (VIR_ALLOC(cell) < 0)
         return -1;
 
-    cell->ncpus = ncpus;
     cell->num = num;
     cell->mem = mem;
+    cell->ncpus = ncpus;
     cell->cpus = cpus;
+    cell->nsiblings = nsiblings;
+    cell->siblings = siblings;
+    cell->npageinfo = npageinfo;
+    cell->pageinfo = pageinfo;
 
     caps->host.numaCell[caps->host.nnumaCell++] = cell;
 
@@ -380,7 +391,7 @@ virCapabilitiesFreeMachines(virCapsGuestMachinePtr *machines,
 /**
  * virCapabilitiesAddGuest:
  * @caps: capabilities to extend
- * @ostype: guest operating system type ('hvm' or 'xen')
+ * @ostype: guest operating system type, of enum VIR_DOMAIN_OSTYPE
  * @arch: guest CPU architecture
  * @wordsize: number of bits in CPU word
  * @emulator: path to default device emulator for arch/ostype
@@ -394,7 +405,7 @@ virCapabilitiesFreeMachines(virCapsGuestMachinePtr *machines,
  */
 virCapsGuestPtr
 virCapabilitiesAddGuest(virCapsPtr caps,
-                        const char *ostype,
+                        int ostype,
                         virArch arch,
                         const char *emulator,
                         const char *loader,
@@ -406,9 +417,7 @@ virCapabilitiesAddGuest(virCapsPtr caps,
     if (VIR_ALLOC(guest) < 0)
         goto error;
 
-    if (VIR_STRDUP(guest->ostype, ostype) < 0)
-        goto error;
-
+    guest->ostype = ostype;
     guest->arch.id = arch;
     guest->arch.wordsize = virArchGetWordSize(arch);
 
@@ -428,7 +437,7 @@ virCapabilitiesAddGuest(virCapsPtr caps,
 
     return guest;
 
-error:
+ error:
     virCapabilitiesFreeGuest(guest);
     return NULL;
 }
@@ -448,7 +457,7 @@ error:
  */
 virCapsGuestDomainPtr
 virCapabilitiesAddGuestDomain(virCapsGuestPtr guest,
-                              const char *hvtype,
+                              int hvtype,
                               const char *emulator,
                               const char *loader,
                               int nmachines,
@@ -459,8 +468,8 @@ virCapabilitiesAddGuestDomain(virCapsGuestPtr guest,
     if (VIR_ALLOC(dom) < 0)
         goto error;
 
-    if (VIR_STRDUP(dom->type, hvtype) < 0 ||
-        VIR_STRDUP(dom->info.emulator, emulator) < 0 ||
+    dom->type = hvtype;
+    if (VIR_STRDUP(dom->info.emulator, emulator) < 0 ||
         VIR_STRDUP(dom->info.loader, loader) < 0)
         goto error;
 
@@ -477,7 +486,7 @@ virCapabilitiesAddGuestDomain(virCapsGuestPtr guest,
 
     return dom;
 
-error:
+ error:
     virCapabilitiesFreeGuestDomain(dom);
     return NULL;
 }
@@ -487,16 +496,16 @@ error:
  * virCapabilitiesAddGuestFeature:
  * @guest: guest to associate feature with
  * @name: name of feature ('pae', 'acpi', 'apic')
- * @defaultOn: non-zero if it defaults to on
- * @toggle: non-zero if its state can be toggled
+ * @defaultOn: true if it defaults to on
+ * @toggle: true if its state can be toggled
  *
- * Registers a feature for a guest domain
+ * Registers a feature for a guest domain.
  */
 virCapsGuestFeaturePtr
 virCapabilitiesAddGuestFeature(virCapsGuestPtr guest,
                                const char *name,
-                               int defaultOn,
-                               int toggle)
+                               bool defaultOn,
+                               bool toggle)
 {
     virCapsGuestFeaturePtr feature;
 
@@ -552,200 +561,202 @@ virCapabilitiesHostSecModelAddBaseLabel(virCapsHostSecModelPtr secmodel,
 
     return 0;
 
-no_memory:
+ no_memory:
     VIR_FREE(l);
     VIR_FREE(t);
     return -1;
 }
 
-/**
- * virCapabilitiesSupportsGuestArch:
- * @caps: capabilities to query
- * @arch: Architecture to search for
- *
- * Returns non-zero if the capabilities support the
- * requested architecture
- */
-extern int
-virCapabilitiesSupportsGuestArch(virCapsPtr caps,
-                                 virArch arch)
+static bool
+virCapsDomainDataCompare(virCapsGuestPtr guest,
+                         virCapsGuestDomainPtr domain,
+                         virCapsGuestMachinePtr machine,
+                         int ostype,
+                         virArch arch,
+                         int domaintype,
+                         const char *emulator,
+                         const char *machinetype)
 {
-    size_t i;
-    for (i = 0; i < caps->nguests; i++) {
-        if (caps->guests[i]->arch.id == arch)
-            return 1;
+    const char *check_emulator = NULL;
+
+    if (ostype != -1 && guest->ostype != ostype)
+        return false;
+    if ((arch != VIR_ARCH_NONE) && (guest->arch.id != arch))
+        return false;
+
+    if (domaintype != -1 && (!domain || domain->type != domaintype))
+        return false;
+
+    if (emulator) {
+        if (domain)
+            check_emulator = domain->info.emulator;
+        if (!check_emulator)
+            check_emulator = guest->arch.defaultInfo.emulator;
+        if (STRNEQ_NULLABLE(check_emulator, emulator))
+            return false;
     }
-    return 0;
+
+    if (machinetype) {
+        if (!machine)
+            return false;
+        if (STRNEQ(machine->name, machinetype) &&
+            (STRNEQ_NULLABLE(machine->canonical, machinetype)))
+            return false;
+    }
+
+    return true;
 }
 
-
-/**
- * virCapabilitiesSupportsGuestOSType:
- * @caps: capabilities to query
- * @ostype: OS type to search for (eg 'hvm', 'xen')
- *
- * Returns non-zero if the capabilities support the
- * requested operating system type
- */
-extern int
-virCapabilitiesSupportsGuestOSType(virCapsPtr caps,
-                                   const char *ostype)
+static virCapsDomainDataPtr
+virCapabilitiesDomainDataLookupInternal(virCapsPtr caps,
+                                        int ostype,
+                                        virArch arch,
+                                        int domaintype,
+                                        const char *emulator,
+                                        const char *machinetype)
 {
-    size_t i;
-    for (i = 0; i < caps->nguests; i++) {
-        if (STREQ(caps->guests[i]->ostype, ostype))
-            return 1;
-    }
-    return 0;
-}
-
-
-/**
- * virCapabilitiesSupportsGuestOSTypeArch:
- * @caps: capabilities to query
- * @ostype: OS type to search for (eg 'hvm', 'xen')
- * @arch: Architecture to search for
- *
- * Returns non-zero if the capabilities support the
- * requested operating system type
- */
-extern int
-virCapabilitiesSupportsGuestOSTypeArch(virCapsPtr caps,
-                                       const char *ostype,
-                                       virArch arch)
-{
-    size_t i;
-    for (i = 0; i < caps->nguests; i++) {
-        if (STREQ(caps->guests[i]->ostype, ostype) &&
-            caps->guests[i]->arch.id == arch)
-            return 1;
-    }
-    return 0;
-}
-
-
-/**
- * virCapabilitiesDefaultGuestArch:
- * @caps: capabilities to query
- * @ostype: OS type to search for
- *
- * Returns the first architecture able to run the
- * requested operating system type
- */
-extern virArch
-virCapabilitiesDefaultGuestArch(virCapsPtr caps,
-                                const char *ostype,
-                                const char *domain)
-{
-    size_t i, j;
-
-    /* First try to find one matching host arch */
-    for (i = 0; i < caps->nguests; i++) {
-        if (STREQ(caps->guests[i]->ostype, ostype)) {
-            for (j = 0; j < caps->guests[i]->arch.ndomains; j++) {
-                if (STREQ(caps->guests[i]->arch.domains[j]->type, domain) &&
-                    caps->guests[i]->arch.id == caps->host.arch)
-                    return caps->guests[i]->arch.id;
-            }
-        }
-    }
-
-    /* Otherwise find the first match */
-    for (i = 0; i < caps->nguests; i++) {
-        if (STREQ(caps->guests[i]->ostype, ostype)) {
-            for (j = 0; j < caps->guests[i]->arch.ndomains; j++) {
-                if (STREQ(caps->guests[i]->arch.domains[j]->type, domain))
-                    return caps->guests[i]->arch.id;
-            }
-        }
-    }
-
-    return VIR_ARCH_NONE;
-}
-
-/**
- * virCapabilitiesDefaultGuestMachine:
- * @caps: capabilities to query
- * @ostype: OS type to search for
- * @arch: architecture to search for
- * @domain: domain type to search for
- *
- * Returns the first machine variant associated with
- * the requested operating system type, architecture
- * and domain type
- */
-extern const char *
-virCapabilitiesDefaultGuestMachine(virCapsPtr caps,
-                                   const char *ostype,
-                                   virArch arch,
-                                   const char *domain)
-{
-    size_t i;
+    virCapsGuestPtr foundguest = NULL;
+    virCapsGuestDomainPtr founddomain = NULL;
+    virCapsGuestMachinePtr foundmachine = NULL;
+    virCapsDomainDataPtr ret = NULL;
+    size_t i, j, k;
 
     for (i = 0; i < caps->nguests; i++) {
         virCapsGuestPtr guest = caps->guests[i];
-        size_t j;
-
-        if (!STREQ(guest->ostype, ostype) ||
-            guest->arch.id != arch)
-            continue;
 
         for (j = 0; j < guest->arch.ndomains; j++) {
-            virCapsGuestDomainPtr dom = guest->arch.domains[j];
+            virCapsGuestDomainPtr domain = guest->arch.domains[j];
+            virCapsGuestMachinePtr *machinelist;
+            int nmachines;
 
-            if (!STREQ(dom->type, domain))
-                continue;
+            if (domain->info.nmachines) {
+                nmachines = domain->info.nmachines;
+                machinelist = domain->info.machines;
+            } else {
+                nmachines = guest->arch.defaultInfo.nmachines;
+                machinelist = guest->arch.defaultInfo.machines;
+            }
 
-            if (!dom->info.nmachines)
+            for (k = 0; k < nmachines; k++) {
+                virCapsGuestMachinePtr machine = machinelist[k];
+                if (!virCapsDomainDataCompare(guest, domain, machine,
+                                              ostype, arch, domaintype,
+                                              emulator, machinetype))
+                    continue;
+
+                foundmachine = machine;
                 break;
+            }
 
-            return dom->info.machines[0]->name;
+            if (!foundmachine) {
+                if (!virCapsDomainDataCompare(guest, domain, NULL,
+                                              ostype, arch, domaintype,
+                                              emulator, machinetype))
+                    continue;
+            }
+
+            founddomain = domain;
+            break;
         }
 
-        if (guest->arch.defaultInfo.nmachines)
-            return caps->guests[i]->arch.defaultInfo.machines[0]->name;
+        if (!founddomain) {
+            if (!virCapsDomainDataCompare(guest, NULL, NULL,
+                                          ostype, arch, domaintype,
+                                          emulator, machinetype))
+                continue;
+        }
+
+        foundguest = guest;
+        break;
     }
 
-    return NULL;
+    /* XXX check default_emulator, see how it uses this */
+    if (!foundguest) {
+        virBuffer buf = VIR_BUFFER_INITIALIZER;
+        if (ostype)
+            virBufferAsprintf(&buf, "ostype=%s ",
+                              virDomainOSTypeToString(ostype));
+        if (arch)
+            virBufferAsprintf(&buf, "arch=%s ", virArchToString(arch));
+        if (domaintype)
+            virBufferAsprintf(&buf, "domaintype=%s ",
+                              virDomainVirtTypeToString(domaintype));
+        if (emulator)
+            virBufferEscapeString(&buf, "emulator=%s ", emulator);
+        if (machinetype)
+            virBufferEscapeString(&buf, "machine=%s ", machinetype);
+        if (virBufferCurrentContent(&buf) &&
+            !virBufferCurrentContent(&buf)[0])
+            virBufferAsprintf(&buf, "%s", _("any configuration"));
+        if (virBufferCheckError(&buf) < 0) {
+            virBufferFreeAndReset(&buf);
+            goto error;
+        }
+
+        virReportError(VIR_ERR_INVALID_ARG,
+                       _("could not find capabilities for %s"),
+                       virBufferCurrentContent(&buf));
+        virBufferFreeAndReset(&buf);
+        goto error;
+    }
+
+    if (VIR_ALLOC(ret) < 0)
+        goto error;
+
+    ret->ostype = foundguest->ostype;
+    ret->arch = foundguest->arch.id;
+    if (founddomain) {
+        ret->domaintype = founddomain->type;
+        ret->emulator = founddomain->info.emulator;
+    }
+    if (!ret->emulator)
+        ret->emulator = foundguest->arch.defaultInfo.emulator;
+    if (foundmachine)
+        ret->machinetype = foundmachine->name;
+
+ error:
+    return ret;
 }
 
 /**
- * virCapabilitiesDefaultGuestEmulator:
+ * virCapabilitiesDomainDataLookup:
  * @caps: capabilities to query
- * @ostype: OS type to search for ('xen', 'hvm')
- * @arch: architecture to search for
- * @domain: domain type ('xen', 'qemu', 'kvm')
+ * @ostype: guest operating system type, of enum VIR_DOMAIN_OSTYPE
+ * @arch: Architecture to search for
+ * @domaintype: domain type to search for, of enum VIR_DOMAIN_VIRT
+ * @emulator: Emulator path to search for
+ * @machinetype: Machine type to search for
  *
- * Returns the first emulator path associated with
- * the requested operating system type, architecture
- * and domain type
+ * Search capabilities for the passed values, and if found return
+ * virCapabilitiesDomainDataLookup filled in with the default values
  */
-extern const char *
-virCapabilitiesDefaultGuestEmulator(virCapsPtr caps,
-                                    const char *ostype,
-                                    virArch arch,
-                                    const char *domain)
+virCapsDomainDataPtr
+virCapabilitiesDomainDataLookup(virCapsPtr caps,
+                                int ostype,
+                                virArch arch,
+                                int domaintype,
+                                const char *emulator,
+                                const char *machinetype)
 {
-    size_t i, j;
-    for (i = 0; i < caps->nguests; i++) {
-        char *emulator;
-        if (STREQ(caps->guests[i]->ostype, ostype) &&
-            caps->guests[i]->arch.id == arch) {
-            emulator = caps->guests[i]->arch.defaultInfo.emulator;
-            for (j = 0; j < caps->guests[i]->arch.ndomains; j++) {
-                if (STREQ(caps->guests[i]->arch.domains[j]->type, domain)) {
-                    if (caps->guests[i]->arch.domains[j]->info.emulator)
-                        emulator = caps->guests[i]->arch.domains[j]->info.emulator;
-                }
-            }
-            return emulator;
-        }
+    virCapsDomainDataPtr ret;
+
+    if (arch == VIR_ARCH_NONE) {
+        /* Prefer host arch if its available */
+        ret = virCapabilitiesDomainDataLookupInternal(caps, ostype,
+                                                      caps->host.arch,
+                                                      domaintype,
+                                                      emulator, machinetype);
+        if (ret)
+            return ret;
     }
-    return NULL;
+
+    return virCapabilitiesDomainDataLookupInternal(caps, ostype,
+                                                   arch, domaintype,
+                                                   emulator, machinetype);
 }
 
 static int
-virCapabilitiesFormatNUMATopology(virBufferPtr xml,
+virCapabilitiesFormatNUMATopology(virBufferPtr buf,
                                   size_t ncells,
                                   virCapsHostNUMACellPtr *cells)
 {
@@ -753,44 +764,64 @@ virCapabilitiesFormatNUMATopology(virBufferPtr xml,
     size_t j;
     char *siblings;
 
-    virBufferAddLit(xml, "    <topology>\n");
-    virBufferAsprintf(xml, "      <cells num='%zu'>\n", ncells);
+    virBufferAddLit(buf, "<topology>\n");
+    virBufferAdjustIndent(buf, 2);
+    virBufferAsprintf(buf, "<cells num='%zu'>\n", ncells);
+    virBufferAdjustIndent(buf, 2);
     for (i = 0; i < ncells; i++) {
-        virBufferAsprintf(xml, "        <cell id='%d'>\n", cells[i]->num);
+        virBufferAsprintf(buf, "<cell id='%d'>\n", cells[i]->num);
+        virBufferAdjustIndent(buf, 2);
 
         /* Print out the numacell memory total if it is available */
         if (cells[i]->mem)
-            virBufferAsprintf(xml,
-                              "          <memory unit='KiB'>%llu</memory>\n",
+            virBufferAsprintf(buf, "<memory unit='KiB'>%llu</memory>\n",
                               cells[i]->mem);
 
-        virBufferAsprintf(xml, "          <cpus num='%d'>\n", cells[i]->ncpus);
+        for (j = 0; j < cells[i]->npageinfo; j++) {
+            virBufferAsprintf(buf, "<pages unit='KiB' size='%u'>%zu</pages>\n",
+                              cells[i]->pageinfo[j].size,
+                              cells[i]->pageinfo[j].avail);
+        }
+
+        if (cells[i]->nsiblings) {
+            virBufferAddLit(buf, "<distances>\n");
+            virBufferAdjustIndent(buf, 2);
+            for (j = 0; j < cells[i]->nsiblings; j++) {
+                virBufferAsprintf(buf, "<sibling id='%d' value='%d'/>\n",
+                                  cells[i]->siblings[j].node,
+                                  cells[i]->siblings[j].distance);
+            }
+            virBufferAdjustIndent(buf, -2);
+            virBufferAddLit(buf, "</distances>\n");
+        }
+
+        virBufferAsprintf(buf, "<cpus num='%d'>\n", cells[i]->ncpus);
+        virBufferAdjustIndent(buf, 2);
         for (j = 0; j < cells[i]->ncpus; j++) {
-            virBufferAsprintf(xml, "            <cpu id='%d'",
-                              cells[i]->cpus[j].id);
+            virBufferAsprintf(buf, "<cpu id='%d'", cells[i]->cpus[j].id);
 
             if (cells[i]->cpus[j].siblings) {
-                if (!(siblings = virBitmapFormat(cells[i]->cpus[j].siblings))) {
-                    virReportOOMError();
+                if (!(siblings = virBitmapFormat(cells[i]->cpus[j].siblings)))
                     return -1;
-                }
 
-                virBufferAsprintf(xml,
+                virBufferAsprintf(buf,
                                   " socket_id='%d' core_id='%d' siblings='%s'",
                                   cells[i]->cpus[j].socket_id,
                                   cells[i]->cpus[j].core_id,
                                   siblings);
                 VIR_FREE(siblings);
             }
-            virBufferAddLit(xml, "/>\n");
+            virBufferAddLit(buf, "/>\n");
         }
-
-        virBufferAddLit(xml, "          </cpus>\n");
-        virBufferAddLit(xml, "        </cell>\n");
+        virBufferAdjustIndent(buf, -2);
+        virBufferAddLit(buf, "</cpus>\n");
+        virBufferAdjustIndent(buf, -2);
+        virBufferAddLit(buf, "</cell>\n");
     }
-    virBufferAddLit(xml, "      </cells>\n");
-    virBufferAddLit(xml, "    </topology>\n");
-
+    virBufferAdjustIndent(buf, -2);
+    virBufferAddLit(buf, "</cells>\n");
+    virBufferAdjustIndent(buf, -2);
+    virBufferAddLit(buf, "</topology>\n");
     return 0;
 }
 
@@ -805,142 +836,172 @@ virCapabilitiesFormatNUMATopology(virBufferPtr xml,
 char *
 virCapabilitiesFormatXML(virCapsPtr caps)
 {
-    virBuffer xml = VIR_BUFFER_INITIALIZER;
+    virBuffer buf = VIR_BUFFER_INITIALIZER;
     size_t i, j, k;
     char host_uuid[VIR_UUID_STRING_BUFLEN];
 
-    virBufferAddLit(&xml, "<capabilities>\n\n");
-    virBufferAddLit(&xml, "  <host>\n");
+    virBufferAddLit(&buf, "<capabilities>\n\n");
+    virBufferAdjustIndent(&buf, 2);
+    virBufferAddLit(&buf, "<host>\n");
+    virBufferAdjustIndent(&buf, 2);
     if (virUUIDIsValid(caps->host.host_uuid)) {
         virUUIDFormat(caps->host.host_uuid, host_uuid);
-        virBufferAsprintf(&xml, "    <uuid>%s</uuid>\n", host_uuid);
+        virBufferAsprintf(&buf, "<uuid>%s</uuid>\n", host_uuid);
     }
-    virBufferAddLit(&xml, "    <cpu>\n");
-    if (caps->host.arch)
-        virBufferAsprintf(&xml, "      <arch>%s</arch>\n",
-                          virArchToString(caps->host.arch));
+    virBufferAddLit(&buf, "<cpu>\n");
+    virBufferAdjustIndent(&buf, 2);
 
+    if (caps->host.arch)
+        virBufferAsprintf(&buf, "<arch>%s</arch>\n",
+                          virArchToString(caps->host.arch));
     if (caps->host.nfeatures) {
-        virBufferAddLit(&xml, "      <features>\n");
+        virBufferAddLit(&buf, "<features>\n");
+        virBufferAdjustIndent(&buf, 2);
         for (i = 0; i < caps->host.nfeatures; i++) {
-            virBufferAsprintf(&xml, "        <%s/>\n",
+            virBufferAsprintf(&buf, "<%s/>\n",
                               caps->host.features[i]);
         }
-        virBufferAddLit(&xml, "      </features>\n");
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</features>\n");
+    }
+    virCPUDefFormatBuf(&buf, caps->host.cpu, false);
+
+    for (i = 0; i < caps->host.nPagesSize; i++) {
+        virBufferAsprintf(&buf, "<pages unit='KiB' size='%u'/>\n",
+                          caps->host.pagesSize[i]);
     }
 
-    virBufferAdjustIndent(&xml, 6);
-    virCPUDefFormatBuf(&xml, caps->host.cpu, 0);
-    virBufferAdjustIndent(&xml, -6);
-
-    virBufferAddLit(&xml, "    </cpu>\n");
+    virBufferAdjustIndent(&buf, -2);
+    virBufferAddLit(&buf, "</cpu>\n");
 
     /* The PM query was successful. */
     if (caps->host.powerMgmt) {
         /* The host supports some PM features. */
         unsigned int pm = caps->host.powerMgmt;
-        virBufferAddLit(&xml, "    <power_management>\n");
+        virBufferAddLit(&buf, "<power_management>\n");
+        virBufferAdjustIndent(&buf, 2);
         while (pm) {
             int bit = ffs(pm) - 1;
-            virBufferAsprintf(&xml, "      <%s/>\n",
+            virBufferAsprintf(&buf, "<%s/>\n",
                               virCapsHostPMTargetTypeToString(bit));
             pm &= ~(1U << bit);
         }
-        virBufferAddLit(&xml, "    </power_management>\n");
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</power_management>\n");
     } else {
         /* The host does not support any PM feature. */
-        virBufferAddLit(&xml, "    <power_management/>\n");
+        virBufferAddLit(&buf, "<power_management/>\n");
     }
 
     if (caps->host.offlineMigrate) {
-        virBufferAddLit(&xml, "    <migration_features>\n");
+        virBufferAddLit(&buf, "<migration_features>\n");
+        virBufferAdjustIndent(&buf, 2);
         if (caps->host.liveMigrate)
-            virBufferAddLit(&xml, "      <live/>\n");
+            virBufferAddLit(&buf, "<live/>\n");
         if (caps->host.nmigrateTrans) {
-            virBufferAddLit(&xml, "      <uri_transports>\n");
+            virBufferAddLit(&buf, "<uri_transports>\n");
+            virBufferAdjustIndent(&buf, 2);
             for (i = 0; i < caps->host.nmigrateTrans; i++) {
-                virBufferAsprintf(&xml, "        <uri_transport>%s</uri_transport>\n",
-                                      caps->host.migrateTrans[i]);
+                virBufferAsprintf(&buf, "<uri_transport>%s</uri_transport>\n",
+                                  caps->host.migrateTrans[i]);
             }
-            virBufferAddLit(&xml, "      </uri_transports>\n");
+            virBufferAdjustIndent(&buf, -2);
+            virBufferAddLit(&buf, "</uri_transports>\n");
         }
-        virBufferAddLit(&xml, "    </migration_features>\n");
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</migration_features>\n");
     }
 
     if (caps->host.nnumaCell &&
-        virCapabilitiesFormatNUMATopology(&xml, caps->host.nnumaCell,
+        virCapabilitiesFormatNUMATopology(&buf, caps->host.nnumaCell,
                                           caps->host.numaCell) < 0)
         return NULL;
 
     for (i = 0; i < caps->host.nsecModels; i++) {
-        virBufferAddLit(&xml, "    <secmodel>\n");
-        virBufferAsprintf(&xml, "      <model>%s</model>\n",
+        virBufferAddLit(&buf, "<secmodel>\n");
+        virBufferAdjustIndent(&buf, 2);
+        virBufferAsprintf(&buf, "<model>%s</model>\n",
                           caps->host.secModels[i].model);
-        virBufferAsprintf(&xml, "      <doi>%s</doi>\n",
+        virBufferAsprintf(&buf, "<doi>%s</doi>\n",
                           caps->host.secModels[i].doi);
         for (j = 0; j < caps->host.secModels[i].nlabels; j++) {
-            virBufferAsprintf(&xml, "      <baselabel type='%s'>%s</baselabel>\n",
+            virBufferAsprintf(&buf, "<baselabel type='%s'>%s</baselabel>\n",
                               caps->host.secModels[i].labels[j].type,
                               caps->host.secModels[i].labels[j].label);
         }
-        virBufferAddLit(&xml, "    </secmodel>\n");
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</secmodel>\n");
     }
 
-    virBufferAddLit(&xml, "  </host>\n\n");
+    virBufferAdjustIndent(&buf, -2);
+    virBufferAddLit(&buf, "</host>\n\n");
 
 
     for (i = 0; i < caps->nguests; i++) {
-        virBufferAddLit(&xml, "  <guest>\n");
-        virBufferAsprintf(&xml, "    <os_type>%s</os_type>\n",
-                          caps->guests[i]->ostype);
+        virBufferAddLit(&buf, "<guest>\n");
+        virBufferAdjustIndent(&buf, 2);
+        virBufferAsprintf(&buf, "<os_type>%s</os_type>\n",
+                          virDomainOSTypeToString(caps->guests[i]->ostype));
         if (caps->guests[i]->arch.id)
-            virBufferAsprintf(&xml, "    <arch name='%s'>\n",
+            virBufferAsprintf(&buf, "<arch name='%s'>\n",
                               virArchToString(caps->guests[i]->arch.id));
-        virBufferAsprintf(&xml, "      <wordsize>%d</wordsize>\n",
+        virBufferAdjustIndent(&buf, 2);
+        virBufferAsprintf(&buf, "<wordsize>%d</wordsize>\n",
                           caps->guests[i]->arch.wordsize);
         if (caps->guests[i]->arch.defaultInfo.emulator)
-            virBufferAsprintf(&xml, "      <emulator>%s</emulator>\n",
+            virBufferAsprintf(&buf, "<emulator>%s</emulator>\n",
                               caps->guests[i]->arch.defaultInfo.emulator);
-            if (caps->guests[i]->arch.defaultInfo.loader)
-                virBufferAsprintf(&xml, "      <loader>%s</loader>\n",
-                                  caps->guests[i]->arch.defaultInfo.loader);
+        if (caps->guests[i]->arch.defaultInfo.loader)
+            virBufferAsprintf(&buf, "<loader>%s</loader>\n",
+                              caps->guests[i]->arch.defaultInfo.loader);
 
         for (j = 0; j < caps->guests[i]->arch.defaultInfo.nmachines; j++) {
             virCapsGuestMachinePtr machine = caps->guests[i]->arch.defaultInfo.machines[j];
-            virBufferAddLit(&xml, "      <machine");
+            virBufferAddLit(&buf, "<machine");
             if (machine->canonical)
-                virBufferAsprintf(&xml, " canonical='%s'", machine->canonical);
+                virBufferAsprintf(&buf, " canonical='%s'", machine->canonical);
             if (machine->maxCpus > 0)
-                virBufferAsprintf(&xml, " maxCpus='%d'", machine->maxCpus);
-            virBufferAsprintf(&xml, ">%s</machine>\n", machine->name);
+                virBufferAsprintf(&buf, " maxCpus='%d'", machine->maxCpus);
+            virBufferAsprintf(&buf, ">%s</machine>\n", machine->name);
         }
 
         for (j = 0; j < caps->guests[i]->arch.ndomains; j++) {
-            virBufferAsprintf(&xml, "      <domain type='%s'>\n",
-                                  caps->guests[i]->arch.domains[j]->type);
+            virBufferAsprintf(&buf, "<domain type='%s'",
+                virDomainVirtTypeToString(caps->guests[i]->arch.domains[j]->type));
+            if (!caps->guests[i]->arch.domains[j]->info.emulator &&
+                !caps->guests[i]->arch.domains[j]->info.loader &&
+                !caps->guests[i]->arch.domains[j]->info.nmachines) {
+                virBufferAddLit(&buf, "/>\n");
+                continue;
+            }
+            virBufferAddLit(&buf, ">\n");
+            virBufferAdjustIndent(&buf, 2);
             if (caps->guests[i]->arch.domains[j]->info.emulator)
-                virBufferAsprintf(&xml, "        <emulator>%s</emulator>\n",
+                virBufferAsprintf(&buf, "<emulator>%s</emulator>\n",
                                   caps->guests[i]->arch.domains[j]->info.emulator);
             if (caps->guests[i]->arch.domains[j]->info.loader)
-                virBufferAsprintf(&xml, "        <loader>%s</loader>\n",
+                virBufferAsprintf(&buf, "<loader>%s</loader>\n",
                                   caps->guests[i]->arch.domains[j]->info.loader);
 
             for (k = 0; k < caps->guests[i]->arch.domains[j]->info.nmachines; k++) {
                 virCapsGuestMachinePtr machine = caps->guests[i]->arch.domains[j]->info.machines[k];
-                virBufferAddLit(&xml, "        <machine");
+                virBufferAddLit(&buf, "<machine");
                 if (machine->canonical)
-                    virBufferAsprintf(&xml, " canonical='%s'", machine->canonical);
+                    virBufferAsprintf(&buf, " canonical='%s'", machine->canonical);
                 if (machine->maxCpus > 0)
-                    virBufferAsprintf(&xml, " maxCpus='%d'", machine->maxCpus);
-                virBufferAsprintf(&xml, ">%s</machine>\n", machine->name);
+                    virBufferAsprintf(&buf, " maxCpus='%d'", machine->maxCpus);
+                virBufferAsprintf(&buf, ">%s</machine>\n", machine->name);
             }
-            virBufferAddLit(&xml, "      </domain>\n");
+            virBufferAdjustIndent(&buf, -2);
+            virBufferAddLit(&buf, "</domain>\n");
         }
 
-        virBufferAddLit(&xml, "    </arch>\n");
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</arch>\n");
 
         if (caps->guests[i]->nfeatures) {
-            virBufferAddLit(&xml, "    <features>\n");
+            virBufferAddLit(&buf, "<features>\n");
+            virBufferAdjustIndent(&buf, 2);
 
             for (j = 0; j < caps->guests[i]->nfeatures; j++) {
                 if (STREQ(caps->guests[i]->features[j]->name, "pae") ||
@@ -948,30 +1009,29 @@ virCapabilitiesFormatXML(virCapsPtr caps)
                     STREQ(caps->guests[i]->features[j]->name, "ia64_be") ||
                     STREQ(caps->guests[i]->features[j]->name, "cpuselection") ||
                     STREQ(caps->guests[i]->features[j]->name, "deviceboot")) {
-                    virBufferAsprintf(&xml, "      <%s/>\n",
+                    virBufferAsprintf(&buf, "<%s/>\n",
                                       caps->guests[i]->features[j]->name);
                 } else {
-                    virBufferAsprintf(&xml, "      <%s default='%s' toggle='%s'/>\n",
+                    virBufferAsprintf(&buf, "<%s default='%s' toggle='%s'/>\n",
                                       caps->guests[i]->features[j]->name,
                                       caps->guests[i]->features[j]->defaultOn ? "on" : "off",
                                       caps->guests[i]->features[j]->toggle ? "yes" : "no");
                 }
             }
 
-            virBufferAddLit(&xml, "    </features>\n");
+            virBufferAdjustIndent(&buf, -2);
+            virBufferAddLit(&buf, "</features>\n");
         }
-
-        virBufferAddLit(&xml, "  </guest>\n\n");
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</guest>\n\n");
     }
+    virBufferAdjustIndent(&buf, -2);
+    virBufferAddLit(&buf, "</capabilities>\n");
 
-    virBufferAddLit(&xml, "</capabilities>\n");
-
-    if (virBufferError(&xml)) {
-        virBufferFreeAndReset(&xml);
+    if (virBufferCheckError(&buf) < 0)
         return NULL;
-    }
 
-    return virBufferContentAndReset(&xml);
+    return virBufferContentAndReset(&buf);
 }
 
 /* get the maximum ID of cpus in the host */

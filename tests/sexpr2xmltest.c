@@ -9,7 +9,7 @@
 #include "datatypes.h"
 #include "xen/xen_driver.h"
 #include "xen/xend_internal.h"
-#include "xenxs/xen_sxpr.h"
+#include "xenconfig/xen_sxpr.h"
 #include "testutils.h"
 #include "testutilsxen.h"
 #include "virstring.h"
@@ -21,7 +21,6 @@ static virCapsPtr caps;
 static int
 testCompareFiles(const char *xml, const char *sexpr, int xendConfigVersion)
 {
-  char *xmlData = NULL;
   char *sexprData = NULL;
   char *gotxml = NULL;
   int id;
@@ -35,9 +34,6 @@ testCompareFiles(const char *xml, const char *sexpr, int xendConfigVersion)
 
   conn = virGetConnect();
   if (!conn) goto fail;
-
-  if (virtTestLoadFile(xml, &xmlData) < 0)
-      goto fail;
 
   if (virtTestLoadFile(sexpr, &sexprData) < 0)
       goto fail;
@@ -68,15 +64,12 @@ testCompareFiles(const char *xml, const char *sexpr, int xendConfigVersion)
   if (!(gotxml = virDomainDefFormat(def, 0)))
       goto fail;
 
-  if (STRNEQ(xmlData, gotxml)) {
-      virtTestDifference(stderr, xmlData, gotxml);
+  if (virtTestCompareToFile(gotxml, xml) < 0)
       goto fail;
-  }
 
   ret = 0;
 
  fail:
-  VIR_FREE(xmlData);
   VIR_FREE(sexprData);
   VIR_FREE(gotxml);
   virDomainDefFree(def);
@@ -108,7 +101,7 @@ testCompareHelper(const void *data)
 
     result = testCompareFiles(xml, args, info->version);
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
     VIR_FREE(args);
 
@@ -194,7 +187,7 @@ mymain(void)
 
     virObjectUnref(caps);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

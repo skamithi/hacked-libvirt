@@ -185,9 +185,8 @@ virXPathLongBase(const char *xpath,
     } else if ((obj != NULL) && (obj->type == XPATH_NUMBER) &&
                (!(isnan(obj->floatval)))) {
         *value = (long) obj->floatval;
-        if (*value != obj->floatval) {
+        if (*value != obj->floatval)
             ret = -2;
-        }
     } else {
         ret = -1;
     }
@@ -291,9 +290,8 @@ virXPathULongBase(const char *xpath,
     } else if ((obj != NULL) && (obj->type == XPATH_NUMBER) &&
                (!(isnan(obj->floatval)))) {
         *value = (unsigned long) obj->floatval;
-        if (*value != obj->floatval) {
+        if (*value != obj->floatval)
             ret = -2;
-        }
     } else {
         ret = -1;
     }
@@ -408,9 +406,8 @@ virXPathULongLong(const char *xpath,
     } else if ((obj != NULL) && (obj->type == XPATH_NUMBER) &&
                (!(isnan(obj->floatval)))) {
         *value = (unsigned long long) obj->floatval;
-        if (*value != obj->floatval) {
+        if (*value != obj->floatval)
             ret = -2;
-        }
     } else {
         ret = -1;
     }
@@ -420,7 +417,7 @@ virXPathULongLong(const char *xpath,
 }
 
 /**
- * virXPathULongLong:
+ * virXPathLongLong:
  * @xpath: the XPath string to evaluate
  * @ctxt: an XPath context
  * @value: the returned long long value
@@ -455,9 +452,8 @@ virXPathLongLong(const char *xpath,
     } else if ((obj != NULL) && (obj->type == XPATH_NUMBER) &&
                (!(isnan(obj->floatval)))) {
         *value = (long long) obj->floatval;
-        if (*value != obj->floatval) {
+        if (*value != obj->floatval)
             ret = -2;
-        }
     } else {
         ret = -1;
     }
@@ -655,9 +651,8 @@ catchXMLError(void *ctx, const char *msg ATTRIBUTE_UNUSED, ...)
     base = ctxt->input->base;
 
     /* skip backwards over any end-of-lines */
-    while ((cur > base) && ((*(cur) == '\n') || (*(cur) == '\r'))) {
+    while ((cur > base) && ((*(cur) == '\n') || (*(cur) == '\r')))
         cur--;
-    }
 
     /* search backwards for beginning-of-line (to max buff size) */
     while ((cur > base) && (*(cur) != '\n') && (*(cur) != '\r'))
@@ -669,9 +664,8 @@ catchXMLError(void *ctx, const char *msg ATTRIBUTE_UNUSED, ...)
 
     /* search forward for end-of-line (to max buff size) */
     /* copy selected text to our buffer */
-    while ((*cur != 0) && (*(cur) != '\n') && (*(cur) != '\r')) {
+    while ((*cur != 0) && (*(cur) != '\n') && (*(cur) != '\r'))
         virBufferAddChar(&buf, *cur++);
-    }
 
     /* create blank line with problem pointer */
     contextstr = virBufferContentAndReset(&buf);
@@ -746,11 +740,11 @@ virXMLParseHelper(int domcode,
 
     if (filename) {
         xml = xmlCtxtReadFile(pctxt, filename, NULL,
-                              XML_PARSE_NOENT | XML_PARSE_NONET |
+                              XML_PARSE_NONET |
                               XML_PARSE_NOWARNING);
     } else {
         xml = xmlCtxtReadDoc(pctxt, BAD_CAST xmlStr, url, NULL,
-                             XML_PARSE_NOENT | XML_PARSE_NONET |
+                             XML_PARSE_NONET |
                              XML_PARSE_NOWARNING);
     }
     if (!xml)
@@ -771,12 +765,12 @@ virXMLParseHelper(int domcode,
         (*ctxt)->node = xmlDocGetRootElement(xml);
     }
 
-cleanup:
+ cleanup:
     xmlFreeParserCtxt(pctxt);
 
     return xml;
 
-error:
+ error:
     xmlFreeDoc(xml);
     xml = NULL;
 
@@ -923,7 +917,7 @@ virXMLNodeToString(xmlDocPtr doc,
 
      ignore_value(VIR_STRDUP(ret, (const char *)xmlBufferContent(xmlbuf)));
 
-cleanup:
+ cleanup:
      xmlBufferFree(xmlbuf);
 
      return ret;
@@ -931,11 +925,6 @@ cleanup:
 
 typedef int (*virXMLForeachCallback)(xmlNodePtr node,
                                      void *opaque);
-
-static int
-virXMLForeachNode(xmlNodePtr root,
-                  virXMLForeachCallback cb,
-                  void *opaque);
 
 static int
 virXMLForeachNode(xmlNodePtr root,
@@ -978,6 +967,9 @@ virXMLFindChildNodeByNs(xmlNodePtr root,
                         const char *uri)
 {
     xmlNodePtr next;
+
+    if (!root)
+        return NULL;
 
     for (next = root->children; next; next = next->next) {
         if (next->ns &&
@@ -1044,7 +1036,7 @@ virXMLExtractNamespaceXML(xmlNodePtr root,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     if (doc)
         *doc = xmlstr;
     else
@@ -1074,6 +1066,12 @@ virXMLInjectNamespace(xmlNodePtr node,
 {
     xmlNsPtr ns;
 
+    if (xmlValidateNCName((const unsigned char *)key, 1) != 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("failed to validate prefix for a new XML namespace"));
+        return -1;
+    }
+
     if (!(ns = xmlNewNs(node, (const unsigned char *)uri, (const unsigned char *)key))) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("failed to create a new XML namespace"));
@@ -1083,4 +1081,83 @@ virXMLInjectNamespace(xmlNodePtr node,
     virXMLForeachNode(node, virXMLAddElementNamespace, ns);
 
     return 0;
+}
+
+static void catchRNGError(void *ctx,
+                          const char *msg,
+                          ...)
+{
+    virBufferPtr buf = ctx;
+    va_list args;
+
+    va_start(args, msg);
+    VIR_WARNINGS_NO_PRINTF;
+    virBufferVasprintf(buf, msg, args);
+    VIR_WARNINGS_RESET;
+    va_end(args);
+}
+
+
+static void ignoreRNGError(void *ctx ATTRIBUTE_UNUSED,
+                           const char *msg ATTRIBUTE_UNUSED,
+                           ...)
+{}
+
+
+int
+virXMLValidateAgainstSchema(const char *schemafile,
+                            xmlDocPtr doc)
+{
+    xmlRelaxNGParserCtxtPtr rngParser = NULL;
+    xmlRelaxNGPtr rng = NULL;
+    xmlRelaxNGValidCtxtPtr rngValid = NULL;
+    virBuffer buf = VIR_BUFFER_INITIALIZER;
+    int ret = -1;
+
+    if (!(rngParser = xmlRelaxNGNewParserCtxt(schemafile))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Unable to create RNG parser for %s"),
+                       schemafile);
+        goto cleanup;
+    }
+
+    xmlRelaxNGSetParserErrors(rngParser,
+                              catchRNGError,
+                              ignoreRNGError,
+                              &buf);
+
+    if (!(rng = xmlRelaxNGParse(rngParser))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Unable to parse RNG %s: %s"),
+                       schemafile, virBufferCurrentContent(&buf));
+        goto cleanup;
+    }
+
+    if (!(rngValid = xmlRelaxNGNewValidCtxt(rng))) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Unable to create RNG validation context %s"),
+                       schemafile);
+        goto cleanup;
+    }
+
+    xmlRelaxNGSetValidErrors(rngValid,
+                             catchRNGError,
+                             ignoreRNGError,
+                             &buf);
+
+    if (xmlRelaxNGValidateDoc(rngValid, doc) != 0) {
+        virReportError(VIR_ERR_XML_INVALID_SCHEMA,
+                       _("Unable to validate doc against %s\n%s"),
+                       schemafile, virBufferCurrentContent(&buf));
+        goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    virBufferFreeAndReset(&buf);
+    xmlRelaxNGFreeParserCtxt(rngParser);
+    xmlRelaxNGFreeValidCtxt(rngValid);
+    xmlRelaxNGFree(rng);
+    return ret;
 }

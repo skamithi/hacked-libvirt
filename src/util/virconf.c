@@ -1,7 +1,7 @@
 /*
  * virconf.c: parser for a subset of the Python encoded Xen configuration files
  *
- * Copyright (C) 2006-2013 Red Hat, Inc.
+ * Copyright (C) 2006-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -41,6 +41,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_CONF
 
+VIR_LOG_INIT("util.conf");
+
 /************************************************************************
  *									*
  *	Structures and macros used by the mini parser			*
@@ -77,6 +79,13 @@ struct _virConfParserCtxt {
  *		Structures used by configuration data			*
  *									*
  ************************************************************************/
+
+VIR_ENUM_IMPL(virConf, VIR_CONF_LAST,
+              "*unexpected*",
+              "long",
+              "unsigned long",
+              "string",
+              "list");
 
 typedef struct _virConfEntry virConfEntry;
 typedef virConfEntry *virConfEntryPtr;
@@ -265,6 +274,7 @@ virConfSaveValue(virBufferPtr buf, virConfValuePtr val)
         case VIR_CONF_NONE:
             return -1;
         case VIR_CONF_LONG:
+        case VIR_CONF_ULONG:
             virBufferAsprintf(buf, "%ld", val->l);
             break;
         case VIR_CONF_STRING:
@@ -500,9 +510,8 @@ virConfParseValue(virConfParserCtxtPtr ctxt)
             }
             NEXT;
             SKIP_BLANKS_AND_EOL;
-            if (CUR == ']') {
+            if (CUR == ']')
                 break;
-            }
             tmp = virConfParseValue(ctxt);
             if (tmp == NULL) {
                 virConfFreeList(lst);
@@ -527,10 +536,9 @@ virConfParseValue(virConfParserCtxtPtr ctxt)
                          _("numbers not allowed in VMX format"));
             return NULL;
         }
-        if (virConfParseLong(ctxt, &l) < 0) {
+        type = (c_isdigit(CUR) || CUR == '+') ? VIR_CONF_ULONG : VIR_CONF_LONG;
+        if (virConfParseLong(ctxt, &l) < 0)
             return NULL;
-        }
-        type = VIR_CONF_LONG;
     } else {
         virConfError(ctxt, VIR_ERR_CONF_SYNTAX, _("expecting a value"));
         return NULL;
@@ -652,9 +660,8 @@ virConfParseStatement(virConfParserCtxtPtr ctxt)
     char *comm = NULL;
 
     SKIP_BLANKS_AND_EOL;
-    if (CUR == '#') {
+    if (CUR == '#')
         return virConfParseComment(ctxt);
-    }
     name = virConfParseName(ctxt);
     if (name == NULL)
         return -1;
@@ -706,7 +713,8 @@ virConfParseStatement(virConfParserCtxtPtr ctxt)
  */
 static virConfPtr
 virConfParse(const char *filename, const char *content, int len,
-             unsigned int flags) {
+             unsigned int flags)
+{
     virConfParserCtxt ctxt;
 
     ctxt.filename = filename;
@@ -727,7 +735,7 @@ virConfParse(const char *filename, const char *content, int len,
 
     return ctxt.conf;
 
-error:
+ error:
     virConfFree(ctxt.conf);
     return NULL;
 }
@@ -765,9 +773,8 @@ virConfReadFile(const char *filename, unsigned int flags)
         return NULL;
     }
 
-    if ((len = virFileReadAll(filename, MAX_CONFIG_FILE_SIZE, &content)) < 0) {
+    if ((len = virFileReadAll(filename, MAX_CONFIG_FILE_SIZE, &content)) < 0)
         return NULL;
-    }
 
     conf = virConfParse(filename, content, len, flags);
 
@@ -880,14 +887,15 @@ virConfSetValue(virConfPtr conf,
 {
     virConfEntryPtr cur, prev = NULL;
 
-    if (value && value->type == VIR_CONF_STRING && value->str == NULL)
+    if (value && value->type == VIR_CONF_STRING && value->str == NULL) {
+        virConfFreeValue(value);
         return -1;
+    }
 
     cur = conf->entries;
     while (cur != NULL) {
-        if ((cur->name != NULL) && (STREQ(cur->name, setting))) {
+        if (STREQ_NULLABLE(cur->name, setting))
             break;
-        }
         prev = cur;
         cur = cur->next;
     }
@@ -976,11 +984,8 @@ virConfWriteFile(const char *filename, virConfPtr conf)
         cur = cur->next;
     }
 
-    if (virBufferError(&buf)) {
-        virBufferFreeAndReset(&buf);
-        virReportOOMError();
+    if (virBufferCheckError(&buf) < 0)
         return -1;
-    }
 
     fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     if (fd < 0) {
@@ -1032,11 +1037,8 @@ virConfWriteMem(char *memory, int *len, virConfPtr conf)
         cur = cur->next;
     }
 
-    if (virBufferError(&buf)) {
-        virBufferFreeAndReset(&buf);
-        virReportOOMError();
+    if (virBufferCheckError(&buf) < 0)
         return -1;
-    }
 
     use = virBufferUse(&buf);
     content = virBufferContentAndReset(&buf);

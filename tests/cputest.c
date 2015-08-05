@@ -1,7 +1,7 @@
 /*
  * cputest.c: Test the libvirtd internal CPU APIs
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -39,8 +39,6 @@
 #include "cpu/cpu.h"
 #include "cpu/cpu_map.h"
 #include "virstring.h"
-
-static const char *abs_top_srcdir;
 
 #define VIR_FROM_THIS VIR_FROM_CPU
 
@@ -96,7 +94,7 @@ cpuTestLoadXML(const char *arch, const char *name)
 
     cpu = virCPUDefParseXML(ctxt->node, ctxt, VIR_CPU_TYPE_AUTO);
 
-cleanup:
+ cleanup:
     xmlXPathFreeContext(ctxt);
     xmlFreeDoc(doc);
     VIR_FREE(xml);
@@ -124,8 +122,10 @@ cpuTestLoadMultiXML(const char *arch,
         goto cleanup;
 
     n = virXPathNodeSet("/cpuTest/cpu", ctxt, &nodes);
-    if (n <= 0 || (VIR_ALLOC_N(cpus, n) < 0))
+    if (n <= 0 || (VIR_ALLOC_N(cpus, n) < 0)) {
+        fprintf(stderr, "\nNo /cpuTest/cpu elements found in %s\n", xml);
         goto cleanup;
+    }
 
     for (i = 0; i < n; i++) {
         ctxt->node = nodes[i];
@@ -136,14 +136,14 @@ cpuTestLoadMultiXML(const char *arch,
 
     *count = n;
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
     VIR_FREE(nodes);
     xmlXPathFreeContext(ctxt);
     xmlFreeDoc(doc);
     return cpus;
 
-cleanup_cpus:
+ cleanup_cpus:
     for (i = 0; i < n; i++)
         virCPUDefFree(cpus[i]);
     VIR_FREE(cpus);
@@ -155,10 +155,9 @@ static int
 cpuTestCompareXML(const char *arch,
                   virCPUDef *cpu,
                   const char *name,
-                  unsigned int flags)
+                  bool updateCPU)
 {
     char *xml = NULL;
-    char *expected = NULL;
     char *actual = NULL;
     int ret = -1;
 
@@ -166,24 +165,16 @@ cpuTestCompareXML(const char *arch,
                     abs_srcdir, arch, name) < 0)
         goto cleanup;
 
-    if (virtTestLoadFile(xml, &expected) < 0)
+    if (!(actual = virCPUDefFormat(cpu, NULL, updateCPU)))
         goto cleanup;
 
-    if (!(actual = virCPUDefFormat(cpu, flags)))
+    if (virtTestCompareToFile(actual, xml) < 0)
         goto cleanup;
-
-    if (STRNEQ(expected, actual)) {
-        if (virTestGetVerbose())
-            fprintf(stderr, "\nCompared to %s-%s.xml", arch, name);
-        virtTestDifference(stderr, expected, actual);
-        goto cleanup;
-    }
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
-    VIR_FREE(expected);
     VIR_FREE(actual);
     return ret;
 }
@@ -230,24 +221,22 @@ cpuTestCompare(const void *arg)
         !(cpu = cpuTestLoadXML(data->arch, data->name)))
         goto cleanup;
 
-    result = cpuCompare(host, cpu);
+    result = cpuCompare(host, cpu, false);
     if (data->result == VIR_CPU_COMPARE_ERROR)
         virResetLastError();
 
     if (data->result != result) {
-        if (virTestGetVerbose()) {
-            fprintf(stderr, "\nExpected result %s, got %s\n",
+        VIR_TEST_VERBOSE("\nExpected result %s, got %s\n",
                     cpuTestCompResStr(data->result),
                     cpuTestCompResStr(result));
-            /* Pad to line up with test name ... in virTestRun */
-            fprintf(stderr, "%74s", "... ");
-        }
+        /* Pad to line up with test name ... in virTestRun */
+        VIR_TEST_VERBOSE("%74s", "... ");
         goto cleanup;
     }
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virCPUDefFree(host);
     virCPUDefFree(cpu);
     return ret;
@@ -305,9 +294,9 @@ cpuTestGuestData(const void *arg)
     }
     result = virBufferContentAndReset(&buf);
 
-    ret = cpuTestCompareXML(data->arch, guest, result, 0);
+    ret = cpuTestCompareXML(data->arch, guest, result, false);
 
-cleanup:
+ cleanup:
     VIR_FREE(result);
     cpuDataFree(guestData);
     virCPUDefFree(host);
@@ -335,10 +324,10 @@ cpuTestBaseline(const void *arg)
     baseline = cpuBaseline(cpus, ncpus, NULL, 0, data->flags);
     if (data->result < 0) {
         virResetLastError();
-        if (!baseline)
+        if (!baseline) {
             ret = 0;
-        else if (virTestGetVerbose()) {
-            fprintf(stderr, "\n%-70s... ",
+        } else {
+            VIR_TEST_VERBOSE("\n%-70s... ",
                     "cpuBaseline was expected to fail but it succeeded");
         }
         goto cleanup;
@@ -348,25 +337,25 @@ cpuTestBaseline(const void *arg)
 
     if (data->flags & VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES)
         suffix = "expanded";
+    else if (data->flags & VIR_CONNECT_BASELINE_CPU_MIGRATABLE)
+        suffix = "migratable";
     else
         suffix = "result";
     if (virAsprintf(&result, "%s-%s", data->name, suffix) < 0)
         goto cleanup;
 
-    if (cpuTestCompareXML(data->arch, baseline, result, 0) < 0)
+    if (cpuTestCompareXML(data->arch, baseline, result, false) < 0)
         goto cleanup;
 
     for (i = 0; i < ncpus; i++) {
         virCPUCompareResult cmp;
 
-        cmp = cpuCompare(cpus[i], baseline);
+        cmp = cpuCompare(cpus[i], baseline, false);
         if (cmp != VIR_CPU_COMPARE_SUPERSET &&
             cmp != VIR_CPU_COMPARE_IDENTICAL) {
-            if (virTestGetVerbose()) {
-                fprintf(stderr,
-                        "\nbaseline CPU is incompatible with CPU %zu\n", i);
-                fprintf(stderr, "%74s", "... ");
-            }
+            VIR_TEST_VERBOSE("\nbaseline CPU is incompatible with CPU %zu\n",
+                             i);
+            VIR_TEST_VERBOSE("%74s", "... ");
             ret = -1;
             goto cleanup;
         }
@@ -374,7 +363,7 @@ cpuTestBaseline(const void *arg)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     if (cpus) {
         for (i = 0; i < ncpus; i++)
             virCPUDefFree(cpus[i]);
@@ -405,10 +394,9 @@ cpuTestUpdate(const void *arg)
     if (virAsprintf(&result, "%s+%s", data->host, data->name) < 0)
         goto cleanup;
 
-    ret = cpuTestCompareXML(data->arch, cpu, result,
-                            VIR_DOMAIN_XML_UPDATE_CPU);
+    ret = cpuTestCompareXML(data->arch, cpu, result, true);
 
-cleanup:
+ cleanup:
     virCPUDefFree(host);
     virCPUDefFree(cpu);
     VIR_FREE(result);
@@ -437,19 +425,17 @@ cpuTestHasFeature(const void *arg)
         virResetLastError();
 
     if (data->result != result) {
-        if (virTestGetVerbose()) {
-            fprintf(stderr, "\nExpected result %s, got %s\n",
-                    cpuTestBoolWithErrorStr(data->result),
-                    cpuTestBoolWithErrorStr(result));
-            /* Pad to line up with test name ... in virTestRun */
-            fprintf(stderr, "%74s", "... ");
-        }
+        VIR_TEST_VERBOSE("\nExpected result %s, got %s\n",
+            cpuTestBoolWithErrorStr(data->result),
+            cpuTestBoolWithErrorStr(result));
+        /* Pad to line up with test name ... in virTestRun */
+        VIR_TEST_VERBOSE("%74s", "... ");
         goto cleanup;
     }
 
     ret = 0;
 
-cleanup:
+ cleanup:
     cpuDataFree(hostData);
     virCPUDefFree(host);
     return ret;
@@ -482,7 +468,7 @@ cpuTestRun(const char *name, const struct data *data)
             char *log;
             if ((log = virtTestLogContentAndReset()) &&
                  strlen(log) > 0)
-                fprintf(stderr, "\n%s\n", log);
+                VIR_TEST_DEBUG("\n%s\n", log);
             VIR_FREE(log);
         }
 
@@ -498,23 +484,13 @@ cpuTestRun(const char *name, const struct data *data)
 static const char *model486[]   = { "486" };
 static const char *nomodel[]    = { "nomodel" };
 static const char *models[]     = { "qemu64", "core2duo", "Nehalem" };
+static const char *haswell[]    = { "SandyBridge", "Haswell" };
 static const char *ppc_models[]     = { "POWER7", "POWER7_v2.1", "POWER8_v1.0"};
 
 static int
 mymain(void)
 {
     int ret = 0;
-    char *map = NULL;
-
-    abs_top_srcdir = getenv("abs_top_srcdir");
-    if (!abs_top_srcdir)
-        abs_top_srcdir = abs_srcdir "/..";
-
-    if (virAsprintf(&map, "%s/src/cpu/cpu_map.xml", abs_top_srcdir) < 0 ||
-        cpuMapOverride(map) < 0) {
-        VIR_FREE(map);
-        return EXIT_FAILURE;
-    }
 
 #define DO_TEST(arch, api, name, host, cpu,                             \
                 models, nmodels, preferred, flags, result)              \
@@ -547,6 +523,8 @@ mymain(void)
         char *label;                                                    \
         if ((flags) & VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES)         \
             suffix = " (expanded)";                                     \
+        if ((flags) & VIR_CONNECT_BASELINE_CPU_MIGRATABLE)              \
+            suffix = " (migratable)";                                   \
         if (virAsprintf(&label, "%s%s", name, suffix) < 0) {            \
             ret = -1;                                                   \
         } else {                                                        \
@@ -612,6 +590,7 @@ mymain(void)
     DO_TEST_UPDATE("x86", "host", "host-model", VIR_CPU_COMPARE_IDENTICAL);
     DO_TEST_UPDATE("x86", "host", "host-model-nofallback", VIR_CPU_COMPARE_IDENTICAL);
     DO_TEST_UPDATE("x86", "host", "host-passthrough", VIR_CPU_COMPARE_IDENTICAL);
+    DO_TEST_UPDATE("x86", "host-invtsc", "host-model", VIR_CPU_COMPARE_SUPERSET);
 
     /* computing baseline CPUs */
     DO_TEST_BASELINE("x86", "incompatible-vendors", 0, -1);
@@ -625,6 +604,10 @@ mymain(void)
     DO_TEST_BASELINE("x86", "4", VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES, 0);
     DO_TEST_BASELINE("x86", "5", 0, 0);
     DO_TEST_BASELINE("x86", "5", VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES, 0);
+    DO_TEST_BASELINE("x86", "6", 0, 0);
+    DO_TEST_BASELINE("x86", "6", VIR_CONNECT_BASELINE_CPU_MIGRATABLE, 0);
+    DO_TEST_BASELINE("x86", "7", 0, 0);
+    DO_TEST_BASELINE("x86", "8", 0, 0);
 
     DO_TEST_BASELINE("ppc64", "incompatible-vendors", 0, -1);
     DO_TEST_BASELINE("ppc64", "no-vendor", 0, 0);
@@ -653,11 +636,18 @@ mymain(void)
     DO_TEST_GUESTDATA("x86", "host", "host+host-model", models, "Penryn", 0);
     DO_TEST_GUESTDATA("x86", "host", "host+host-model-nofallback",
                       models, "Penryn", -1);
+    DO_TEST_GUESTDATA("x86", "host-Haswell-noTSX", "Haswell",
+                      haswell, "Haswell", 0);
+    DO_TEST_GUESTDATA("x86", "host-Haswell-noTSX", "Haswell-noTSX",
+                      haswell, "Haswell-noTSX", 0);
+    DO_TEST_GUESTDATA("x86", "host-Haswell-noTSX", "Haswell-noTSX-nofallback",
+                      haswell, "Haswell-noTSX", -1);
+    DO_TEST_GUESTDATA("x86", "host-Haswell-noTSX", "Haswell-noTSX",
+                      NULL, "Haswell-noTSX", 0);
 
     DO_TEST_GUESTDATA("ppc64", "host", "guest", ppc_models, NULL, 0);
     DO_TEST_GUESTDATA("ppc64", "host", "guest-nofallback", ppc_models, "POWER7_v2.1", -1);
 
-    VIR_FREE(map);
     return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

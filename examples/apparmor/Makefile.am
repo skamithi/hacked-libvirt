@@ -15,8 +15,10 @@
 ## <http://www.gnu.org/licenses/>.
 
 EXTRA_DIST=				\
-	TEMPLATE			\
+	TEMPLATE.qemu			\
+	TEMPLATE.lxc			\
 	libvirt-qemu			\
+	libvirt-lxc 			\
 	usr.lib.libvirt.virt-aa-helper	\
 	usr.sbin.libvirtd
 
@@ -30,10 +32,12 @@ apparmor_DATA = \
 abstractionsdir = $(apparmordir)/abstractions
 abstractions_DATA = \
 	libvirt-qemu \
+	libvirt-lxc \
 	$(NULL)
 
 templatesdir = $(apparmordir)/libvirt
 templates_DATA = \
-	TEMPLATE \
+	TEMPLATE.qemu \
+	TEMPLATE.lxc \
 	$(NULL)
 endif WITH_APPARMOR_PROFILES

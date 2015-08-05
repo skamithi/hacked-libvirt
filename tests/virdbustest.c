@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Red Hat, Inc.
+ * Copyright (C) 2013, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,8 @@
 #include "virdbuspriv.h"
 #include "virlog.h"
 #include "testutils.h"
+
+VIR_LOG_INIT("tests.dbustest");
 
 #define VERIFY(typname, valorig, valnew, fmt)                           \
     do {                                                                \
@@ -53,14 +55,14 @@ static int testMessageSimple(const void *args ATTRIBUTE_UNUSED)
     DBusMessage *msg = NULL;
     int ret = -1;
     unsigned char in_byte = 200, out_byte = 0;
-    int in_bool = true, out_bool = false;
+    bool in_bool = true, out_bool = false;
     short in_int16 = 0xfefe, out_int16 = 0;
     unsigned short in_uint16 = 32000, out_uint16 = 0;
     int in_int32 = 100000000, out_int32 = 0;
     unsigned int in_uint32 = 200000000, out_uint32 = 0;
     long long in_int64 = 1000000000000LL, out_int64 = 0;
     unsigned long long in_uint64 = 2000000000000LL, out_uint64 = 0;
-    double in_double = 3.14159265359, out_double = 0;;
+    double in_double = 3.14159265359, out_double = 0;
     const char *in_string = "Hello World";
     char *out_string = NULL;
     const char *in_objectpath = "/org/libvirt/test";
@@ -115,7 +117,7 @@ static int testMessageSimple(const void *args ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(out_string);
     VIR_FREE(out_signature);
     VIR_FREE(out_objectpath);
@@ -166,7 +168,7 @@ static int testMessageVariant(const void *args ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(out_str1);
     VIR_FREE(out_str2);
     dbus_message_unref(msg);
@@ -181,6 +183,7 @@ static int testMessageArray(const void *args ATTRIBUTE_UNUSED)
     int in_int32a = 1000000000, out_int32a = 0;
     int in_int32b = 2000000000, out_int32b = 0;
     int in_int32c = -2000000000, out_int32c = 0;
+    bool in_bool[] = { true, false, true }, out_bool[] = { false, true, false};
     const char *in_str2 = "World";
     char *out_str1 = NULL, *out_str2 = NULL;
 
@@ -193,18 +196,20 @@ static int testMessageArray(const void *args ATTRIBUTE_UNUSED)
     }
 
     if (virDBusMessageEncode(msg,
-                             "sais",
+                             "saiabs",
                              in_str1,
                              3, in_int32a, in_int32b, in_int32c,
+                             3, in_bool[0], in_bool[1], in_bool[2],
                              in_str2) < 0) {
         VIR_DEBUG("Failed to encode arguments");
         goto cleanup;
     }
 
     if (virDBusMessageDecode(msg,
-                             "sais",
+                             "saiabs",
                              &out_str1,
                              3, &out_int32a, &out_int32b, &out_int32c,
+                             3, &out_bool[0], &out_bool[1], &out_bool[2],
                              &out_str2) < 0) {
         VIR_DEBUG("Failed to decode arguments");
         goto cleanup;
@@ -215,13 +220,222 @@ static int testMessageArray(const void *args ATTRIBUTE_UNUSED)
     VERIFY("int32a", in_int32a, out_int32a, "%d");
     VERIFY("int32b", in_int32b, out_int32b, "%d");
     VERIFY("int32c", in_int32c, out_int32c, "%d");
+    VERIFY("bool[0]", in_bool[0], out_bool[0], "%d");
+    VERIFY("bool[1]", in_bool[1], out_bool[1], "%d");
+    VERIFY("bool[2]", in_bool[2], out_bool[2], "%d");
     VERIFY_STR("str2", in_str2, out_str2, "%s");
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(out_str1);
     VIR_FREE(out_str2);
+    dbus_message_unref(msg);
+    return ret;
+}
+
+static int testMessageEmptyArrayRef(const void *args ATTRIBUTE_UNUSED)
+{
+    DBusMessage *msg = NULL;
+    int ret = -1;
+    const char *in_strv1[] = {};
+    size_t out_nstrv1;
+    char **out_strv1 = NULL;
+
+    if (!(msg = dbus_message_new_method_call("org.libvirt.test",
+                                             "/org/libvirt/test",
+                                             "org.libvirt.test.astrochicken",
+                                             "cluck"))) {
+        VIR_DEBUG("Failed to allocate method call");
+        goto cleanup;
+    }
+
+    if (virDBusMessageEncode(msg,
+                             "a&s",
+                             0, in_strv1) < 0) {
+        VIR_DEBUG("Failed to encode arguments");
+        goto cleanup;
+    }
+
+    if (virDBusMessageDecode(msg,
+                             "a&s",
+                             &out_nstrv1, &out_strv1) < 0) {
+        VIR_DEBUG("Failed to decode arguments");
+        goto cleanup;
+    }
+
+
+    if (out_nstrv1 != 0) {
+        fprintf(stderr, "Expected 0 string, but got %zu\n",
+                out_nstrv1);
+        goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    dbus_message_unref(msg);
+    return ret;
+}
+
+static int testMessageSingleArrayRef(const void *args ATTRIBUTE_UNUSED)
+{
+    DBusMessage *msg = NULL;
+    int ret = -1;
+    const char *in_strv1[] = {
+        "Fishfood",
+    };
+    char **out_strv1 = NULL;
+    size_t out_nstrv1 = 0;
+
+    if (!(msg = dbus_message_new_method_call("org.libvirt.test",
+                                             "/org/libvirt/test",
+                                             "org.libvirt.test.astrochicken",
+                                             "cluck"))) {
+        VIR_DEBUG("Failed to allocate method call");
+        goto cleanup;
+    }
+
+    if (virDBusMessageEncode(msg,
+                             "a&s",
+                             1, in_strv1) < 0) {
+        VIR_DEBUG("Failed to encode arguments");
+        goto cleanup;
+    }
+
+    if (virDBusMessageDecode(msg,
+                             "a&s",
+                             &out_nstrv1, &out_strv1) < 0) {
+        VIR_DEBUG("Failed to decode arguments");
+        goto cleanup;
+    }
+
+
+    if (out_nstrv1 != 1) {
+        fprintf(stderr, "Expected 1 string, but got %zu\n",
+                out_nstrv1);
+        goto cleanup;
+    }
+    VERIFY_STR("strv1[0]", in_strv1[0], out_strv1[0], "%s");
+
+    ret = 0;
+
+ cleanup:
+    if (out_strv1)
+        VIR_FREE(out_strv1[0]);
+    dbus_message_unref(msg);
+    return ret;
+}
+
+static int testMessageArrayRef(const void *args ATTRIBUTE_UNUSED)
+{
+    DBusMessage *msg = NULL;
+    int ret = -1;
+    const char *in_str1 = "Hello";
+    int in_int32[] = {
+        100000000, 2000000000, -2000000000
+    };
+    bool in_bool[] = { true, false, true };
+    const char *in_strv1[] = {
+        "Fishfood",
+    };
+    const char *in_strv2[] = {
+        "Hello", "World",
+    };
+    int *out_int32 = NULL;
+    size_t out_nint32 = 0;
+    bool *out_bool = NULL;
+    size_t out_nbool = 0;
+    char **out_strv1 = NULL;
+    char **out_strv2 = NULL;
+    size_t out_nstrv1 = 0;
+    size_t out_nstrv2 = 0;
+    const char *in_str2 = "World";
+    char *out_str1 = NULL, *out_str2 = NULL;
+    size_t i;
+
+    if (!(msg = dbus_message_new_method_call("org.libvirt.test",
+                                             "/org/libvirt/test",
+                                             "org.libvirt.test.astrochicken",
+                                             "cluck"))) {
+        VIR_DEBUG("Failed to allocate method call");
+        goto cleanup;
+    }
+
+    if (virDBusMessageEncode(msg,
+                             "sa&sa&ia&ba&ss",
+                             in_str1,
+                             1, in_strv1,
+                             3, in_int32,
+                             3, in_bool,
+                             2, in_strv2,
+                             in_str2) < 0) {
+        VIR_DEBUG("Failed to encode arguments");
+        goto cleanup;
+    }
+
+    if (virDBusMessageDecode(msg,
+                             "sa&sa&ia&ba&ss",
+                             &out_str1,
+                             &out_nstrv1, &out_strv1,
+                             &out_nint32, &out_int32,
+                             &out_nbool, &out_bool,
+                             &out_nstrv2, &out_strv2,
+                             &out_str2) < 0) {
+        VIR_DEBUG("Failed to decode arguments");
+        goto cleanup;
+    }
+
+
+    VERIFY_STR("str1", in_str1, out_str1, "%s");
+    if (out_nstrv1 != 1) {
+        fprintf(stderr, "Expected 1 string, but got %zu\n",
+                out_nstrv1);
+        goto cleanup;
+    }
+    VERIFY_STR("strv1[0]", in_strv1[0], out_strv1[0], "%s");
+
+    if (out_nint32 != 3) {
+        fprintf(stderr, "Expected 3 integers, but got %zu\n",
+                out_nint32);
+        goto cleanup;
+    }
+    VERIFY("int32a", in_int32[0], out_int32[0], "%d");
+    VERIFY("int32b", in_int32[1], out_int32[1], "%d");
+    VERIFY("int32c", in_int32[2], out_int32[2], "%d");
+
+    if (out_nbool != 3) {
+        fprintf(stderr, "Expected 3 bools, but got %zu\n",
+                out_nbool);
+        goto cleanup;
+    }
+    VERIFY("bool[0]", in_bool[0], out_bool[0], "%d");
+    VERIFY("bool[1]", in_bool[1], out_bool[1], "%d");
+    VERIFY("bool[2]", in_bool[2], out_bool[2], "%d");
+
+    if (out_nstrv2 != 2) {
+        fprintf(stderr, "Expected 2 strings, but got %zu\n",
+                out_nstrv2);
+        goto cleanup;
+    }
+    VERIFY_STR("strv2[0]", in_strv2[0], out_strv2[0], "%s");
+    VERIFY_STR("strv2[1]", in_strv2[1], out_strv2[1], "%s");
+
+    VERIFY_STR("str2", in_str2, out_str2, "%s");
+
+    ret = 0;
+
+ cleanup:
+    VIR_FREE(out_int32);
+    VIR_FREE(out_bool);
+    VIR_FREE(out_str1);
+    VIR_FREE(out_str2);
+    for (i = 0; i < out_nstrv1; i++)
+        VIR_FREE(out_strv1[i]);
+    VIR_FREE(out_strv1);
+    for (i = 0; i < out_nstrv2; i++)
+        VIR_FREE(out_strv2[i]);
+    VIR_FREE(out_strv2);
     dbus_message_unref(msg);
     return ret;
 }
@@ -231,14 +445,14 @@ static int testMessageStruct(const void *args ATTRIBUTE_UNUSED)
     DBusMessage *msg = NULL;
     int ret = -1;
     unsigned char in_byte = 200, out_byte = 0;
-    int in_bool = true, out_bool = false;
+    bool in_bool = true, out_bool = false;
     short in_int16 = 12000, out_int16 = 0;
     unsigned short in_uint16 = 32000, out_uint16 = 0;
     int in_int32 = 100000000, out_int32 = 0;
     unsigned int in_uint32 = 200000000, out_uint32 = 0;
     long long in_int64 = -1000000000000LL, out_int64 = 0;
     unsigned long long in_uint64 = 2000000000000LL, out_uint64 = 0;
-    double in_double = 3.14159265359, out_double = 0;;
+    double in_double = 3.14159265359, out_double = 0;
     const char *in_string = "Hello World";
     char *out_string = NULL;
     const char *in_objectpath = "/org/libvirt/test";
@@ -293,7 +507,7 @@ static int testMessageStruct(const void *args ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(out_string);
     VIR_FREE(out_signature);
     VIR_FREE(out_objectpath);
@@ -326,7 +540,7 @@ static int testMessageDict(const void *args ATTRIBUTE_UNUSED)
     }
 
     if (virDBusMessageEncode(msg,
-                             "sa{si}s",
+                             "(sa{si}s)",
                              in_str1,
                              3,
                              in_key1, in_int32a,
@@ -338,7 +552,7 @@ static int testMessageDict(const void *args ATTRIBUTE_UNUSED)
     }
 
     if (virDBusMessageDecode(msg,
-                             "sa{si}s",
+                             "(sa{si}s)",
                              &out_str1,
                              3,
                              &out_key1, &out_int32a,
@@ -361,7 +575,7 @@ static int testMessageDict(const void *args ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(out_str1);
     VIR_FREE(out_str2);
     VIR_FREE(out_key1);
@@ -371,6 +585,119 @@ cleanup:
     return ret;
 }
 
+static int testMessageDictRef(const void *args ATTRIBUTE_UNUSED)
+{
+    DBusMessage *msg = NULL;
+    int ret = -1;
+    const char *in_str1 = "Hello";
+    const char *in_strv1[] = {
+        "Fruit1", "Apple",
+        "Fruit2", "Orange",
+        "Fruit3", "Kiwi",
+    };
+    const char *in_str2 = "World";
+    char *out_str1 = NULL;
+    size_t out_nint32 = 0;
+    char **out_strv1 = NULL;
+    char *out_str2 = NULL;
+
+    if (!(msg = dbus_message_new_method_call("org.libvirt.test",
+                                             "/org/libvirt/test",
+                                             "org.libvirt.test.astrochicken",
+                                             "cluck"))) {
+        VIR_DEBUG("Failed to allocate method call");
+        goto cleanup;
+    }
+
+    if (virDBusMessageEncode(msg,
+                             "(sa&{ss}s)",
+                             in_str1,
+                             3, in_strv1,
+                             in_str2) < 0) {
+        VIR_DEBUG("Failed to encode arguments");
+        goto cleanup;
+    }
+
+    if (virDBusMessageDecode(msg,
+                             "(sa&{ss}s)",
+                             &out_str1,
+                             &out_nint32,
+                             &out_strv1,
+                             &out_str2) < 0) {
+        VIR_DEBUG("Failed to decode arguments: '%s'", virGetLastErrorMessage());
+        goto cleanup;
+    }
+
+
+    VERIFY_STR("str1", in_str1, out_str1, "%s");
+    VERIFY_STR("strv1[0]", in_strv1[0], out_strv1[0], "%s");
+    VERIFY_STR("strv1[1]", in_strv1[1], out_strv1[1], "%s");
+    VERIFY_STR("strv1[2]", in_strv1[2], out_strv1[2], "%s");
+    VERIFY_STR("strv1[3]", in_strv1[3], out_strv1[3], "%s");
+    VERIFY_STR("strv1[4]", in_strv1[4], out_strv1[4], "%s");
+    VERIFY_STR("strv1[5]", in_strv1[5], out_strv1[5], "%s");
+    VERIFY_STR("str2", in_str2, out_str2, "%s");
+
+    ret = 0;
+
+ cleanup:
+    VIR_FREE(out_str1);
+    VIR_FREE(out_str2);
+    if (out_strv1) {
+        VIR_FREE(out_strv1[0]);
+        VIR_FREE(out_strv1[1]);
+        VIR_FREE(out_strv1[2]);
+        VIR_FREE(out_strv1[3]);
+        VIR_FREE(out_strv1[4]);
+        VIR_FREE(out_strv1[5]);
+    }
+    VIR_FREE(out_strv1);
+    dbus_message_unref(msg);
+    return ret;
+}
+
+static int testMessageEmptyDictRef(const void *args ATTRIBUTE_UNUSED)
+{
+    DBusMessage *msg = NULL;
+    int ret = -1;
+    const char *in_strv1[] = {};
+    size_t out_nint32 = 0;
+    char **out_strv1 = NULL;
+
+    if (!(msg = dbus_message_new_method_call("org.libvirt.test",
+                                             "/org/libvirt/test",
+                                             "org.libvirt.test.astrochicken",
+                                             "cluck"))) {
+        VIR_DEBUG("Failed to allocate method call");
+        goto cleanup;
+    }
+
+    if (virDBusMessageEncode(msg,
+                             "a&{ss}",
+                             0, in_strv1) < 0) {
+        VIR_DEBUG("Failed to encode arguments");
+        goto cleanup;
+    }
+
+    if (virDBusMessageDecode(msg,
+                             "a&{ss}",
+                             &out_nint32,
+                             &out_strv1) < 0) {
+        VIR_DEBUG("Failed to decode arguments: '%s'", virGetLastErrorMessage());
+        goto cleanup;
+    }
+
+    if (out_nint32 != 0) {
+        fprintf(stderr, "Unexpected dict entries\n");
+        goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    dbus_message_unref(msg);
+    return ret;
+}
 
 static int
 mymain(void)
@@ -383,11 +710,21 @@ mymain(void)
         ret = -1;
     if (virtTestRun("Test message array ", testMessageArray, NULL) < 0)
         ret = -1;
+    if (virtTestRun("Test message array empty ref ", testMessageEmptyArrayRef, NULL) < 0)
+        ret = -1;
+    if (virtTestRun("Test message array single ref ", testMessageSingleArrayRef, NULL) < 0)
+        ret = -1;
+    if (virtTestRun("Test message array ref ", testMessageArrayRef, NULL) < 0)
+        ret = -1;
     if (virtTestRun("Test message struct ", testMessageStruct, NULL) < 0)
         ret = -1;
     if (virtTestRun("Test message dict ", testMessageDict, NULL) < 0)
         ret = -1;
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    if (virtTestRun("Test message dict empty ref ", testMessageEmptyDictRef, NULL) < 0)
+        ret = -1;
+    if (virtTestRun("Test message dict ref ", testMessageDictRef, NULL) < 0)
+        ret = -1;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

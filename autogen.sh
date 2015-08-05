@@ -20,6 +20,10 @@ no_git=
 if test "x$1" = "x--no-git"; then
   no_git=" $1"
   shift
+  case "$1 $2" in
+    --gnulib-srcdir=*) no_git="$no_git $1"; shift ;;
+    --gnulib-srcdir\ *) no_git="$no_git $1=$2"; shift; shift;;
+  esac
 fi
 if test -z "$NOCONFIGURE" ; then
   if test "x$1" = "x--system"; then
@@ -35,7 +39,7 @@ if test -z "$NOCONFIGURE" ; then
     echo "Running ./configure with $EXTRA_ARGS $@"
   else
     if test -z "$*" && test ! -f "$THEDIR/config.status"; then
-        echo "I am going to run ./configure with no arguments - if you wish "
+        echo "I am going to run ./configure with no arguments - if you wish"
         echo "to pass any to it, please specify them on the $0 command line."
     fi
   fi

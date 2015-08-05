@@ -46,7 +46,7 @@ doModprobe(const char *opts, const char *module, char **outbuf, char **errbuf)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     return ret;
 }
@@ -65,7 +65,7 @@ doRmmod(const char *module, char **errbuf)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     return ret;
 }
@@ -121,7 +121,7 @@ virKModLoad(const char *module, bool useBlacklist)
  * Remove or unload a module.
  *
  * NB: Do not use 'modprobe -r' here as that code will recursively
- * unload any modules that were dependancies of the one being removed
+ * unload any modules that were dependencies of the one being removed
  * even if things still require them. e.g. it'll see the 'bridge'
  * module has refcount of 0 and remove it, even if there are bridges
  * created on the host
@@ -174,7 +174,7 @@ virKModIsBlacklisted(const char *module)
     if (strstr(outbuf, drvblklst))
         retval = true;
 
-cleanup:
+ cleanup:
     VIR_FREE(drvblklst);
     VIR_FREE(outbuf);
     return retval;

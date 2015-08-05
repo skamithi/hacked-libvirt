@@ -27,17 +27,28 @@
 # include "virnetdevvportprofile.h"
 # include "virnetdevvlan.h"
 
+# ifdef __FreeBSD__
+/* This should be defined on OSes that don't automatically
+ * cleanup released devices */
+#  define VIR_NETDEV_TAP_REQUIRE_MANUAL_CLEANUP 1
+# endif
+
 int virNetDevTapCreate(char **ifname,
+                       const char *tunpath,
                        int *tapfd,
-                       int tapfdSize,
+                       size_t tapfdSize,
                        unsigned int flags)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
 
-int virNetDevTapDelete(const char *ifname)
+int virNetDevTapDelete(const char *ifname,
+                       const char *tunpath)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
 
 int virNetDevTapGetName(int tapfd, char **ifname)
     ATTRIBUTE_NONNULL(2) ATTRIBUTE_RETURN_CHECK;
+
+char* virNetDevTapGetRealDeviceName(char *ifname)
+      ATTRIBUTE_NONNULL(1) ATTRIBUTE_RETURN_CHECK;
 
 typedef enum {
    VIR_NETDEV_TAP_CREATE_NONE = 0,
@@ -55,8 +66,9 @@ int virNetDevTapCreateInBridgePort(const char *brname,
                                    char **ifname,
                                    const virMacAddr *macaddr,
                                    const unsigned char *vmuuid,
+                                   const char *tunpath,
                                    int *tapfd,
-                                   int tapfdSize,
+                                   size_t tapfdSize,
                                    virNetDevVPortProfilePtr virtPortProfile,
                                    virNetDevVlanPtr virtVlan,
                                    unsigned int flags)

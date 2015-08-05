@@ -1,8 +1,8 @@
 /*
  * node_device_linux_sysfs.c: Linux specific code to gather device data
- * not available through HAL.
+ * that is available from sysfs (but not from UDEV or HAL).
  *
- * Copyright (C) 2009-2013 Red Hat, Inc.
+ * Copyright (C) 2009-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,6 +28,7 @@
 
 #include "node_device_driver.h"
 #include "node_device_hal.h"
+#include "node_device_linux_sysfs.h"
 #include "virerror.h"
 #include "viralloc.h"
 #include "virlog.h"
@@ -38,12 +39,20 @@
 
 #ifdef __linux__
 
+VIR_LOG_INIT("node_device.node_device_linux_sysfs");
+
 int
-detect_scsi_host_caps(union _virNodeDevCapData *d)
+nodeDeviceSysfsGetSCSIHostCaps(virNodeDevCapDataPtr d)
 {
     char *max_vports = NULL;
     char *vports = NULL;
     int ret = -1;
+
+    if (virReadSCSIUniqueId(NULL, d->scsi_host.host,
+                            &d->scsi_host.unique_id) < 0) {
+        VIR_DEBUG("Failed to read unique_id for host%d", d->scsi_host.host);
+        d->scsi_host.unique_id = -1;
+    }
 
     VIR_DEBUG("Checking if host%d is an FC HBA", d->scsi_host.host);
 
@@ -54,7 +63,7 @@ detect_scsi_host_caps(union _virNodeDevCapData *d)
                           d->scsi_host.host,
                           "port_name",
                           &d->scsi_host.wwpn) < 0) {
-            VIR_ERROR(_("Failed to read WWPN for host%d"), d->scsi_host.host);
+            VIR_WARN("Failed to read WWPN for host%d", d->scsi_host.host);
             goto cleanup;
         }
 
@@ -62,7 +71,7 @@ detect_scsi_host_caps(union _virNodeDevCapData *d)
                           d->scsi_host.host,
                           "node_name",
                           &d->scsi_host.wwnn) < 0) {
-            VIR_ERROR(_("Failed to read WWNN for host%d"), d->scsi_host.host);
+            VIR_WARN("Failed to read WWNN for host%d", d->scsi_host.host);
             goto cleanup;
         }
 
@@ -70,8 +79,8 @@ detect_scsi_host_caps(union _virNodeDevCapData *d)
                           d->scsi_host.host,
                           "fabric_name",
                           &d->scsi_host.fabric_wwn) < 0) {
-            VIR_ERROR(_("Failed to read fabric WWN for host%d"),
-                      d->scsi_host.host);
+            VIR_WARN("Failed to read fabric WWN for host%d",
+                     d->scsi_host.host);
             goto cleanup;
         }
     }
@@ -83,8 +92,8 @@ detect_scsi_host_caps(union _virNodeDevCapData *d)
                           d->scsi_host.host,
                           "max_npiv_vports",
                           &max_vports) < 0) {
-            VIR_ERROR(_("Failed to read max_npiv_vports for host%d"),
-                      d->scsi_host.host);
+            VIR_WARN("Failed to read max_npiv_vports for host%d",
+                     d->scsi_host.host);
             goto cleanup;
         }
 
@@ -92,28 +101,28 @@ detect_scsi_host_caps(union _virNodeDevCapData *d)
                           d->scsi_host.host,
                           "npiv_vports_inuse",
                           &vports) < 0) {
-            VIR_ERROR(_("Failed to read npiv_vports_inuse for host%d"),
-                      d->scsi_host.host);
+            VIR_WARN("Failed to read npiv_vports_inuse for host%d",
+                     d->scsi_host.host);
             goto cleanup;
         }
 
         if (virStrToLong_i(max_vports, NULL, 10,
                            &d->scsi_host.max_vports) < 0) {
-            VIR_ERROR(_("Failed to parse value of max_npiv_vports '%s'"),
+            VIR_WARN("Failed to parse value of max_npiv_vports '%s'",
                       max_vports);
             goto cleanup;
         }
 
         if (virStrToLong_i(vports, NULL, 10,
                            &d->scsi_host.vports) < 0) {
-            VIR_ERROR(_("Failed to parse value of npiv_vports_inuse '%s'"),
-                      vports);
+            VIR_WARN("Failed to parse value of npiv_vports_inuse '%s'",
+                     vports);
             goto cleanup;
         }
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     if (ret < 0) {
         /* Clear the two flags in case of producing confusing XML output */
         d->scsi_host.flags &= ~(VIR_NODE_DEV_CAP_FLAG_HBA_FC_HOST |
@@ -128,10 +137,100 @@ cleanup:
     return ret;
 }
 
+
+static int
+nodeDeviceSysfsGetPCISRIOVCaps(const char *sysfsPath,
+                               virNodeDevCapDataPtr data)
+{
+    size_t i;
+    int ret;
+
+    /* this could be a refresh, so clear out the old data */
+    for (i = 0; i < data->pci_dev.num_virtual_functions; i++)
+       VIR_FREE(data->pci_dev.virtual_functions[i]);
+    VIR_FREE(data->pci_dev.virtual_functions);
+    data->pci_dev.num_virtual_functions = 0;
+    data->pci_dev.flags &= ~VIR_NODE_DEV_CAP_FLAG_PCI_VIRTUAL_FUNCTION;
+    data->pci_dev.flags &= ~VIR_NODE_DEV_CAP_FLAG_PCI_PHYSICAL_FUNCTION;
+
+    if (!virPCIGetPhysicalFunction(sysfsPath, &data->pci_dev.physical_function))
+        data->pci_dev.flags |= VIR_NODE_DEV_CAP_FLAG_PCI_PHYSICAL_FUNCTION;
+
+    ret = virPCIGetVirtualFunctions(sysfsPath, &data->pci_dev.virtual_functions,
+                                    &data->pci_dev.num_virtual_functions);
+    if (ret < 0)
+        return ret;
+
+    if (data->pci_dev.num_virtual_functions > 0)
+        data->pci_dev.flags |= VIR_NODE_DEV_CAP_FLAG_PCI_VIRTUAL_FUNCTION;
+
+    return ret;
+}
+
+
+static int
+nodeDeviceSysfsGetPCIIOMMUGroupCaps(virNodeDevCapDataPtr data)
+{
+    size_t i;
+    int tmpGroup, ret = -1;
+    virPCIDeviceAddress addr;
+
+    /* this could be a refresh, so clear out the old data */
+    for (i = 0; i < data->pci_dev.nIommuGroupDevices; i++)
+       VIR_FREE(data->pci_dev.iommuGroupDevices[i]);
+    VIR_FREE(data->pci_dev.iommuGroupDevices);
+    data->pci_dev.nIommuGroupDevices = 0;
+    data->pci_dev.iommuGroupNumber = 0;
+
+    addr.domain = data->pci_dev.domain;
+    addr.bus = data->pci_dev.bus;
+    addr.slot = data->pci_dev.slot;
+    addr.function = data->pci_dev.function;
+    tmpGroup = virPCIDeviceAddressGetIOMMUGroupNum(&addr);
+    if (tmpGroup == -1) {
+        /* error was already reported */
+        goto cleanup;
+    }
+    if (tmpGroup == -2) {
+        /* -2 return means there is no iommu_group data */
+        ret = 0;
+        goto cleanup;
+    }
+    if (tmpGroup >= 0) {
+        if (virPCIDeviceAddressGetIOMMUGroupAddresses(&addr, &data->pci_dev.iommuGroupDevices,
+                                                      &data->pci_dev.nIommuGroupDevices) < 0)
+            goto cleanup;
+        data->pci_dev.iommuGroupNumber = tmpGroup;
+    }
+
+    ret = 0;
+ cleanup:
+    return ret;
+}
+
+
+/* nodeDeviceSysfsGetPCIRelatedCaps() get info that is stored in sysfs
+ * about devices related to this device, i.e. things that can change
+ * without this device itself changing. These must be refreshed
+ * anytime full XML of the device is requested, because they can
+ * change with no corresponding notification from the kernel/udev.
+ */
+int
+nodeDeviceSysfsGetPCIRelatedDevCaps(const char *sysfsPath,
+                                    virNodeDevCapDataPtr data)
+{
+    if (nodeDeviceSysfsGetPCISRIOVCaps(sysfsPath, data) < 0)
+        return -1;
+    if (nodeDeviceSysfsGetPCIIOMMUGroupCaps(data) < 0)
+        return -1;
+    return 0;
+}
+
+
 #else
 
 int
-detect_scsi_host_caps(union _virNodeDevCapData *d ATTRIBUTE_UNUSED)
+nodeDeviceSysfsGetSCSIHostCaps(virNodeDevCapDataPtr d ATTRIBUTE_UNUSED)
 {
     return -1;
 }

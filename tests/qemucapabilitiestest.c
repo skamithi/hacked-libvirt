@@ -31,7 +31,6 @@ typedef testQemuData *testQemuDataPtr;
 struct _testQemuData {
     virDomainXMLOptionPtr xmlopt;
     const char *base;
-    bool fips;
 };
 
 static qemuMonitorTestPtr
@@ -80,57 +79,8 @@ testQemuFeedMonitor(char *replies,
 
     return test;
 
-error:
+ error:
     qemuMonitorTestFree(test);
-    return NULL;
-}
-
-static virQEMUCapsPtr
-testQemuGetCaps(char *caps)
-{
-    virQEMUCapsPtr qemuCaps = NULL;
-    xmlDocPtr xml;
-    xmlXPathContextPtr ctxt = NULL;
-    ssize_t i, n;
-    xmlNodePtr *nodes = NULL;
-
-    if (!(xml = virXMLParseStringCtxt(caps, "(test caps)", &ctxt)))
-        goto error;
-
-    if ((n = virXPathNodeSet("/qemuCaps/flag", ctxt, &nodes)) < 0) {
-        fprintf(stderr, "failed to parse qemu capabilities flags");
-        goto error;
-    }
-
-    if (n > 0) {
-        if (!(qemuCaps = virQEMUCapsNew()))
-            goto error;
-
-        for (i = 0; i < n; i++) {
-            char *str = virXMLPropString(nodes[i], "name");
-            if (str) {
-                int flag = virQEMUCapsTypeFromString(str);
-                if (flag < 0) {
-                    fprintf(stderr, "Unknown qemu capabilities flag %s", str);
-                    VIR_FREE(str);
-                    goto error;
-                }
-                VIR_FREE(str);
-                virQEMUCapsSet(qemuCaps, flag);
-            }
-        }
-    }
-
-    VIR_FREE(nodes);
-    xmlFreeDoc(xml);
-    xmlXPathFreeContext(ctxt);
-    return qemuCaps;
-
-error:
-    VIR_FREE(nodes);
-    virObjectUnref(qemuCaps);
-    xmlFreeDoc(xml);
-    xmlXPathFreeContext(ctxt);
     return NULL;
 }
 
@@ -166,7 +116,7 @@ testQemuCaps(const void *opaque)
     int ret = -1;
     const testQemuData *data = opaque;
     char *repliesFile = NULL, *capsFile = NULL;
-    char *replies = NULL, *caps = NULL;
+    char *replies = NULL;
     qemuMonitorTestPtr mon = NULL;
     virQEMUCapsPtr capsProvided = NULL, capsComputed = NULL;
 
@@ -176,14 +126,13 @@ testQemuCaps(const void *opaque)
                     abs_srcdir, data->base) < 0)
         goto cleanup;
 
-    if (virtTestLoadFile(repliesFile, &replies) < 0 ||
-        virtTestLoadFile(capsFile, &caps) < 0)
+    if (virtTestLoadFile(repliesFile, &replies) < 0)
         goto cleanup;
 
     if (!(mon = testQemuFeedMonitor(replies, data->xmlopt)))
         goto cleanup;
 
-    if (!(capsProvided = testQemuGetCaps(caps)))
+    if (!(capsProvided = qemuTestParseCapabilities(capsFile)))
         goto cleanup;
 
     if (!(capsComputed = virQEMUCapsNew()))
@@ -193,21 +142,14 @@ testQemuCaps(const void *opaque)
                                   qemuMonitorTestGetMonitor(mon)) < 0)
         goto cleanup;
 
-    /* So that our test does not depend on the contents of /proc, we
-     * hoisted the setting of ENABLE_FIPS to virQEMUCapsInitQMP.  But
-     * we do want to test the effect of that flag.  */
-    if (data->fips)
-        virQEMUCapsSet(capsComputed, QEMU_CAPS_ENABLE_FIPS);
-
     if (testQemuCapsCompare(capsProvided, capsComputed) < 0)
         goto cleanup;
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FREE(repliesFile);
     VIR_FREE(capsFile);
     VIR_FREE(replies);
-    VIR_FREE(caps);
     qemuMonitorTestFree(mon);
     virObjectUnref(capsProvided);
     virObjectUnref(capsComputed);
@@ -234,20 +176,20 @@ mymain(void)
 
     data.xmlopt = xmlopt;
 
-#define DO_TEST_FULL(name, use_fips)                 \
-    data.base = name;                                \
-    data.fips = use_fips;                            \
-    if (virtTestRun(name, testQemuCaps, &data) < 0)  \
-        ret = -1
+#define DO_TEST(name)                                   \
+    do {                                                \
+        data.base = name;                               \
+        if (virtTestRun(name, testQemuCaps, &data) < 0) \
+            ret = -1;                                   \
+    } while (0)
 
-#define DO_TEST(name) DO_TEST_FULL(name, false)
-
-    DO_TEST_FULL("caps_1.2.2-1", true);
+    DO_TEST("caps_1.2.2-1");
     DO_TEST("caps_1.3.1-1");
     DO_TEST("caps_1.4.2-1");
     DO_TEST("caps_1.5.3-1");
-    DO_TEST_FULL("caps_1.6.0-1", true);
+    DO_TEST("caps_1.6.0-1");
     DO_TEST("caps_1.6.50-1");
+    DO_TEST("caps_2.1.1-1");
 
     virObjectUnref(xmlopt);
     return (ret == 0) ? EXIT_SUCCESS : EXIT_FAILURE;

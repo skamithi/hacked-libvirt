@@ -1,5 +1,5 @@
 /*
- * domain_audit.c: Domain audit management
+ * domain_audit.h: Domain audit management
  *
  * Copyright (C) 2006-2011 Red Hat, Inc.
  * Copyright (C) 2006 Daniel P. Berrange
@@ -39,8 +39,8 @@ void virDomainAuditStop(virDomainObjPtr vm,
                         const char *reason)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
 void virDomainAuditDisk(virDomainObjPtr vm,
-                        const char *oldDef,
-                        const char *newDef,
+                        virStorageSourcePtr oldDef,
+                        virStorageSourcePtr newDef,
                         const char *reason,
                         bool success)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(4);
@@ -102,6 +102,12 @@ void virDomainAuditVcpu(virDomainObjPtr vm,
                         const char *reason,
                         bool success)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(4);
+void virDomainAuditIOThread(virDomainObjPtr vm,
+                            unsigned int oldiothread,
+                            unsigned int newiothread,
+                            const char *reason,
+                            bool success)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(4);
 void virDomainAuditSecurityLabel(virDomainObjPtr vm,
                                  bool success)
     ATTRIBUTE_NONNULL(1);
@@ -110,5 +116,19 @@ void virDomainAuditRedirdev(virDomainObjPtr vm,
                             const char *reason,
                             bool success)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
+
+void virDomainAuditChardev(virDomainObjPtr vm,
+                           virDomainChrDefPtr oldDef,
+                           virDomainChrDefPtr newDef,
+                           const char *reason,
+                           bool success)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(4);
+void virDomainAuditRNG(virDomainObjPtr vm,
+                       virDomainRNGDefPtr oldDef,
+                       virDomainRNGDefPtr newDef,
+                       const char *reason,
+                       bool success)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(4);
+
 
 #endif /* __VIR_DOMAIN_AUDIT_H__ */

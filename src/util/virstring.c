@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2013 Red Hat, Inc.
+ * Copyright (C) 2012-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -34,6 +34,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
+VIR_LOG_INIT("util.string");
+
 /*
  * The following virStringSplit & virStringJoin methods
  * are derived from g_strsplit / g_strjoin in glib2,
@@ -41,13 +43,15 @@
  */
 
 /**
- * virStringSplit:
+ * virStringSplitCount:
  * @string: a string to split
  * @delim: a string which specifies the places at which to split
  *     the string. The delimiter is not included in any of the resulting
  *     strings, unless @max_tokens is reached.
  * @max_tokens: the maximum number of pieces to split @string into.
  *     If this is 0, the string is split completely.
+ * @tokcount: If provided, the value is set to the count of pieces the string
+ *            was split to excluding the terminating NULL element.
  *
  * Splits a string into a maximum of @max_tokens pieces, using the given
  * @delim. If @max_tokens is reached, the remainder of @string is
@@ -63,9 +67,11 @@
  * Return value: a newly-allocated NULL-terminated array of strings. Use
  *    virStringFreeList() to free it.
  */
-char **virStringSplit(const char *string,
-                      const char *delim,
-                      size_t max_tokens)
+char **
+virStringSplitCount(const char *string,
+                    const char *delim,
+                    size_t max_tokens,
+                    size_t *tokcount)
 {
     char **tokens = NULL;
     size_t ntokens = 0;
@@ -107,13 +113,25 @@ char **virStringSplit(const char *string,
         goto error;
     tokens[ntokens++] = NULL;
 
+    if (tokcount)
+        *tokcount = ntokens - 1;
+
     return tokens;
 
-error:
+ error:
     for (i = 0; i < ntokens; i++)
         VIR_FREE(tokens[i]);
     VIR_FREE(tokens);
     return NULL;
+}
+
+
+char **
+virStringSplit(const char *string,
+               const char *delim,
+               size_t max_tokens)
+{
+    return virStringSplitCount(string, delim, max_tokens, NULL);
 }
 
 
@@ -140,10 +158,8 @@ char *virStringJoin(const char **strings,
             virBufferAdd(&buf, delim, -1);
         strings++;
     }
-    if (virBufferError(&buf)) {
-        virReportOOMError();
+    if (virBufferCheckError(&buf) < 0)
         return NULL;
-    }
     ret = virBufferContentAndReset(&buf);
     if (!ret)
         ignore_value(VIR_STRDUP(ret, ""));
@@ -166,6 +182,43 @@ void virStringFreeList(char **strings)
         tmp++;
     }
     VIR_FREE(strings);
+}
+
+
+/**
+ * virStringFreeListCount:
+ * @strings: array of strings to free
+ * @count: number of elements in the array
+ *
+ * Frees a string array of @count length.
+ */
+void
+virStringFreeListCount(char **strings,
+                       size_t count)
+{
+    size_t i;
+
+    if (!strings)
+        return;
+
+    for (i = 0; i < count; i++)
+        VIR_FREE(strings[i]);
+
+    VIR_FREE(strings);
+}
+
+
+size_t virStringListLen(const char **strings)
+{
+    size_t i = 0;
+
+    if (!strings)
+        return 0;
+
+    while (strings[i] != NULL)
+        i++;
+
+    return i;
 }
 
 
@@ -209,17 +262,52 @@ virStrToLong_i(char const *s, char **end_ptr, int base, int *result)
     return 0;
 }
 
-/* Just like virStrToLong_i, above, but produce an "unsigned int" value.  */
+/* Just like virStrToLong_i, above, but produce an "unsigned int"
+ * value.  This version allows twos-complement wraparound of negative
+ * numbers. */
 int
 virStrToLong_ui(char const *s, char **end_ptr, int base, unsigned int *result)
 {
     unsigned long int val;
     char *p;
-    int err;
+    bool err = false;
 
     errno = 0;
     val = strtoul(s, &p, base); /* exempt from syntax-check */
-    err = (errno || (!end_ptr && *p) || p == s || (unsigned int) val != val);
+
+    /* This one's tricky.  We _want_ to allow "-1" as shorthand for
+     * UINT_MAX regardless of whether long is 32-bit or 64-bit.  But
+     * strtoul treats "-1" as ULONG_MAX, and going from ulong back
+     * to uint differs depending on the size of long. */
+    if (sizeof(long) > sizeof(int) && memchr(s, '-', p - s)) {
+        if (-val > UINT_MAX)
+            err = true;
+        else
+            val &= 0xffffffff;
+    }
+
+    err |= (errno || (!end_ptr && *p) || p == s || (unsigned int) val != val);
+    if (end_ptr)
+        *end_ptr = p;
+    if (err)
+        return -1;
+    *result = val;
+    return 0;
+}
+
+/* Just like virStrToLong_i, above, but produce an "unsigned int"
+ * value.  This version rejects any negative signs.  */
+int
+virStrToLong_uip(char const *s, char **end_ptr, int base, unsigned int *result)
+{
+    unsigned long int val;
+    char *p;
+    bool err = false;
+
+    errno = 0;
+    val = strtoul(s, &p, base); /* exempt from syntax-check */
+    err = (memchr(s, '-', p - s) ||
+           errno || (!end_ptr && *p) || p == s || (unsigned int) val != val);
     if (end_ptr)
         *end_ptr = p;
     if (err)
@@ -247,7 +335,9 @@ virStrToLong_l(char const *s, char **end_ptr, int base, long *result)
     return 0;
 }
 
-/* Just like virStrToLong_i, above, but produce an "unsigned long" value.  */
+/* Just like virStrToLong_i, above, but produce an "unsigned long"
+ * value.  This version allows twos-complement wraparound of negative
+ * numbers. */
 int
 virStrToLong_ul(char const *s, char **end_ptr, int base, unsigned long *result)
 {
@@ -258,6 +348,28 @@ virStrToLong_ul(char const *s, char **end_ptr, int base, unsigned long *result)
     errno = 0;
     val = strtoul(s, &p, base); /* exempt from syntax-check */
     err = (errno || (!end_ptr && *p) || p == s);
+    if (end_ptr)
+        *end_ptr = p;
+    if (err)
+        return -1;
+    *result = val;
+    return 0;
+}
+
+/* Just like virStrToLong_i, above, but produce an "unsigned long"
+ * value.  This version rejects any negative signs.  */
+int
+virStrToLong_ulp(char const *s, char **end_ptr, int base,
+                 unsigned long *result)
+{
+    unsigned long int val;
+    char *p;
+    int err;
+
+    errno = 0;
+    val = strtoul(s, &p, base); /* exempt from syntax-check */
+    err = (memchr(s, '-', p - s) ||
+           errno || (!end_ptr && *p) || p == s);
     if (end_ptr)
         *end_ptr = p;
     if (err)
@@ -285,9 +397,12 @@ virStrToLong_ll(char const *s, char **end_ptr, int base, long long *result)
     return 0;
 }
 
-/* Just like virStrToLong_i, above, but produce an "unsigned long long" value.  */
+/* Just like virStrToLong_i, above, but produce an "unsigned long
+ * long" value.  This version allows twos-complement wraparound of
+ * negative numbers. */
 int
-virStrToLong_ull(char const *s, char **end_ptr, int base, unsigned long long *result)
+virStrToLong_ull(char const *s, char **end_ptr, int base,
+                 unsigned long long *result)
 {
     unsigned long long val;
     char *p;
@@ -296,6 +411,28 @@ virStrToLong_ull(char const *s, char **end_ptr, int base, unsigned long long *re
     errno = 0;
     val = strtoull(s, &p, base); /* exempt from syntax-check */
     err = (errno || (!end_ptr && *p) || p == s);
+    if (end_ptr)
+        *end_ptr = p;
+    if (err)
+        return -1;
+    *result = val;
+    return 0;
+}
+
+/* Just like virStrToLong_i, above, but produce an "unsigned long
+ * long" value.  This version rejects any negative signs.  */
+int
+virStrToLong_ullp(char const *s, char **end_ptr, int base,
+                  unsigned long long *result)
+{
+    unsigned long long val;
+    char *p;
+    int err;
+
+    errno = 0;
+    val = strtoull(s, &p, base); /* exempt from syntax-check */
+    err = (memchr(s, '-', p - s) ||
+           errno || (!end_ptr && *p) || p == s);
     if (end_ptr)
         *end_ptr = p;
     if (err)
@@ -494,6 +631,22 @@ virSkipSpacesBackwards(const char *str, char **endp)
     virTrimSpaces(s, endp);
     if (s == *endp)
         *endp = NULL;
+}
+
+/**
+ * virStringIsEmpty:
+ * @str: string to check
+ *
+ * Returns true if string is empty (may contain only whitespace) or NULL.
+ */
+bool
+virStringIsEmpty(const char *str)
+{
+    if (!str)
+        return true;
+
+    virSkipSpaces(&str);
+    return str[0] == '\0';
 }
 
 char *
@@ -741,7 +894,7 @@ virStringSearch(const char *str,
 
     ret = nmatches - 1; /* don't count the trailing null */
 
-cleanup:
+ cleanup:
     regfree(&re);
     if (ret < 0) {
         virStringFreeList(*matches);
@@ -756,7 +909,7 @@ cleanup:
  * @oldneedle: the substring to locate
  * @newneedle: the substring to insert
  *
- * Search @haystack and replace all occurences of @oldneedle with @newneedle.
+ * Search @haystack and replace all occurrences of @oldneedle with @newneedle.
  *
  * Returns: a new string with all the replacements, or NULL on error
  */
@@ -787,10 +940,83 @@ virStringReplace(const char *haystack,
         tmp1 = tmp2;
     }
 
-    if (virBufferError(&buf)) {
-        virReportOOMError();
+    if (virBufferCheckError(&buf) < 0)
         return NULL;
-    }
 
     return virBufferContentAndReset(&buf);
+}
+
+
+/**
+ * virStringStripIPv6Brackets:
+ * @str: the string to strip
+ *
+ * Modify the string in-place to remove the leading and closing brackets
+ * from an IPv6 address.
+ */
+void
+virStringStripIPv6Brackets(char *str)
+{
+    size_t len;
+
+    if (!str)
+        return;
+
+    len = strlen(str);
+    if (str[0] == '[' && str[len - 1] == ']' && strchr(str, ':')) {
+        memmove(&str[0], &str[1], len - 2);
+        str[len - 2] = '\0';
+    }
+}
+
+
+static const char control_chars[] =
+    "\x01\x02\x03\x04\x05\x06\x07"
+    "\x08" /* \t \n */ "\x0B\x0C" /* \r */ "\x0E\x0F"
+    "\x10\x11\x12\x13\x14\x15\x16\x17"
+    "\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
+
+bool
+virStringHasControlChars(const char *str)
+{
+    if (!str)
+        return false;
+
+    return str[strcspn(str, control_chars)] != '\0';
+}
+
+
+/* Work around spurious strchr() diagnostics given by -Wlogical-op
+ * for gcc < 4.6.  Doing it via a local pragma keeps the damage
+ * smaller than disabling it on the package level.  Unfortunately, the
+ * affected GCCs don't allow diagnostic push/pop which would have
+ * further reduced the impact. */
+#if BROKEN_GCC_WLOGICALOP
+# pragma GCC diagnostic ignored "-Wlogical-op"
+#endif
+
+
+/**
+ * virStringStripControlChars:
+ * @str: the string to strip
+ *
+ * Modify the string in-place to remove the control characters
+ * in the interval: [0x01, 0x20)
+ */
+void
+virStringStripControlChars(char *str)
+{
+    size_t len, i, j;
+
+    if (!str)
+        return;
+
+    len = strlen(str);
+    for (i = 0, j = 0; i < len; i++) {
+        if (strchr(control_chars, str[i]))
+            continue;
+
+        str[j++] = str[i];
+    }
+    str[j] = '\0';
 }

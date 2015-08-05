@@ -1,7 +1,7 @@
 /*
  * virsh.c: a shell to exercise the libvirt API
  *
- * Copyright (C) 2005, 2007-2014 Red Hat, Inc.
+ * Copyright (C) 2005, 2007-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -44,11 +44,6 @@
 #include <strings.h>
 #include <signal.h>
 
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-#include <libxml/xpath.h>
-#include <libxml/xmlsave.h>
-
 #if WITH_READLINE
 # include <readline/readline.h>
 # include <readline/history.h>
@@ -56,19 +51,14 @@
 
 #include "internal.h"
 #include "virerror.h"
-#include "base64.h"
 #include "virbuffer.h"
 #include "viralloc.h"
-#include "virxml.h"
 #include <libvirt/libvirt-qemu.h>
 #include <libvirt/libvirt-lxc.h>
 #include "virfile.h"
 #include "configmake.h"
 #include "virthread.h"
 #include "vircommand.h"
-#include "virkeycode.h"
-#include "virnetdevbandwidth.h"
-#include "virbitmap.h"
 #include "conf/domain_conf.h"
 #include "virtypedparam.h"
 #include "virstring.h"
@@ -151,22 +141,40 @@ vshNameSorter(const void *a, const void *b)
 double
 vshPrettyCapacity(unsigned long long val, const char **unit)
 {
-    if (val < 1024) {
+    double limit = 1024;
+
+    if (val < limit) {
         *unit = "B";
-        return (double)val;
-    } else if (val < (1024.0l * 1024.0l)) {
-        *unit = "KiB";
-        return (((double)val / 1024.0l));
-    } else if (val < (1024.0l * 1024.0l * 1024.0l)) {
-        *unit = "MiB";
-        return (double)val / (1024.0l * 1024.0l);
-    } else if (val < (1024.0l * 1024.0l * 1024.0l * 1024.0l)) {
-        *unit = "GiB";
-        return (double)val / (1024.0l * 1024.0l * 1024.0l);
-    } else {
-        *unit = "TiB";
-        return (double)val / (1024.0l * 1024.0l * 1024.0l * 1024.0l);
+        return val;
     }
+    limit *= 1024;
+    if (val < limit) {
+        *unit = "KiB";
+        return val / (limit / 1024);
+    }
+    limit *= 1024;
+    if (val < limit) {
+        *unit = "MiB";
+        return val / (limit / 1024);
+    }
+    limit *= 1024;
+    if (val < limit) {
+        *unit = "GiB";
+        return val / (limit / 1024);
+    }
+    limit *= 1024;
+    if (val < limit) {
+        *unit = "TiB";
+        return val / (limit / 1024);
+    }
+    limit *= 1024;
+    if (val < limit) {
+        *unit = "PiB";
+        return val / (limit / 1024);
+    }
+    limit *= 1024;
+    *unit = "EiB";
+    return val / (limit / 1024);
 }
 
 /*
@@ -291,14 +299,14 @@ vshReportError(vshControl *ctl)
 
     vshError(ctl, "%s", last_error->message);
 
-out:
+ out:
     vshResetLibvirtError();
 }
 
 /*
  * Detection of disconnections and automatic reconnection support
  */
-static int disconnected = 0; /* we may have been disconnected */
+static int disconnected; /* we may have been disconnected */
 
 /*
  * vshCatchDisconnect:
@@ -313,6 +321,46 @@ vshCatchDisconnect(virConnectPtr conn ATTRIBUTE_UNUSED,
 {
     if (reason != VIR_CONNECT_CLOSE_REASON_CLIENT)
         disconnected++;
+}
+
+/* Main Function which should be used for connecting.
+ * This function properly handles keepalive settings. */
+virConnectPtr
+vshConnect(vshControl *ctl, const char *uri, bool readonly)
+{
+    virConnectPtr c = NULL;
+    int interval = 5; /* Default */
+    int count = 6;    /* Default */
+    bool keepalive_forced = false;
+
+    if (ctl->keepalive_interval >= 0) {
+        interval = ctl->keepalive_interval;
+        keepalive_forced = true;
+    }
+    if (ctl->keepalive_count >= 0) {
+        count = ctl->keepalive_count;
+        keepalive_forced = true;
+    }
+
+    c = virConnectOpenAuth(uri, virConnectAuthPtrDefault,
+                           readonly ? VIR_CONNECT_RO : 0);
+    if (!c)
+        return NULL;
+
+    if (interval > 0 &&
+        virConnectSetKeepAlive(c, interval, count) != 0) {
+        if (keepalive_forced) {
+            vshError(ctl, "%s",
+                     _("Cannot setup keepalive on connection "
+                       "as requested, disconnecting"));
+            virConnectClose(c);
+            return NULL;
+        }
+        vshDebug(ctl, VSH_ERR_INFO, "%s",
+                 _("Failed to setup keepalive on connection\n"));
+    }
+
+    return c;
 }
 
 /*
@@ -340,9 +388,8 @@ vshReconnect(vshControl *ctl)
                                   "disconnect from the hypervisor"));
     }
 
-    ctl->conn = virConnectOpenAuth(ctl->name,
-                                   virConnectAuthPtrDefault,
-                                   ctl->readonly ? VIR_CONNECT_RO : 0);
+    ctl->conn = vshConnect(ctl, ctl->name, ctl->readonly);
+
     if (!ctl->conn) {
         if (disconnected)
             vshError(ctl, "%s", _("Failed to reconnect to the hypervisor"));
@@ -358,6 +405,7 @@ vshReconnect(vshControl *ctl)
     disconnected = 0;
     ctl->useGetInfo = false;
     ctl->useSnapshotOld = false;
+    ctl->blockJobNoBytes = false;
 }
 
 
@@ -377,7 +425,7 @@ static const vshCmdInfo info_connect[] = {
 
 static const vshCmdOptDef opts_connect[] = {
     {.name = "name",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .flags = VSH_OFLAG_EMPTY_OK,
      .help = N_("hypervisor connection URI")
     },
@@ -415,10 +463,10 @@ cmdConnect(vshControl *ctl, const vshCmd *cmd)
 
     ctl->useGetInfo = false;
     ctl->useSnapshotOld = false;
+    ctl->blockJobNoBytes = false;
     ctl->readonly = ro;
 
-    ctl->conn = virConnectOpenAuth(ctl->name, virConnectAuthPtrDefault,
-                                   ctl->readonly ? VIR_CONNECT_RO : 0);
+    ctl->conn = vshConnect(ctl, ctl->name, ctl->readonly);
 
     if (!ctl->conn) {
         vshError(ctl, "%s", _("Failed to connect to the hypervisor"));
@@ -441,9 +489,8 @@ vshPrintRaw(vshControl *ctl, ...)
     char *key;
 
     va_start(ap, ctl);
-    while ((key = va_arg(ap, char *)) != NULL) {
+    while ((key = va_arg(ap, char *)) != NULL)
         vshPrint(ctl, "%s\r\n", key);
-    }
     va_end(ap);
 }
 
@@ -455,13 +502,14 @@ vshPrintRaw(vshControl *ctl, ...)
  * edited file.
  *
  * Returns 'y' if he wants to
- *         'f' if he forcibly wants to
  *         'n' if he doesn't want to
+ *         'i' if he wants to try defining it again while ignoring validation
+ *         'f' if he forcibly wants to
  *         -1  on error
  *          0  otherwise
  */
 int
-vshAskReedit(vshControl *ctl, const char *msg)
+vshAskReedit(vshControl *ctl, const char *msg, bool relax_avail)
 {
     int c = -1;
 
@@ -474,9 +522,8 @@ vshAskReedit(vshControl *ctl, const char *msg)
         return -1;
 
     while (true) {
-        /* TRANSLATORS: For now, we aren't using LC_MESSAGES, and the user
-         * choices really are limited to just 'y', 'n', 'f' and '?'  */
-        vshPrint(ctl, "\r%s %s", msg, _("Try again? [y,n,f,?]:"));
+        vshPrint(ctl, "\r%s %s %s: ", msg, _("Try again?"),
+                 relax_avail ? "[y,n,i,f,?]" : "[y,n,f,?]");
         c = c_tolower(getchar());
 
         if (c == '?') {
@@ -484,11 +531,21 @@ vshAskReedit(vshControl *ctl, const char *msg)
                         "",
                         _("y - yes, start editor again"),
                         _("n - no, throw away my changes"),
+                        NULL);
+
+            if (relax_avail) {
+                vshPrintRaw(ctl,
+                            _("i - turn off validation and try to redefine again"),
+                            NULL);
+            }
+
+            vshPrintRaw(ctl,
                         _("f - force, try to redefine again"),
                         _("? - print this help"),
                         NULL);
             continue;
-        } else if (c == 'y' || c == 'n' || c == 'f') {
+        } else if (c == 'y' || c == 'n' || c == 'f' ||
+                   (relax_avail && c == 'i')) {
             break;
         }
     }
@@ -500,7 +557,9 @@ vshAskReedit(vshControl *ctl, const char *msg)
 }
 #else /* WIN32 */
 int
-vshAskReedit(vshControl *ctl, const char *msg ATTRIBUTE_UNUSED)
+vshAskReedit(vshControl *ctl,
+             const char *msg ATTRIBUTE_UNUSED,
+             bool relax_avail ATTRIBUTE_UNUSED)
 {
     vshDebug(ctl, VSH_ERR_WARNING, "%s", _("This function is not "
                                            "supported on WIN32 platform"));
@@ -537,7 +596,7 @@ static const vshCmdInfo info_help[] = {
 
 static const vshCmdOptDef opts_help[] = {
     {.name = "command",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("Prints global help, command specific help, or help for a group of related commands")
     },
     {.name = NULL}
@@ -648,7 +707,7 @@ vshTreePrintInternal(vshControl *ctl,
     if (!root)
         virBufferTrim(indent, NULL, 2);
     ret = 0;
-cleanup:
+ cleanup:
     return ret;
 }
 
@@ -727,7 +786,7 @@ vshEditFile(vshControl *ctl, const char *filename)
     if (!editor)
         editor = virGetEnvBlockSUID("EDITOR");
     if (!editor)
-        editor = "vi"; /* could be cruel & default to ed(1) here */
+        editor = DEFAULT_EDITOR;
 
     /* Check that filename doesn't contain shell meta-characters, and
      * if it does, refuse to run.  Follow the Unix conventions for
@@ -761,7 +820,7 @@ vshEditFile(vshControl *ctl, const char *filename)
     }
     ret = 0;
 
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     return ret;
 }
@@ -797,7 +856,7 @@ static const vshCmdInfo info_cd[] = {
 
 static const vshCmdOptDef opts_cd[] = {
     {.name = "dir",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("directory to switch to (default: home or else root)")
     },
     {.name = NULL}
@@ -816,9 +875,8 @@ cmdCd(vshControl *ctl, const vshCmd *cmd)
         return false;
     }
 
-    if (vshCommandOptString(cmd, "dir", &dir) <= 0) {
+    if (vshCommandOptString(cmd, "dir", &dir) <= 0)
         dir = dir_malloced = virGetUserDirectory();
-    }
     if (!dir)
         dir = "/";
 
@@ -1015,6 +1073,7 @@ vshCmddefOptParse(const vshCmdDef *cmd, uint32_t *opts_need_arg,
         if (i > 31)
             return -1; /* too many options */
         if (opt->type == VSH_OT_BOOL) {
+            optional = true;
             if (opt->flags & VSH_OFLAG_REQ)
                 return -1; /* bool options can't be mandatory */
             continue;
@@ -1047,12 +1106,14 @@ vshCmddefOptParse(const vshCmdDef *cmd, uint32_t *opts_need_arg,
         if (opt->flags & VSH_OFLAG_REQ_OPT) {
             if (opt->flags & VSH_OFLAG_REQ)
                 *opts_required |= 1 << i;
+            else
+                optional = true;
             continue;
         }
 
         *opts_need_arg |= 1 << i;
         if (opt->flags & VSH_OFLAG_REQ) {
-            if (optional)
+            if (optional && opt->type != VSH_OT_ARGV)
                 return -1; /* mandatory options must be listed first */
             *opts_required |= 1 << i;
         } else {
@@ -1078,9 +1139,8 @@ vshCmddefGetOption(vshControl *ctl, const vshCmdDef *cmd, const char *name,
     const vshCmdOptDef *ret = NULL;
     char *alias = NULL;
 
-    if (STREQ(name, helpopt.name)) {
+    if (STREQ(name, helpopt.name))
         return &helpopt;
-    }
 
     for (i = 0; cmd->opts && cmd->opts[i].name; i++) {
         const vshCmdOptDef *opt = &cmd->opts[i];
@@ -1124,7 +1184,7 @@ vshCmddefGetOption(vshControl *ctl, const vshCmdDef *cmd, const char *name,
         vshError(ctl, _("command '%s' doesn't support option --%s"),
                  cmd->name, name);
     }
-cleanup:
+ cleanup:
     VIR_FREE(alias);
     return ret;
 }
@@ -1325,9 +1385,22 @@ vshCmddefHelp(vshControl *ctl, const char *cmdname)
                     break;
                 case VSH_OT_STRING:
                     /* OT_STRING should never be VSH_OFLAG_REQ */
+                    if (opt->flags & VSH_OFLAG_REQ) {
+                        vshError(ctl,
+                                 _("internal error: bad options in command: '%s'"),
+                                 def->name);
+                        return false;
+                    }
                     snprintf(buf, sizeof(buf), _("--%s <string>"), opt->name);
                     break;
                 case VSH_OT_DATA:
+                    /* OT_DATA should always be VSH_OFLAG_REQ */
+                    if (!(opt->flags & VSH_OFLAG_REQ)) {
+                        vshError(ctl,
+                                 _("internal error: bad options in command: '%s'"),
+                                 def->name);
+                        return false;
+                    }
                     snprintf(buf, sizeof(buf), _("[--%s] <string>"),
                              opt->name);
                     break;
@@ -1456,6 +1529,28 @@ vshCommandOptInt(const vshCmd *cmd, const char *name, int *value)
     return 1;
 }
 
+static int
+vshCommandOptUIntInternal(const vshCmd *cmd,
+                          const char *name,
+                          unsigned int *value,
+                          bool wrap)
+{
+    vshCmdOpt *arg;
+    int ret;
+
+    if ((ret = vshCommandOpt(cmd, name, &arg, true)) <= 0)
+        return ret;
+
+    if (wrap) {
+        if (virStrToLong_ui(arg->data, NULL, 10, value) < 0)
+            return -1;
+    } else {
+        if (virStrToLong_uip(arg->data, NULL, 10, value) < 0)
+            return -1;
+    }
+
+    return 1;
+}
 
 /**
  * vshCommandOptUInt:
@@ -1463,24 +1558,52 @@ vshCommandOptInt(const vshCmd *cmd, const char *name, int *value)
  * @name option name
  * @value result
  *
- * Convert option to unsigned int
+ * Convert option to unsigned int, reject negative numbers
  * See vshCommandOptInt()
  */
 int
 vshCommandOptUInt(const vshCmd *cmd, const char *name, unsigned int *value)
 {
+    return vshCommandOptUIntInternal(cmd, name, value, false);
+}
+
+/**
+ * vshCommandOptUIntWrap:
+ * @cmd command reference
+ * @name option name
+ * @value result
+ *
+ * Convert option to unsigned int, wraps negative numbers to positive
+ * See vshCommandOptInt()
+ */
+int
+vshCommandOptUIntWrap(const vshCmd *cmd, const char *name, unsigned int *value)
+{
+    return vshCommandOptUIntInternal(cmd, name, value, true);
+}
+
+static int
+vshCommandOptULInternal(const vshCmd *cmd,
+                        const char *name,
+                        unsigned long *value,
+                        bool wrap)
+{
     vshCmdOpt *arg;
     int ret;
 
-    ret = vshCommandOpt(cmd, name, &arg, true);
-    if (ret <= 0)
+    if ((ret = vshCommandOpt(cmd, name, &arg, true)) <= 0)
         return ret;
 
-    if (virStrToLong_ui(arg->data, NULL, 10, value) < 0)
-        return -1;
+    if (wrap) {
+        if (virStrToLong_ul(arg->data, NULL, 10, value) < 0)
+            return -1;
+    } else {
+        if (virStrToLong_ulp(arg->data, NULL, 10, value) < 0)
+            return -1;
+    }
+
     return 1;
 }
-
 
 /*
  * vshCommandOptUL:
@@ -1494,16 +1617,22 @@ vshCommandOptUInt(const vshCmd *cmd, const char *name, unsigned int *value)
 int
 vshCommandOptUL(const vshCmd *cmd, const char *name, unsigned long *value)
 {
-    vshCmdOpt *arg;
-    int ret;
+    return vshCommandOptULInternal(cmd, name, value, false);
+}
 
-    ret = vshCommandOpt(cmd, name, &arg, true);
-    if (ret <= 0)
-        return ret;
-
-    if (virStrToLong_ul(arg->data, NULL, 10, value) < 0)
-        return -1;
-    return 1;
+/**
+ * vshCommandOptULWrap:
+ * @cmd command reference
+ * @name option name
+ * @value result
+ *
+ * Convert option to unsigned long, wraps negative numbers to positive
+ * See vshCommandOptInt()
+ */
+int
+vshCommandOptULWrap(const vshCmd *cmd, const char *name, unsigned long *value)
+{
+    return vshCommandOptULInternal(cmd, name, value, true);
 }
 
 /**
@@ -1528,9 +1657,8 @@ vshCommandOptString(const vshCmd *cmd, const char *name, const char **value)
     if (ret <= 0)
         return ret;
 
-    if (!*arg->data && !(arg->def->flags & VSH_OFLAG_EMPTY_OK)) {
+    if (!*arg->data && !(arg->def->flags & VSH_OFLAG_EMPTY_OK))
         return -1;
-    }
     *value = arg->data;
     return 1;
 }
@@ -1605,31 +1733,60 @@ vshCommandOptLongLong(const vshCmd *cmd, const char *name,
     return 1;
 }
 
+static int
+vshCommandOptULongLongInternal(const vshCmd *cmd,
+                               const char *name,
+                               unsigned long long *value,
+                               bool wrap)
+{
+    vshCmdOpt *arg;
+    int ret;
+
+    if ((ret = vshCommandOpt(cmd, name, &arg, true)) <= 0)
+        return ret;
+
+    if (wrap) {
+        if (virStrToLong_ull(arg->data, NULL, 10, value) < 0)
+            return -1;
+    } else {
+        if (virStrToLong_ullp(arg->data, NULL, 10, value) < 0)
+            return -1;
+    }
+
+    return 1;
+}
+
 /**
  * vshCommandOptULongLong:
  * @cmd command reference
  * @name option name
  * @value result
  *
- * Returns option as long long
+ * Returns option as long long, rejects negative numbers
  * See vshCommandOptInt()
  */
 int
 vshCommandOptULongLong(const vshCmd *cmd, const char *name,
                        unsigned long long *value)
 {
-    vshCmdOpt *arg;
-    int ret;
-
-    ret = vshCommandOpt(cmd, name, &arg, true);
-    if (ret <= 0)
-        return ret;
-
-    if (virStrToLong_ull(arg->data, NULL, 10, value) < 0)
-        return -1;
-    return 1;
+    return vshCommandOptULongLongInternal(cmd, name, value, false);
 }
 
+/**
+ * vshCommandOptULongLongWrap:
+ * @cmd command reference
+ * @name option name
+ * @value result
+ *
+ * Returns option as long long, wraps negative numbers to positive
+ * See vshCommandOptInt()
+ */
+int
+vshCommandOptULongLongWrap(const vshCmd *cmd, const char *name,
+                       unsigned long long *value)
+{
+    return vshCommandOptULongLongInternal(cmd, name, value, true);
+}
 
 /**
  * vshCommandOptScaledInt:
@@ -1654,7 +1811,7 @@ vshCommandOptScaledInt(const vshCmd *cmd, const char *name,
     ret = vshCommandOptString(cmd, name, &str);
     if (ret <= 0)
         return ret;
-    if (virStrToLong_ull(str, &end, 10, value) < 0 ||
+    if (virStrToLong_ullp(str, &end, 10, value) < 0 ||
         virScaleInteger(value, end, scale, max) < 0)
         return -1;
     return 1;
@@ -1696,35 +1853,11 @@ vshCommandOptArgv(const vshCmd *cmd, const vshCmdOpt *opt)
     opt = opt ? opt->next : cmd->opts;
 
     while (opt) {
-        if (opt->def->type == VSH_OT_ARGV) {
+        if (opt->def->type == VSH_OT_ARGV)
             return opt;
-        }
         opt = opt->next;
     }
     return NULL;
-}
-
-/* Determine whether CMD->opts includes an option with name OPTNAME.
-   If not, give a diagnostic and return false.
-   If so, return true.  */
-bool
-vshCmdHasOption(vshControl *ctl, const vshCmd *cmd, const char *optname)
-{
-    /* Iterate through cmd->opts, to ensure that there is an entry
-       with name OPTNAME and type VSH_OT_DATA. */
-    bool found = false;
-    const vshCmdOpt *opt;
-    for (opt = cmd->opts; opt; opt = opt->next) {
-        if (STREQ(opt->def->name, optname) && opt->def->type == VSH_OT_DATA) {
-            found = true;
-            break;
-        }
-    }
-
-    if (!found)
-        vshError(ctl, _("internal error: virsh %s: no %s VSH_OT_DATA option"),
-                 cmd->def->name, optname);
-    return found;
 }
 
 /* Parse an optional --timeout parameter in seconds, but store the
@@ -1811,10 +1944,8 @@ vshCommandRun(vshControl *ctl, const vshCmd *cmd)
         if (!ret)
             vshReportError(ctl);
 
-        if (!ret && disconnected != 0)
-            vshReconnect(ctl);
-
-        if (STREQ(cmd->def->name, "quit"))        /* hack ... */
+        if (STREQ(cmd->def->name, "quit") ||
+            STREQ(cmd->def->name, "exit"))        /* hack ... */
             return ret;
 
         if (enable_timing) {
@@ -1957,7 +2088,7 @@ vshCommandParse(vshControl *ctl, vshCommandParser *parser)
                 data_only = true;
                 continue;
             } else {
-get_data:
+ get_data:
                 /* Special case 'help' to ignore spurious data */
                 if (!(opt = vshCmddefGetData(cmd, &opts_need_arg,
                                              &opts_seen)) &&
@@ -2670,29 +2801,9 @@ vshInit(vshControl *ctl)
 void
 vshOpenLogFile(vshControl *ctl)
 {
-    struct stat st;
-
     if (ctl->logfile == NULL)
         return;
 
-    /* check log file */
-    if (stat(ctl->logfile, &st) == -1) {
-        switch (errno) {
-            case ENOENT:
-                break;
-            default:
-                vshError(ctl, "%s",
-                         _("failed to get the log file information"));
-                exit(EXIT_FAILURE);
-        }
-    } else {
-        if (!S_ISREG(st.st_mode)) {
-            vshError(ctl, "%s", _("the log path is not a file"));
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    /* log file open */
     if ((ctl->log_fd = open(ctl->logfile, LOGFILE_FLAGS, FILE_MODE)) < 0) {
         vshError(ctl, "%s",
                  _("failed to open the log file. check the log file path"));
@@ -2776,7 +2887,7 @@ vshOutputLogFile(vshControl *ctl, int log_level, const char *msg_format,
     VIR_FREE(str);
     return;
 
-error:
+ error:
     vshCloseLogFile(ctl);
     vshError(ctl, "%s", _("failed to write the log file"));
     virBufferFreeAndReset(&buf);
@@ -2861,7 +2972,7 @@ static char *
 vshReadlineOptionsGenerator(const char *text, int state)
 {
     static int list_index, len;
-    static const vshCmdDef *cmd = NULL;
+    static const vshCmdDef *cmd;
     const char *name;
 
     if (!state) {
@@ -3110,16 +3221,20 @@ vshUsage(void)
                       "\n%s [options]... <command> [args...]\n\n"
                       "  options:\n"
                       "    -c | --connect=URI      hypervisor connection URI\n"
-                      "    -r | --readonly         connect readonly\n"
                       "    -d | --debug=NUM        debug level [0-4]\n"
+                      "    -e | --escape <char>    set escape sequence for console\n"
                       "    -h | --help             this help\n"
-                      "    -q | --quiet            quiet mode\n"
-                      "    -t | --timing           print timing information\n"
+                      "    -k | --keepalive-interval=NUM\n"
+                      "                            keepalive interval in seconds, 0 for disable\n"
+                      "    -K | --keepalive-count=NUM\n"
+                      "                            number of possible missed keepalive messages\n"
                       "    -l | --log=FILE         output logging to file\n"
+                      "    -q | --quiet            quiet mode\n"
+                      "    -r | --readonly         connect readonly\n"
+                      "    -t | --timing           print timing information\n"
                       "    -v                      short version\n"
                       "    -V                      long version\n"
                       "         --version[=TYPE]   version, TYPE is short or long (default short)\n"
-                      "    -e | --escape <char>    set escape sequence for console\n\n"
                       "  commands (non interactive mode):\n\n"), progname, progname);
 
     for (grp = cmdGroups; grp->name; grp++) {
@@ -3189,6 +3304,9 @@ vshShowVersion(vshControl *ctl ATTRIBUTE_UNUSED)
 #endif
 #ifdef WITH_XENAPI
     vshPrint(ctl, " XenAPI");
+#endif
+#ifdef WITH_BHYVE
+    vshPrint(ctl, " Bhyve");
 #endif
 #ifdef WITH_TEST
     vshPrint(ctl, " Test");
@@ -3302,27 +3420,33 @@ vshAllowedEscapeChar(char c)
 static bool
 vshParseArgv(vshControl *ctl, int argc, char **argv)
 {
-    int arg, len, debug;
+    int arg, len, debug, keepalive;
     size_t i;
     int longindex = -1;
     struct option opt[] = {
+        {"connect", required_argument, NULL, 'c'},
         {"debug", required_argument, NULL, 'd'},
+        {"escape", required_argument, NULL, 'e'},
         {"help", no_argument, NULL, 'h'},
+        {"keepalive-interval", required_argument, NULL, 'k'},
+        {"keepalive-count", required_argument, NULL, 'K'},
+        {"log", required_argument, NULL, 'l'},
         {"quiet", no_argument, NULL, 'q'},
+        {"readonly", no_argument, NULL, 'r'},
         {"timing", no_argument, NULL, 't'},
         {"version", optional_argument, NULL, 'v'},
-        {"connect", required_argument, NULL, 'c'},
-        {"readonly", no_argument, NULL, 'r'},
-        {"log", required_argument, NULL, 'l'},
-        {"escape", required_argument, NULL, 'e'},
         {NULL, 0, NULL, 0}
     };
 
     /* Standard (non-command) options. The leading + ensures that no
      * argument reordering takes place, so that command options are
      * not confused with top-level virsh options. */
-    while ((arg = getopt_long(argc, argv, "+:d:hqtc:vVrl:e:", opt, &longindex)) != -1) {
+    while ((arg = getopt_long(argc, argv, "+:c:d:e:hk:K:l:qrtvV", opt, &longindex)) != -1) {
         switch (arg) {
+        case 'c':
+            VIR_FREE(ctl->name);
+            ctl->name = vshStrdup(ctl, optarg);
+            break;
         case 'd':
             if (virStrToLong_i(optarg, NULL, 10, &debug) < 0) {
                 vshError(ctl, _("option %s takes a numeric argument"),
@@ -3334,37 +3458,6 @@ vshParseArgv(vshControl *ctl, int argc, char **argv)
                          debug, VSH_ERR_DEBUG, VSH_ERR_ERROR);
             else
                 ctl->debug = debug;
-            break;
-        case 'h':
-            vshUsage();
-            exit(EXIT_SUCCESS);
-            break;
-        case 'q':
-            ctl->quiet = true;
-            break;
-        case 't':
-            ctl->timing = true;
-            break;
-        case 'c':
-            VIR_FREE(ctl->name);
-            ctl->name = vshStrdup(ctl, optarg);
-            break;
-        case 'v':
-            if (STRNEQ_NULLABLE(optarg, "long")) {
-                puts(VERSION);
-                exit(EXIT_SUCCESS);
-            }
-            /* fall through */
-        case 'V':
-            vshShowVersion(ctl);
-            exit(EXIT_SUCCESS);
-        case 'r':
-            ctl->readonly = true;
-            break;
-        case 'l':
-            vshCloseLogFile(ctl);
-            ctl->logfile = vshStrdup(ctl, optarg);
-            vshOpenLogFile(ctl);
             break;
         case 'e':
             len = strlen(optarg);
@@ -3379,6 +3472,65 @@ vshParseArgv(vshControl *ctl, int argc, char **argv)
                 exit(EXIT_FAILURE);
             }
             break;
+        case 'h':
+            vshUsage();
+            exit(EXIT_SUCCESS);
+            break;
+        case 'k':
+            if (virStrToLong_i(optarg, NULL, 0, &keepalive) < 0) {
+                vshError(ctl,
+                         _("Invalid value for option %s"),
+                         longindex == -1 ? "-k" : "--keepalive-interval");
+                exit(EXIT_FAILURE);
+            }
+
+            if (keepalive < 0) {
+                vshError(ctl,
+                         _("option %s requires a positive integer argument"),
+                         longindex == -1 ? "-k" : "--keepalive-interval");
+                exit(EXIT_FAILURE);
+            }
+            ctl->keepalive_interval = keepalive;
+            break;
+        case 'K':
+            if (virStrToLong_i(optarg, NULL, 0, &keepalive) < 0) {
+                vshError(ctl,
+                         _("Invalid value for option %s"),
+                         longindex == -1 ? "-K" : "--keepalive-count");
+                exit(EXIT_FAILURE);
+            }
+
+            if (keepalive < 0) {
+                vshError(ctl,
+                         _("option %s requires a positive integer argument"),
+                         longindex == -1 ? "-K" : "--keepalive-count");
+                exit(EXIT_FAILURE);
+            }
+            ctl->keepalive_count = keepalive;
+            break;
+        case 'l':
+            vshCloseLogFile(ctl);
+            ctl->logfile = vshStrdup(ctl, optarg);
+            vshOpenLogFile(ctl);
+            break;
+        case 'q':
+            ctl->quiet = true;
+            break;
+        case 't':
+            ctl->timing = true;
+            break;
+        case 'r':
+            ctl->readonly = true;
+            break;
+        case 'v':
+            if (STRNEQ_NULLABLE(optarg, "long")) {
+                puts(VERSION);
+                exit(EXIT_SUCCESS);
+            }
+            /* fall through */
+        case 'V':
+            vshShowVersion(ctl);
+            exit(EXIT_SUCCESS);
         case ':':
             for (i = 0; opt[i].name != NULL; i++) {
                 if (opt[i].val == optopt)
@@ -3490,6 +3642,11 @@ main(int argc, char **argv)
     ctl->log_fd = -1;           /* Initialize log file descriptor */
     ctl->debug = VSH_DEBUG_DEFAULT;
     ctl->escapeChar = "^]";     /* Same default as telnet */
+
+    /* In order to distinguish default from setting to 0 */
+    ctl->keepalive_interval = -1;
+    ctl->keepalive_count = -1;
+
     ctl->eventPipe[0] = -1;
     ctl->eventPipe[1] = -1;
     ctl->eventTimerId = -1;
@@ -3526,14 +3683,15 @@ main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    virFileActivateDirOverride(argv[0]);
+
     if (!(progname = strrchr(argv[0], '/')))
         progname = argv[0];
     else
         progname++;
 
-    if ((defaultConn = virGetEnvBlockSUID("VIRSH_DEFAULT_CONNECT_URI"))) {
+    if ((defaultConn = virGetEnvBlockSUID("VIRSH_DEFAULT_CONNECT_URI")))
         ctl->name = vshStrdup(ctl, defaultConn);
-    }
 
     vshInitDebug(ctl);
 

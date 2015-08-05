@@ -52,6 +52,9 @@
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NETWORK
+
+VIR_LOG_INIT("util.dnsmasq");
+
 #define DNSMASQ_HOSTSFILE_SUFFIX "hostsfile"
 #define DNSMASQ_ADDNHOSTSFILE_SUFFIX "addnhosts"
 
@@ -329,7 +332,7 @@ hostsfileAdd(dnsmasqHostsfile *hostsfile,
         if (virAsprintf(&hostsfile->hosts[hostsfile->nhosts].host, "%s,%s,%s",
                         mac, ipstr, name) < 0)
             goto error;
-    } else if (name && !mac){
+    } else if (name && !mac) {
         if (virAsprintf(&hostsfile->hosts[hostsfile->nhosts].host, "%s,%s",
                         name, ipstr) < 0)
             goto error;
@@ -682,7 +685,7 @@ dnsmasqCapsSetFromBuffer(dnsmasqCapsPtr caps, const char *buf)
              dnsmasqCapsGet(caps, DNSMASQ_CAPS_BIND_DYNAMIC) ? "" : "NOT ");
     return 0;
 
-fail:
+ fail:
     p = strchrnul(buf, '\n');
     virReportError(VIR_ERR_INTERNAL_ERROR,
                    _("cannot parse %s version number in '%.*s'"),
@@ -702,7 +705,7 @@ dnsmasqCapsSetFromFile(dnsmasqCapsPtr caps, const char *path)
 
     ret = dnsmasqCapsSetFromBuffer(caps, buf);
 
-cleanup:
+ cleanup:
     VIR_FREE(buf);
     return ret;
 }
@@ -723,9 +726,8 @@ dnsmasqCapsRefreshInternal(dnsmasqCapsPtr caps, bool force)
                              caps->binaryPath);
         return -1;
     }
-    if (!force && caps->mtime == sb.st_mtime) {
+    if (!force && caps->mtime == sb.st_mtime)
         return 0;
-    }
     caps->mtime = sb.st_mtime;
 
     /* Make sure the binary we are about to try exec'ing exists.
@@ -764,7 +766,7 @@ dnsmasqCapsRefreshInternal(dnsmasqCapsPtr caps, bool force)
 
     ret = dnsmasqCapsSetFromBuffer(caps, complete);
 
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     VIR_FREE(help);
     VIR_FREE(version);
@@ -787,7 +789,7 @@ dnsmasqCapsNewEmpty(const char *binaryPath)
         goto error;
     return caps;
 
-error:
+ error:
     virObjectUnref(caps);
     return NULL;
 }
@@ -872,10 +874,6 @@ dnsmasqCapsGetVersion(dnsmasqCapsPtr caps)
 bool
 dnsmasqCapsGet(dnsmasqCapsPtr caps, dnsmasqCapsFlags flag)
 {
-    bool b;
 
-    if (!caps || virBitmapGetBit(caps->flags, flag, &b) < 0)
-        return false;
-    else
-        return b;
+    return caps && virBitmapIsBitSet(caps->flags, flag);
 }

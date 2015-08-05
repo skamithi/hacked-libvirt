@@ -128,4 +128,12 @@
     <flag name='ich9-intel-hda'/>
     <flag name='kvm-pit-lost-tick-policy'/>
     <flag name='usb-kbd'/>
+    <flag name='host-pci-multidomain'/>
+    <flag name='usb-audio'/>
+    <flag name='ivshmem'/>
+    <flag name='VGA.vgamem_mb'/>
+    <flag name='vmware-svga.vgamem_mb'/>
+    <flag name='qxl.vgamem_mb'/>
+    <flag name='qxl-vga.vgamem_mb'/>
+    <flag name='pci-serial'/>
   </qemuCaps>

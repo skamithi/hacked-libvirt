@@ -1,7 +1,7 @@
 /*
  * viraudit.h: auditing support
  *
- * Copyright (C) 2010-2011 Red Hat, Inc.
+ * Copyright (C) 2010-2011, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -24,33 +24,35 @@
 # define __LIBVIRT_AUDIT_H__
 
 # include "internal.h"
+# include "virlog.h"
 
-enum virAuditRecordType {
+typedef enum {
     VIR_AUDIT_RECORD_MACHINE_CONTROL,
     VIR_AUDIT_RECORD_MACHINE_ID,
     VIR_AUDIT_RECORD_RESOURCE,
-};
+} virAuditRecordType;
 
 int virAuditOpen(void);
 
-void virAuditLog(int enabled);
+void virAuditLog(bool enabled);
 
-void virAuditSend(const char *filename, size_t linenr, const char *funcname,
+void virAuditSend(virLogSourcePtr source,
+                  const char *filename, size_t linenr, const char *funcname,
                   const char *clienttty, const char *clientaddr,
-                  enum virAuditRecordType type, bool success,
+                  virAuditRecordType type, bool success,
                   const char *fmt, ...)
-    ATTRIBUTE_FMT_PRINTF(8, 9);
+    ATTRIBUTE_FMT_PRINTF(9, 10);
 
 char *virAuditEncode(const char *key, const char *value);
 
 void virAuditClose(void);
 
 # define VIR_AUDIT(type, success, ...)				\
-    virAuditSend(__FILE__, __LINE__, __func__,                  \
+    virAuditSend(&virLogSelf, __FILE__, __LINE__, __func__,     \
                  NULL, NULL, type, success, __VA_ARGS__);
 
 # define VIR_AUDIT_USER(type, success, clienttty, clientaddr, ...)	\
-    virAuditSend(__FILE__, __LINE__, __func__,                          \
+    virAuditSend(&virLogSelf, __FILE__, __LINE__, __func__,             \
                  clienttty, clientaddr, type, success, __VA_ARGS__);
 
 # define VIR_AUDIT_STR(str) \

@@ -28,9 +28,10 @@
 # include "capabilities.h"
 # include "vircommand.h"
 # include "qemu_monitor.h"
+# include "domain_capabilities.h"
 
 /* Internal flags to keep track of qemu command line capabilities */
-enum virQEMUCapsFlags {
+typedef enum {
     QEMU_CAPS_KQEMU              =  0, /* Whether KQEMU is compiled in */
     QEMU_CAPS_VNC_COLON          =  1, /* VNC takes or address + display */
     QEMU_CAPS_NO_REBOOT          =  2, /* Is the -no-reboot flag available */
@@ -126,8 +127,8 @@ enum virQEMUCapsFlags {
     QEMU_CAPS_SCSI_DISK_CHANNEL  = 87, /* Is scsi-disk.channel available? */
     QEMU_CAPS_SCSI_BLOCK         = 88, /* -device scsi-block */
     QEMU_CAPS_TRANSACTION        = 89, /* transaction monitor command */
-    QEMU_CAPS_BLOCKJOB_SYNC      = 90, /* RHEL 6.2 block_job_cancel */
-    QEMU_CAPS_BLOCKJOB_ASYNC     = 91, /* qemu 1.1 block-job-cancel */
+    QEMU_CAPS_BLOCKJOB_SYNC      = 90, /* old block_job_cancel, block_stream */
+    QEMU_CAPS_BLOCKJOB_ASYNC     = 91, /* new block-job-cancel, block-stream */
     QEMU_CAPS_SCSI_CD            = 92, /* -device scsi-cd */
     QEMU_CAPS_IDE_CD             = 93, /* -device ide-cd */
     QEMU_CAPS_NO_USER_CONFIG     = 94, /* -no-user-config */
@@ -204,9 +205,32 @@ enum virQEMUCapsFlags {
     QEMU_CAPS_SPICE_FILE_XFER_DISABLE = 163, /* -spice disable-agent-file-xfer */
     QEMU_CAPS_CHARDEV_SPICEPORT  = 164, /* -chardev spiceport */
     QEMU_CAPS_DEVICE_USB_KBD     = 165, /* -device usb-kbd */
+    QEMU_CAPS_HOST_PCI_MULTIDOMAIN = 166, /* support domain > 0 in host pci address */
+    QEMU_CAPS_MSG_TIMESTAMP      = 167, /* -msg timestamp */
+    QEMU_CAPS_ACTIVE_COMMIT      = 168, /* block-commit works without 'top' */
+    QEMU_CAPS_CHANGE_BACKING_FILE = 169, /* change name of backing file in metadata */
+    QEMU_CAPS_OBJECT_MEMORY_RAM  = 170, /* -object memory-backend-ram */
+    QEMU_CAPS_NUMA               = 171, /* newer -numa handling with disjoint cpu ranges */
+    QEMU_CAPS_OBJECT_MEMORY_FILE = 172, /* -object memory-backend-file */
+    QEMU_CAPS_OBJECT_USB_AUDIO   = 173, /* usb-audio device support */
+    QEMU_CAPS_RTC_RESET_REINJECTION = 174, /* rtc-reset-reinjection monitor command */
+    QEMU_CAPS_SPLASH_TIMEOUT     = 175, /* -boot splash-time */
+    QEMU_CAPS_OBJECT_IOTHREAD    = 176, /* -object iothread */
+    QEMU_CAPS_MIGRATE_RDMA       = 177, /* have rdma migration */
+    QEMU_CAPS_DEVICE_IVSHMEM     = 178, /* -device ivshmem */
+    QEMU_CAPS_DRIVE_IOTUNE_MAX   = 179, /* -drive bps_max= and friends */
+    QEMU_CAPS_VGA_VGAMEM         = 180, /* -device VGA.vgamem_mb */
+    QEMU_CAPS_VMWARE_SVGA_VGAMEM = 181, /* -device vmware-svga.vgamem_mb */
+    QEMU_CAPS_QXL_VGAMEM         = 182, /* -device qxl.vgamem_mb */
+    QEMU_CAPS_QXL_VGA_VGAMEM     = 183, /* -device qxl-vga.vgamem_mb */
+    QEMU_CAPS_DEVICE_PC_DIMM     = 184, /* pc-dimm device */
+    QEMU_CAPS_MACHINE_VMPORT_OPT = 185, /* -machine xxx,vmport=on/off/auto */
+    QEMU_CAPS_AES_KEY_WRAP       = 186, /* -machine aes_key_wrap */
+    QEMU_CAPS_DEA_KEY_WRAP       = 187, /* -machine dea_key_wrap */
+    QEMU_CAPS_DEVICE_PCI_SERIAL  = 188, /* -device pci-serial */
 
     QEMU_CAPS_LAST,                   /* this must always be the last item */
-};
+} virQEMUCapsFlags;
 
 typedef struct _virQEMUCaps virQEMUCaps;
 typedef virQEMUCaps *virQEMUCapsPtr;
@@ -218,6 +242,7 @@ virQEMUCapsPtr virQEMUCapsNew(void);
 virQEMUCapsPtr virQEMUCapsNewCopy(virQEMUCapsPtr qemuCaps);
 virQEMUCapsPtr virQEMUCapsNewForBinary(const char *binary,
                                        const char *libDir,
+                                       const char *cacheDir,
                                        uid_t runUid,
                                        gid_t runGid);
 
@@ -228,21 +253,28 @@ int virQEMUCapsProbeQMP(virQEMUCapsPtr qemuCaps,
                         qemuMonitorPtr mon);
 
 void virQEMUCapsSet(virQEMUCapsPtr qemuCaps,
-                    enum virQEMUCapsFlags flag) ATTRIBUTE_NONNULL(1);
+                    virQEMUCapsFlags flag) ATTRIBUTE_NONNULL(1);
 
 void virQEMUCapsSetList(virQEMUCapsPtr qemuCaps, ...) ATTRIBUTE_NONNULL(1);
 
 void virQEMUCapsClear(virQEMUCapsPtr qemuCaps,
-                      enum virQEMUCapsFlags flag) ATTRIBUTE_NONNULL(1);
+                      virQEMUCapsFlags flag) ATTRIBUTE_NONNULL(1);
 
 bool virQEMUCapsGet(virQEMUCapsPtr qemuCaps,
-                    enum virQEMUCapsFlags flag);
+                    virQEMUCapsFlags flag);
+
+bool virQEMUCapsHasPCIMultiBus(virQEMUCapsPtr qemuCaps,
+                               virDomainDefPtr def);
+
+bool virQEMUCapsSupportsVmport(virQEMUCapsPtr qemuCaps,
+                               const virDomainDef *def);
 
 char *virQEMUCapsFlagsString(virQEMUCapsPtr qemuCaps);
 
 const char *virQEMUCapsGetBinary(virQEMUCapsPtr qemuCaps);
 virArch virQEMUCapsGetArch(virQEMUCapsPtr qemuCaps);
 unsigned int virQEMUCapsGetVersion(virQEMUCapsPtr qemuCaps);
+const char *virQEMUCapsGetPackage(virQEMUCapsPtr qemuCaps);
 unsigned int virQEMUCapsGetKVMVersion(virQEMUCapsPtr qemuCaps);
 int virQEMUCapsAddCPUDefinition(virQEMUCapsPtr qemuCaps,
                                 const char *name);
@@ -260,13 +292,19 @@ int virQEMUCapsGetMachineTypesCaps(virQEMUCapsPtr qemuCaps,
 
 bool virQEMUCapsIsValid(virQEMUCapsPtr qemuCaps);
 
+void virQEMUCapsFilterByMachineType(virQEMUCapsPtr qemuCaps,
+                                    const char *machineType);
 
 virQEMUCapsCachePtr virQEMUCapsCacheNew(const char *libDir,
+                                        const char *cacheDir,
                                         uid_t uid, gid_t gid);
 virQEMUCapsPtr virQEMUCapsCacheLookup(virQEMUCapsCachePtr cache,
                                       const char *binary);
 virQEMUCapsPtr virQEMUCapsCacheLookupCopy(virQEMUCapsCachePtr cache,
-                                          const char *binary);
+                                          const char *binary,
+                                          const char *machineType);
+virQEMUCapsPtr virQEMUCapsCacheLookupByArch(virQEMUCapsCachePtr cache,
+                                            virArch arch);
 void virQEMUCapsCacheFree(virQEMUCapsCachePtr cache);
 
 virCapsPtr virQEMUCapsInit(virQEMUCapsCachePtr cache);
@@ -282,7 +320,8 @@ int virQEMUCapsParseHelpStr(const char *qemu,
                             unsigned int *version,
                             bool *is_kvm,
                             unsigned int *kvm_version,
-                            bool check_yajl);
+                            bool check_yajl,
+                            const char *qmperr);
 /* Only for use by test suite */
 int virQEMUCapsParseDeviceStr(virQEMUCapsPtr qemuCaps, const char *str);
 
@@ -292,5 +331,22 @@ bool virQEMUCapsUsedQMP(virQEMUCapsPtr qemuCaps);
 bool virQEMUCapsSupportsChardev(virDomainDefPtr def,
                                 virQEMUCapsPtr qemuCaps,
                                 virDomainChrDefPtr chr);
+
+bool virQEMUCapsIsMachineSupported(virQEMUCapsPtr qemuCaps,
+                                   const char *canonical_machine);
+
+const char *virQEMUCapsGetDefaultMachine(virQEMUCapsPtr qemuCaps);
+
+int virQEMUCapsInitGuestFromBinary(virCapsPtr caps,
+                                   const char *binary,
+                                   virQEMUCapsPtr qemubinCaps,
+                                   const char *kvmbin,
+                                   virQEMUCapsPtr kvmbinCaps,
+                                   virArch guestarch);
+
+int virQEMUCapsFillDomainCaps(virDomainCapsPtr domCaps,
+                              virQEMUCapsPtr qemuCaps,
+                              char **loader,
+                              size_t nloader);
 
 #endif /* __QEMU_CAPABILITIES_H__*/

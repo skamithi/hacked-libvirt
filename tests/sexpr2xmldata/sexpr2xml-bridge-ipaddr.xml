@@ -18,12 +18,13 @@
     <disk type='file' device='disk'>
       <driver name='file'/>
       <source file='/root/some.img'/>
+      <backingStore/>
       <target dev='xvda' bus='xen'/>
     </disk>
     <interface type='bridge'>
       <mac address='00:11:22:33:44:55'/>
       <source bridge='xenbr2'/>
-      <ip address='192.0.2.1'/>
+      <ip address='192.0.2.1' family='ipv4'/>
       <script path='vif-bridge'/>
       <target dev='vif6.0'/>
     </interface>

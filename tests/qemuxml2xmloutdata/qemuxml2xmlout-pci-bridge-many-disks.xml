@@ -6,7 +6,7 @@
   <vcpu placement='static'>1</vcpu>
   <os>
     <type arch='x86_64' machine='pc-i440fx-1.4'>hvm</type>
-    <loader>/usr/share/seabios/bios.bin</loader>
+    <loader type='rom'>/usr/share/seabios/bios.bin</loader>
     <boot dev='hd'/>
   </os>
   <features>
@@ -30,7 +30,7 @@
     <disk type='file' device='disk'>
       <driver name='qemu' type='raw'/>
       <source file='/var/lib/libvirt/images/disk-a-a.img'/>
-      <target dev='vda' bus='virtio'/>
+      <target dev='vdaa' bus='virtio'/>
     </disk>
     <disk type='file' device='disk'>
       <driver name='qemu' type='raw'/>

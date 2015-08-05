@@ -1,7 +1,7 @@
 /*
  * cpu_conf.h: CPU XML handling
  *
- * Copyright (C) 2009-2011, 2013 Red Hat, Inc.
+ * Copyright (C) 2009-2011, 2013, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,49 +29,50 @@
 # include "virxml.h"
 # include "virbitmap.h"
 # include "virarch.h"
+# include "numa_conf.h"
 
 # define VIR_CPU_VENDOR_ID_LENGTH 12
 
-enum virCPUType {
+typedef enum {
     VIR_CPU_TYPE_HOST,
     VIR_CPU_TYPE_GUEST,
     VIR_CPU_TYPE_AUTO,
 
     VIR_CPU_TYPE_LAST
-};
+} virCPUType;
 
 VIR_ENUM_DECL(virCPU)
 
-enum virCPUMode {
+typedef enum {
     VIR_CPU_MODE_CUSTOM,
     VIR_CPU_MODE_HOST_MODEL,
     VIR_CPU_MODE_HOST_PASSTHROUGH,
 
     VIR_CPU_MODE_LAST
-};
+} virCPUMode;
 
 VIR_ENUM_DECL(virCPUMode)
 
-enum virCPUMatch {
+typedef enum {
     VIR_CPU_MATCH_MINIMUM,
     VIR_CPU_MATCH_EXACT,
     VIR_CPU_MATCH_STRICT,
 
     VIR_CPU_MATCH_LAST
-};
+} virCPUMatch;
 
 VIR_ENUM_DECL(virCPUMatch)
 
-enum virCPUFallback {
+typedef enum {
     VIR_CPU_FALLBACK_ALLOW,
     VIR_CPU_FALLBACK_FORBID,
 
     VIR_CPU_FALLBACK_LAST
-};
+} virCPUFallback;
 
 VIR_ENUM_DECL(virCPUFallback)
 
-enum virCPUFeaturePolicy {
+typedef enum {
     VIR_CPU_FEATURE_FORCE,
     VIR_CPU_FEATURE_REQUIRE,
     VIR_CPU_FEATURE_OPTIONAL,
@@ -79,7 +80,7 @@ enum virCPUFeaturePolicy {
     VIR_CPU_FEATURE_FORBID,
 
     VIR_CPU_FEATURE_LAST
-};
+} virCPUFeaturePolicy;
 
 VIR_ENUM_DECL(virCPUFeaturePolicy)
 
@@ -90,14 +91,6 @@ struct _virCPUFeatureDef {
     int policy;         /* enum virCPUFeaturePolicy */
 };
 
-typedef struct _virCellDef virCellDef;
-typedef virCellDef *virCellDefPtr;
-struct _virCellDef {
-   int cellid;
-   virBitmapPtr cpumask;	/* CPUs that are part of this node */
-   char *cpustr;	/* CPUs stored in string form for dumpxml */
-   unsigned int mem;	/* Node memory in kB */
-};
 
 typedef struct _virCPUDef virCPUDef;
 typedef virCPUDef *virCPUDefPtr;
@@ -116,10 +109,6 @@ struct _virCPUDef {
     size_t nfeatures;
     size_t nfeatures_max;
     virCPUFeatureDefPtr features;
-    size_t ncells;
-    size_t ncells_max;
-    virCellDefPtr cells;
-    unsigned int cells_cpus;
 };
 
 
@@ -140,7 +129,7 @@ virCPUDefCopy(const virCPUDef *cpu);
 virCPUDefPtr
 virCPUDefParseXML(xmlNodePtr node,
                   xmlXPathContextPtr ctxt,
-                  enum virCPUType mode);
+                  virCPUType mode);
 
 bool
 virCPUDefIsEqual(virCPUDefPtr src,
@@ -148,16 +137,18 @@ virCPUDefIsEqual(virCPUDefPtr src,
 
 char *
 virCPUDefFormat(virCPUDefPtr def,
-                unsigned int flags);
+                virDomainNumaPtr numa,
+                bool updateCPU);
 
 int
 virCPUDefFormatBuf(virBufferPtr buf,
                    virCPUDefPtr def,
-                   unsigned int flags);
+                   bool updateCPU);
 int
 virCPUDefFormatBufFull(virBufferPtr buf,
                        virCPUDefPtr def,
-                       unsigned int flags);
+                       virDomainNumaPtr numa,
+                       bool updateCPU);
 
 int
 virCPUDefAddFeature(virCPUDefPtr cpu,

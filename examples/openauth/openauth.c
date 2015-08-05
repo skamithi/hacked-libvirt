@@ -40,7 +40,7 @@ showError(virConnectPtr conn)
     virResetError(err);
     free(err);
 
-out:
+ out:
     return;
 }
 
@@ -82,7 +82,7 @@ showHypervisorInfo(virConnectPtr conn)
            minor,
            release);
 
-out:
+ out:
     return ret;
 }
 
@@ -132,9 +132,8 @@ showDomains(virConnectPtr conn)
         goto out;
     }
 
-    if (numNames > 0) {
+    if (numNames > 0)
         printf("Inactive domains:\n");
-    }
 
     for (i = 0; i < numNames; i++) {
         printf("  %s\n", *(nameList + i));
@@ -144,7 +143,7 @@ showDomains(virConnectPtr conn)
         free(*(nameList + i));
     }
 
-out:
+ out:
     free(nameList);
     return ret;
 }
@@ -181,9 +180,8 @@ authCallback(virConnectCredentialPtr cred, unsigned int ncred, void *cbdata)
         case VIR_CRED_AUTHNAME:
             cred[i].result = strdup(authData->username);
 
-            if (cred[i].result == NULL) {
+            if (cred[i].result == NULL)
                 return -1;
-            }
 
             cred[i].resultlen = strlen(cred[i].result);
             break;
@@ -191,9 +189,8 @@ authCallback(virConnectCredentialPtr cred, unsigned int ncred, void *cbdata)
         case VIR_CRED_PASSPHRASE:
             cred[i].result = strdup(authData->password);
 
-            if (cred[i].result == NULL) {
+            if (cred[i].result == NULL)
                 return -1;
-            }
 
             cred[i].resultlen = strlen(cred[i].result);
             break;
@@ -274,7 +271,7 @@ main(int argc, char *argv[])
         goto disconnect;
     }
 
-  disconnect:
+ disconnect:
     if (virConnectClose(conn) != 0) {
         printf("Failed to disconnect from hypervisor\n");
         showError(conn);
@@ -283,6 +280,6 @@ main(int argc, char *argv[])
         printf("Disconnected from hypervisor\n");
     }
 
-  out:
+ out:
     return ret;
 }

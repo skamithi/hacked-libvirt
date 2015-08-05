@@ -1,7 +1,7 @@
 /*
  * vmx.c: VMware VMX parsing/formatting functions
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  * Copyright (C) 2009-2010 Matthias Bolte <matthias.bolte@googlemail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -35,9 +35,11 @@
 #include "viruri.h"
 #include "virstring.h"
 
+VIR_LOG_INIT("vmx.vmx");
+
 /*
 
-mapping:
+ mapping:
 
 domain-xml                        <=>   vmx
 
@@ -47,6 +49,7 @@ domain-xml                        <=>   vmx
                                         virtualHW.version = "7"                 # essential for ESX 4.0
                                         virtualHW.version = "8"                 # essential for ESX 5.0
                                         virtualHW.version = "9"                 # essential for ESX 5.1
+                                        virtualHW.version = "10"                # essential for ESX 5.5
 
 
 ???                               <=>   guestOS = "<value>"                     # essential, FIXME: not representable
@@ -520,10 +523,32 @@ VIR_ENUM_IMPL(virVMXControllerModelSCSI, VIR_DOMAIN_CONTROLLER_MODEL_SCSI_LAST,
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Helpers
  */
+static int
+vmxDomainDefPostParse(virDomainDefPtr def,
+                      virCapsPtr caps ATTRIBUTE_UNUSED,
+                      void *opaque ATTRIBUTE_UNUSED)
+{
+    /* memory hotplug tunables are not supported by this driver */
+    if (virDomainDefCheckUnsupportedMemoryHotplug(def) < 0)
+        return -1;
+
+    return 0;
+}
+
+static int
+vmxDomainDeviceDefPostParse(virDomainDeviceDefPtr dev ATTRIBUTE_UNUSED,
+                            const virDomainDef *def ATTRIBUTE_UNUSED,
+                            virCapsPtr caps ATTRIBUTE_UNUSED,
+                            void *opaque ATTRIBUTE_UNUSED)
+{
+    return 0;
+}
 
 virDomainDefParserConfig virVMXDomainDefParserConfig = {
-    .hasWideScsiBus = true,
+    .hasWideSCSIBus = true,
     .macPrefix = {0x00, 0x0c, 0x29},
+    .devicesPostParseCallback = vmxDomainDeviceDefPostParse,
+    .domainPostParseCallback = vmxDomainDefPostParse,
 };
 
 
@@ -544,9 +569,8 @@ virVMXEscapeHex(const char *string, char escape, const char *special)
 
     /* Calculate length of escaped string */
     while (*tmp1 != '\0') {
-        if (*tmp1 == escape || strspn(tmp1, special) > 0) {
+        if (*tmp1 == escape || strspn(tmp1, special) > 0)
             length += 2;
-        }
 
         ++tmp1;
         ++length;
@@ -589,9 +613,8 @@ virVMXUnescapeHex(char *string, char escape)
     /* Unescape from 'cXX' where c is the escape char and X is a hex digit */
     while (*tmp1 != '\0') {
         if (*tmp1 == escape) {
-            if (!c_isxdigit(tmp1[1]) || !c_isxdigit(tmp1[2])) {
+            if (!c_isxdigit(tmp1[1]) || !c_isxdigit(tmp1[2]))
                 return -1;
-            }
 
             *tmp2++ = virHexToBin(tmp1[1]) * 16 + virHexToBin(tmp1[2]);
             tmp1 += 3;
@@ -635,7 +658,7 @@ virVMXConvertToUTF8(const char *encoding, const char *string)
     result = (char *)utf8->content;
     utf8->content = NULL;
 
-  cleanup:
+ cleanup:
     xmlCharEncCloseFunc(handler);
     xmlBufferFree(input);
     xmlBufferFree(utf8);
@@ -655,9 +678,8 @@ virVMXGetConfigString(virConfPtr conf, const char *name, char **string,
     value = virConfGetValue(conf, name);
 
     if (value == NULL) {
-        if (optional) {
+        if (optional)
             return 0;
-        }
 
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Missing essential config entry '%s'"), name);
@@ -671,9 +693,8 @@ virVMXGetConfigString(virConfPtr conf, const char *name, char **string,
     }
 
     if (value->str == NULL) {
-        if (optional) {
+        if (optional)
             return 0;
-        }
 
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Missing essential config entry '%s'"), name);
@@ -861,9 +882,8 @@ virVMXSCSIDiskNameToControllerAndUnit(const char *name, int *controller, int *un
     *unit = idx % 15;
 
     /* Skip the controller ifself at unit 7 */
-    if (*unit >= 7) {
+    if (*unit >= 7)
         ++(*unit);
-    }
 
     return 0;
 }
@@ -1058,22 +1078,25 @@ virVMXHandleLegacySCSIDiskDriverName(virDomainDefPtr def,
     int model;
     size_t i;
     virDomainControllerDefPtr controller = NULL;
+    const char *driver = virDomainDiskGetDriver(disk);
+    char *copy;
 
-    if (disk->bus != VIR_DOMAIN_DISK_BUS_SCSI || disk->driverName == NULL) {
+    if (disk->bus != VIR_DOMAIN_DISK_BUS_SCSI || !driver)
         return 0;
-    }
 
-    tmp = disk->driverName;
+    if (VIR_STRDUP(copy, driver) < 0)
+        return -1;
+    tmp = copy;
 
-    for (; *tmp != '\0'; ++tmp) {
+    for (; *tmp != '\0'; ++tmp)
         *tmp = c_tolower(*tmp);
-    }
 
-    model = virDomainControllerModelSCSITypeFromString(disk->driverName);
+    model = virDomainControllerModelSCSITypeFromString(copy);
+    VIR_FREE(copy);
 
     if (model < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Unknown driver name '%s'"), disk->driverName);
+                       _("Unknown driver name '%s'"), driver);
         return -1;
     }
 
@@ -1096,7 +1119,7 @@ virVMXHandleLegacySCSIDiskDriverName(virDomainDefPtr def,
     } else if (controller->model != model) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Inconsistent SCSI controller model ('%s' is not '%s') "
-                         "for SCSI controller index %d"), disk->driverName,
+                         "for SCSI controller index %d"), driver,
                        virDomainControllerModelSCSITypeToString(controller->model),
                        controller->idx);
         return -1;
@@ -1202,7 +1225,7 @@ virVMXGatherSCSIControllers(virVMXContext *ctx, virDomainDefPtr def,
 
     result = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(autodetectedModels);
 
     return result;
@@ -1252,14 +1275,12 @@ virVMXParseConfig(virVMXContext *ctx,
 
     conf = virConfReadMem(vmx, strlen(vmx), VIR_CONF_FLAG_VMX_FORMAT);
 
-    if (conf == NULL) {
+    if (conf == NULL)
         return NULL;
-    }
 
     /* vmx:.encoding */
-    if (virVMXGetConfigString(conf, ".encoding", &encoding, true) < 0) {
+    if (virVMXGetConfigString(conf, ".encoding", &encoding, true) < 0)
         goto cleanup;
-    }
 
     if (encoding == NULL || STRCASEEQ(encoding, "UTF-8")) {
         /* nothing */
@@ -1269,21 +1290,19 @@ virVMXParseConfig(virVMXContext *ctx,
 
         utf8 = virVMXConvertToUTF8(encoding, vmx);
 
-        if (utf8 == NULL) {
+        if (utf8 == NULL)
             goto cleanup;
-        }
 
         conf = virConfReadMem(utf8, strlen(utf8), VIR_CONF_FLAG_VMX_FORMAT);
 
         VIR_FREE(utf8);
 
-        if (conf == NULL) {
+        if (conf == NULL)
             goto cleanup;
-        }
     }
 
     /* Allocate domain def */
-    if (VIR_ALLOC(def) < 0)
+    if (!(def = virDomainDefNew()))
         goto cleanup;
 
     def->virtType = VIR_DOMAIN_VIRT_VMWARE;
@@ -1308,25 +1327,22 @@ virVMXParseConfig(virVMXContext *ctx,
         goto cleanup;
     }
 
-    if (virtualHW_version != 4 && virtualHW_version != 7 &&
-        virtualHW_version != 8 && virtualHW_version != 9) {
+    if (virtualHW_version < 4) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Expecting VMX entry 'virtualHW.version' to be "
-                         "4, 7, 8 or 9 but found %lld"),
+                         "4 or higher but found %lld"),
                        virtualHW_version);
         goto cleanup;
     }
 
     /* vmx:uuid.bios -> def:uuid */
     /* FIXME: Need to handle 'uuid.action = "create"' */
-    if (virVMXGetConfigUUID(conf, "uuid.bios", def->uuid, true) < 0) {
+    if (virVMXGetConfigUUID(conf, "uuid.bios", def->uuid, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:displayName -> def:name */
-    if (virVMXGetConfigString(conf, "displayName", &def->name, true) < 0) {
+    if (virVMXGetConfigString(conf, "displayName", &def->name, true) < 0)
         goto cleanup;
-    }
 
     if (def->name != NULL) {
         if (virVMXUnescapeHexPercent(def->name) < 0 ||
@@ -1353,9 +1369,8 @@ virVMXParseConfig(virVMXContext *ctx,
     }
 
     /* vmx:memsize -> def:mem.max_balloon */
-    if (virVMXGetConfigLong(conf, "memsize", &memsize, 32, true) < 0) {
+    if (virVMXGetConfigLong(conf, "memsize", &memsize, 32, true) < 0)
         goto cleanup;
-    }
 
     if (memsize <= 0 || memsize % 4 != 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -1364,7 +1379,7 @@ virVMXParseConfig(virVMXContext *ctx,
         goto cleanup;
     }
 
-    def->mem.max_balloon = memsize * 1024; /* Scale from megabytes to kilobytes */
+    virDomainDefSetMemoryInitial(def, memsize * 1024); /* Scale from megabytes to kilobytes */
 
     /* vmx:sched.mem.max -> def:mem.cur_balloon */
     if (virVMXGetConfigLong(conf, "sched.mem.max", &sched_mem_max, memsize,
@@ -1372,15 +1387,13 @@ virVMXParseConfig(virVMXContext *ctx,
         goto cleanup;
     }
 
-    if (sched_mem_max < 0) {
+    if (sched_mem_max < 0)
         sched_mem_max = memsize;
-    }
 
     def->mem.cur_balloon = sched_mem_max * 1024; /* Scale from megabytes to kilobytes */
 
-    if (def->mem.cur_balloon > def->mem.max_balloon) {
-        def->mem.cur_balloon = def->mem.max_balloon;
-    }
+    if (def->mem.cur_balloon > virDomainDefGetMemoryActual(def))
+        def->mem.cur_balloon = virDomainDefGetMemoryActual(def);
 
     /* vmx:sched.mem.minsize -> def:mem.min_guarantee */
     if (virVMXGetConfigLong(conf, "sched.mem.minsize", &sched_mem_minsize, 0,
@@ -1388,20 +1401,17 @@ virVMXParseConfig(virVMXContext *ctx,
         goto cleanup;
     }
 
-    if (sched_mem_minsize < 0) {
+    if (sched_mem_minsize < 0)
         sched_mem_minsize = 0;
-    }
 
     def->mem.min_guarantee = sched_mem_minsize * 1024; /* Scale from megabytes to kilobytes */
 
-    if (def->mem.min_guarantee > def->mem.max_balloon) {
-        def->mem.min_guarantee = def->mem.max_balloon;
-    }
+    if (def->mem.min_guarantee > virDomainDefGetMemoryActual(def))
+        def->mem.min_guarantee = virDomainDefGetMemoryActual(def);
 
     /* vmx:numvcpus -> def:vcpus */
-    if (virVMXGetConfigLong(conf, "numvcpus", &numvcpus, 1, true) < 0) {
+    if (virVMXGetConfigLong(conf, "numvcpus", &numvcpus, 1, true) < 0)
         goto cleanup;
-    }
 
     if (numvcpus <= 0 || (numvcpus % 2 != 0 && numvcpus != 1)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -1449,9 +1459,8 @@ virVMXParseConfig(virVMXContext *ctx,
                 goto cleanup;
             }
 
-            if (number + 1 > cpumasklen) {
+            if (number + 1 > cpumasklen)
                 cpumasklen = number + 1;
-            }
 
             ignore_value(virBitmapSetBit(def->cpumask, number));
             ++count;
@@ -1504,6 +1513,7 @@ virVMXParseConfig(virVMXContext *ctx,
                              "found '%s'"), sched_cpu_shares);
             goto cleanup;
         }
+        def->cputune.sharesSpecified = true;
     }
 
     /* def:lifecycle */
@@ -1512,13 +1522,11 @@ virVMXParseConfig(virVMXContext *ctx,
     def->onCrash = VIR_DOMAIN_LIFECYCLE_DESTROY;
 
     /* def:os */
-    if (VIR_STRDUP(def->os.type, "hvm") < 0)
-        goto cleanup;
+    def->os.type = VIR_DOMAIN_OSTYPE_HVM;
 
     /* vmx:guestOS -> def:os.arch */
-    if (virVMXGetConfigString(conf, "guestOS", &guestOS, true) < 0) {
+    if (virVMXGetConfigString(conf, "guestOS", &guestOS, true) < 0)
         goto cleanup;
-    }
 
     if (guestOS != NULL && virFileHasSuffix(guestOS, "-64")) {
         def->os.arch = VIR_ARCH_X86_64;
@@ -1532,9 +1540,8 @@ virVMXParseConfig(virVMXContext *ctx,
         goto cleanup;
     }
 
-    if (smbios_reflecthost) {
+    if (smbios_reflecthost)
         def->os.smbios_mode = VIR_DOMAIN_SMBIOS_HOST;
-    }
 
     /* def:features */
     /* FIXME */
@@ -1548,13 +1555,11 @@ virVMXParseConfig(virVMXContext *ctx,
 
     def->ngraphics = 0;
 
-    if (virVMXParseVNC(conf, &def->graphics[def->ngraphics]) < 0) {
+    if (virVMXParseVNC(conf, &def->graphics[def->ngraphics]) < 0)
         goto cleanup;
-    }
 
-    if (def->graphics[def->ngraphics] != NULL) {
+    if (def->graphics[def->ngraphics] != NULL)
         ++def->ngraphics;
-    }
 
     /* def:disks: 4 * 15 scsi + 2 * 2 ide + 2 floppy = 66 */
     if (VIR_ALLOC_N(def->disks, 66) < 0)
@@ -1569,9 +1574,8 @@ virVMXParseConfig(virVMXContext *ctx,
             goto cleanup;
         }
 
-        if (! present) {
+        if (! present)
             continue;
-        }
 
         for (unit = 0; unit < 16; ++unit) {
             if (unit == 7) {
@@ -1599,9 +1603,8 @@ virVMXParseConfig(virVMXContext *ctx,
                 goto cleanup;
             }
 
-            if (def->disks[def->ndisks] != NULL) {
+            if (def->disks[def->ndisks] != NULL)
                 ++def->ndisks;
-            }
         }
     }
 
@@ -1625,9 +1628,8 @@ virVMXParseConfig(virVMXContext *ctx,
                 goto cleanup;
             }
 
-            if (def->disks[def->ndisks] != NULL) {
+            if (def->disks[def->ndisks] != NULL)
                 ++def->ndisks;
-            }
         }
     }
 
@@ -1639,9 +1641,8 @@ virVMXParseConfig(virVMXContext *ctx,
             goto cleanup;
         }
 
-        if (def->disks[def->ndisks] != NULL) {
+        if (def->disks[def->ndisks] != NULL)
             ++def->ndisks;
-        }
     }
 
     /* def:controllers */
@@ -1690,9 +1691,8 @@ virVMXParseConfig(virVMXContext *ctx,
                     goto cleanup;
                 }
 
-                if (def->fss[def->nfss] != NULL) {
+                if (def->fss[def->nfss] != NULL)
                     ++def->nfss;
-                }
             }
         }
     }
@@ -1709,9 +1709,8 @@ virVMXParseConfig(virVMXContext *ctx,
             goto cleanup;
         }
 
-        if (def->nets[def->nnets] != NULL) {
+        if (def->nets[def->nnets] != NULL)
             ++def->nnets;
-        }
     }
 
     /* def:inputs */
@@ -1723,9 +1722,8 @@ virVMXParseConfig(virVMXContext *ctx,
 
     def->nvideos = 0;
 
-    if (virVMXParseSVGA(conf, &def->videos[def->nvideos]) < 0) {
+    if (virVMXParseSVGA(conf, &def->videos[def->nvideos]) < 0)
         goto cleanup;
-    }
 
     def->nvideos = 1;
 
@@ -1747,9 +1745,8 @@ virVMXParseConfig(virVMXContext *ctx,
             goto cleanup;
         }
 
-        if (def->serials[def->nserials] != NULL) {
+        if (def->serials[def->nserials] != NULL)
             ++def->nserials;
-        }
     }
 
     /* def:parallels */
@@ -1764,14 +1761,13 @@ virVMXParseConfig(virVMXContext *ctx,
             goto cleanup;
         }
 
-        if (def->parallels[def->nparallels] != NULL) {
+        if (def->parallels[def->nparallels] != NULL)
             ++def->nparallels;
-        }
     }
 
     success = true;
 
-  cleanup:
+ cleanup:
     if (! success) {
         virDomainDefFree(def);
         def = NULL;
@@ -1805,9 +1801,8 @@ virVMXParseVNC(virConfPtr conf, virDomainGraphicsDefPtr *def)
         return -1;
     }
 
-    if (! enabled) {
+    if (! enabled)
         return 0;
-    }
 
     if (VIR_ALLOC(*def) < 0)
         goto failure;
@@ -1838,9 +1833,8 @@ virVMXParseVNC(virConfPtr conf, virDomainGraphicsDefPtr *def)
         (*def)->data.vnc.port = 0;
         (*def)->data.vnc.autoport = true;
     } else {
-        if (port < 5900 || port > 5964) {
+        if (port < 5900 || port > 5964)
             VIR_WARN("VNC port %lld it out of [5900..5964] range", port);
-        }
 
         (*def)->data.vnc.port = port;
         (*def)->data.vnc.autoport = false;
@@ -1848,7 +1842,7 @@ virVMXParseVNC(virConfPtr conf, virDomainGraphicsDefPtr *def)
 
     return 0;
 
-  failure:
+ failure:
     VIR_FREE(listenAddr);
     virDomainGraphicsDefFree(*def);
     *def = NULL;
@@ -1884,9 +1878,8 @@ virVMXParseSCSIController(virConfPtr conf, int controller, bool *present,
     snprintf(virtualDev_name, sizeof(virtualDev_name), "scsi%d.virtualDev",
              controller);
 
-    if (virVMXGetConfigBoolean(conf, present_name, present, false, true) < 0) {
+    if (virVMXGetConfigBoolean(conf, present_name, present, false, true) < 0)
         goto cleanup;
-    }
 
     if (! *present) {
         result = 0;
@@ -1901,9 +1894,8 @@ virVMXParseSCSIController(virConfPtr conf, int controller, bool *present,
     if (virtualDev_string != NULL) {
         tmp = virtualDev_string;
 
-        for (; *tmp != '\0'; ++tmp) {
+        for (; *tmp != '\0'; ++tmp)
             *tmp = c_tolower(*tmp);
-        }
 
         *virtualDev = virVMXControllerModelSCSITypeFromString(virtualDev_string);
 
@@ -1922,7 +1914,7 @@ virVMXParseSCSIController(virConfPtr conf, int controller, bool *present,
 
     result = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(virtualDev_string);
 
     return result;
@@ -1988,7 +1980,7 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
         return -1;
     }
 
-    if (VIR_ALLOC(*def) < 0)
+    if (!(*def = virDomainDiskDefNew(xmlopt)))
         return -1;
 
     (*def)->device = device;
@@ -2019,9 +2011,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
                virIndexToDiskName
                  (controllerOrBus * 15 + (unit < 7 ? unit : unit - 1), "sd");
 
-            if ((*def)->dst == NULL) {
+            if ((*def)->dst == NULL)
                 goto cleanup;
-            }
         } else if (busType == VIR_DOMAIN_DISK_BUS_IDE) {
             if (controllerOrBus < 0 || controllerOrBus > 1) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -2041,9 +2032,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
 
             (*def)->dst = virIndexToDiskName(controllerOrBus * 2 + unit, "hd");
 
-            if ((*def)->dst == NULL) {
+            if ((*def)->dst == NULL)
                 goto cleanup;
-            }
         } else {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                            _("Unsupported bus type '%s' for device type '%s'"),
@@ -2072,9 +2062,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
 
             (*def)->dst = virIndexToDiskName(unit, "fd");
 
-            if ((*def)->dst == NULL) {
+            if ((*def)->dst == NULL)
                 goto cleanup;
-            }
         } else {
             virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                            _("Unsupported bus type '%s' for device type '%s'"),
@@ -2099,9 +2088,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
     VMX_BUILD_NAME(mode);
 
     /* vmx:present */
-    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0) {
+    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:startConnected */
     if (virVMXGetConfigBoolean(conf, startConnected_name, &startConnected,
@@ -2110,14 +2098,12 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
     }
 
     /* FIXME: Need to distiguish between active and inactive domains here */
-    if (! present/* && ! startConnected*/) {
+    if (! present/* && ! startConnected*/)
         goto ignore;
-    }
 
     /* vmx:deviceType -> def:type */
-    if (virVMXGetConfigString(conf, deviceType_name, &deviceType, true) < 0) {
+    if (virVMXGetConfigString(conf, deviceType_name, &deviceType, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:clientDevice */
     if (virVMXGetConfigBoolean(conf, clientDevice_name, &clientDevice, false,
@@ -2126,9 +2112,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
     }
 
     /* vmx:mode -> def:transient */
-    if (virVMXGetConfigString(conf, mode_name, &mode, true) < 0) {
+    if (virVMXGetConfigString(conf, mode_name, &mode, true) < 0)
         goto cleanup;
-    }
 
     if (clientDevice) {
         /*
@@ -2139,14 +2124,12 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
     }
 
     /* vmx:fileType -> def:type */
-    if (virVMXGetConfigString(conf, fileType_name, &fileType, true) < 0) {
+    if (virVMXGetConfigString(conf, fileType_name, &fileType, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:fileName -> def:src, def:type */
-    if (virVMXGetConfigString(conf, fileName_name, &fileName, false) < 0) {
+    if (virVMXGetConfigString(conf, fileName_name, &fileName, false) < 0)
         goto cleanup;
-    }
 
     /* vmx:writeThrough -> def:cachemode */
     if (virVMXGetConfigBoolean(conf, writeThrough_name, &writeThrough, false,
@@ -2157,6 +2140,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
     /* Setup virDomainDiskDef */
     if (device == VIR_DOMAIN_DISK_DEVICE_DISK) {
         if (virFileHasSuffix(fileName, ".vmdk")) {
+            char *tmp;
+
             if (deviceType != NULL) {
                 if (busType == VIR_DOMAIN_DISK_BUS_SCSI &&
                     STRCASENEQ(deviceType, "scsi-hardDisk") &&
@@ -2177,17 +2162,19 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
                 }
             }
 
-            (*def)->type = VIR_DOMAIN_DISK_TYPE_FILE;
-            (*def)->src = ctx->parseFileName(fileName, ctx->opaque);
+            virDomainDiskSetType(*def, VIR_STORAGE_TYPE_FILE);
+            if (!(tmp = ctx->parseFileName(fileName, ctx->opaque)))
+                goto cleanup;
+            if (virDomainDiskSetSource(*def, tmp) < 0) {
+                VIR_FREE(tmp);
+                goto cleanup;
+            }
+            VIR_FREE(tmp);
             (*def)->cachemode = writeThrough ? VIR_DOMAIN_DISK_CACHE_WRITETHRU
                                              : VIR_DOMAIN_DISK_CACHE_DEFAULT;
             if (mode)
                 (*def)->transient = STRCASEEQ(mode,
                                               "independent-nonpersistent");
-
-            if ((*def)->src == NULL) {
-                goto cleanup;
-            }
         } else if (virFileHasSuffix(fileName, ".iso") ||
                    STRCASEEQ(deviceType, "atapi-cdrom") ||
                    STRCASEEQ(deviceType, "cdrom-raw")) {
@@ -2208,6 +2195,8 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
         }
     } else if (device == VIR_DOMAIN_DISK_DEVICE_CDROM) {
         if (virFileHasSuffix(fileName, ".iso")) {
+            char *tmp;
+
             if (deviceType != NULL) {
                 if (STRCASENEQ(deviceType, "cdrom-image")) {
                     virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -2217,12 +2206,14 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
                 }
             }
 
-            (*def)->type = VIR_DOMAIN_DISK_TYPE_FILE;
-            (*def)->src = ctx->parseFileName(fileName, ctx->opaque);
-
-            if ((*def)->src == NULL) {
+            virDomainDiskSetType(*def, VIR_STORAGE_TYPE_FILE);
+            if (!(tmp = ctx->parseFileName(fileName, ctx->opaque)))
+                goto cleanup;
+            if (virDomainDiskSetSource(*def, tmp) < 0) {
+                VIR_FREE(tmp);
                 goto cleanup;
             }
+            VIR_FREE(tmp);
         } else if (virFileHasSuffix(fileName, ".vmdk")) {
             /*
              * This function was called in order to parse a CDROM device, but
@@ -2232,26 +2223,24 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
              */
             goto ignore;
         } else if (STRCASEEQ(deviceType, "atapi-cdrom")) {
-            (*def)->type = VIR_DOMAIN_DISK_TYPE_BLOCK;
+            virDomainDiskSetType(*def, VIR_STORAGE_TYPE_BLOCK);
 
             if (STRCASEEQ(fileName, "auto detect")) {
-                (*def)->src = NULL;
+                ignore_value(virDomainDiskSetSource(*def, NULL));
                 (*def)->startupPolicy = VIR_DOMAIN_STARTUP_POLICY_OPTIONAL;
-            } else {
-                (*def)->src = fileName;
-                fileName = NULL;
+            } else if (virDomainDiskSetSource(*def, fileName) < 0) {
+                goto cleanup;
             }
         } else if (STRCASEEQ(deviceType, "cdrom-raw")) {
             /* Raw access CD-ROMs actually are device='lun' */
             (*def)->device = VIR_DOMAIN_DISK_DEVICE_LUN;
-            (*def)->type = VIR_DOMAIN_DISK_TYPE_BLOCK;
+            virDomainDiskSetType(*def, VIR_STORAGE_TYPE_BLOCK);
 
             if (STRCASEEQ(fileName, "auto detect")) {
-                (*def)->src = NULL;
+                ignore_value(virDomainDiskSetSource(*def, NULL));
                 (*def)->startupPolicy = VIR_DOMAIN_STARTUP_POLICY_OPTIONAL;
-            } else {
-                (*def)->src = fileName;
-                fileName = NULL;
+            } else if (virDomainDiskSetSource(*def, fileName) < 0) {
+                goto cleanup;
             }
         } else {
             virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -2263,13 +2252,20 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
         }
     } else if (device == VIR_DOMAIN_DISK_DEVICE_FLOPPY) {
         if (fileType != NULL && STRCASEEQ(fileType, "device")) {
-            (*def)->type = VIR_DOMAIN_DISK_TYPE_BLOCK;
-            (*def)->src = fileName;
-
-            fileName = NULL;
+            virDomainDiskSetType(*def, VIR_STORAGE_TYPE_BLOCK);
+            if (virDomainDiskSetSource(*def, fileName) < 0)
+                goto cleanup;
         } else if (fileType != NULL && STRCASEEQ(fileType, "file")) {
-            (*def)->type = VIR_DOMAIN_DISK_TYPE_FILE;
-            (*def)->src = ctx->parseFileName(fileName, ctx->opaque);
+            char *tmp;
+
+            virDomainDiskSetType(*def, VIR_STORAGE_TYPE_FILE);
+            if (!(tmp = ctx->parseFileName(fileName, ctx->opaque)))
+                goto cleanup;
+            if (virDomainDiskSetSource(*def, tmp) < 0) {
+                VIR_FREE(tmp);
+                goto cleanup;
+            }
+            VIR_FREE(tmp);
         } else {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("Invalid or not yet handled value '%s' "
@@ -2286,13 +2282,14 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
 
     if (virDomainDiskDefAssignAddress(xmlopt, *def) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Could not assign address to disk '%s'"), (*def)->src);
+                       _("Could not assign address to disk '%s'"),
+                       virDomainDiskGetSource(*def));
         goto cleanup;
     }
 
     result = 0;
 
-  cleanup:
+ cleanup:
     if (result < 0) {
         virDomainDiskDefFree(*def);
         *def = NULL;
@@ -2306,7 +2303,7 @@ virVMXParseDisk(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virConfPtr con
 
     return result;
 
-  ignore:
+ ignore:
     virDomainDiskDefFree(*def);
     *def = NULL;
 
@@ -2356,31 +2353,26 @@ int virVMXParseFileSystem(virConfPtr conf, int number, virDomainFSDefPtr *def)
     VMX_BUILD_NAME(writeAccess);
 
     /* vmx:present */
-    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0) {
+    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:enabled */
-    if (virVMXGetConfigBoolean(conf, enabled_name, &enabled, false, true) < 0) {
+    if (virVMXGetConfigBoolean(conf, enabled_name, &enabled, false, true) < 0)
         goto cleanup;
-    }
 
-    if (!(present && enabled)) {
+    if (!(present && enabled))
         goto ignore;
-    }
 
     /* vmx:hostPath */
-    if (virVMXGetConfigString(conf, hostPath_name, &hostPath, false) < 0) {
+    if (virVMXGetConfigString(conf, hostPath_name, &hostPath, false) < 0)
         goto cleanup;
-    }
 
     (*def)->src = hostPath;
     hostPath = NULL;
 
     /* vmx:guestName */
-    if (virVMXGetConfigString(conf, guestName_name, &guestName, false) < 0) {
+    if (virVMXGetConfigString(conf, guestName_name, &guestName, false) < 0)
         goto cleanup;
-    }
 
     (*def)->dst = guestName;
     guestName = NULL;
@@ -2395,7 +2387,7 @@ int virVMXParseFileSystem(virConfPtr conf, int number, virDomainFSDefPtr *def)
 
     result = 0;
 
-  cleanup:
+ cleanup:
     if (result < 0) {
         virDomainFSDefFree(*def);
         *def = NULL;
@@ -2406,7 +2398,7 @@ int virVMXParseFileSystem(virConfPtr conf, int number, virDomainFSDefPtr *def)
 
     return result;
 
-  ignore:
+ ignore:
     virDomainFSDefFree(*def);
     *def = NULL;
 
@@ -2482,9 +2474,8 @@ virVMXParseEthernet(virConfPtr conf, int controller, virDomainNetDefPtr *def)
     VMX_BUILD_NAME(vnet);
 
     /* vmx:present */
-    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0) {
+    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:startConnected */
     if (virVMXGetConfigBoolean(conf, startConnected_name, &startConnected,
@@ -2493,9 +2484,8 @@ virVMXParseEthernet(virConfPtr conf, int controller, virDomainNetDefPtr *def)
     }
 
     /* FIXME: Need to distiguish between active and inactive domains here */
-    if (! present/* && ! startConnected*/) {
+    if (! present/* && ! startConnected*/)
         goto ignore;
-    }
 
     /* vmx:connectionType -> def:type */
     if (virVMXGetConfigString(conf, connectionType_name, &connectionType,
@@ -2549,10 +2539,11 @@ virVMXParseEthernet(virConfPtr conf, int controller, virDomainNetDefPtr *def)
         if (STRCASENEQ(virtualDev, "vlance") &&
             STRCASENEQ(virtualDev, "vmxnet") &&
             STRCASENEQ(virtualDev, "vmxnet3") &&
-            STRCASENEQ(virtualDev, "e1000")) {
+            STRCASENEQ(virtualDev, "e1000") &&
+            STRCASENEQ(virtualDev, "e1000e")) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("Expecting VMX entry '%s' to be 'vlance' or 'vmxnet' or "
-                             "'vmxnet3' or 'e1000' but found '%s'"), virtualDev_name,
+                             "'vmxnet3' or 'e1000e' or 'e1000e' but found '%s'"), virtualDev_name,
                            virtualDev);
             goto cleanup;
         }
@@ -2620,7 +2611,7 @@ virVMXParseEthernet(virConfPtr conf, int controller, virDomainNetDefPtr *def)
 
     result = 0;
 
-  cleanup:
+ cleanup:
     if (result < 0) {
         virDomainNetDefFree(*def);
         *def = NULL;
@@ -2636,7 +2627,7 @@ virVMXParseEthernet(virConfPtr conf, int controller, virDomainNetDefPtr *def)
 
     return result;
 
-  ignore:
+ ignore:
     virDomainNetDefFree(*def);
     *def = NULL;
 
@@ -2696,9 +2687,8 @@ virVMXParseSerial(virVMXContext *ctx, virConfPtr conf, int port,
     VMX_BUILD_NAME_EXTRA(network_endPoint, "network.endPoint");
 
     /* vmx:present */
-    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0) {
+    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:startConnected */
     if (virVMXGetConfigBoolean(conf, startConnected_name, &startConnected,
@@ -2707,19 +2697,16 @@ virVMXParseSerial(virVMXContext *ctx, virConfPtr conf, int port,
     }
 
     /* FIXME: Need to distiguish between active and inactive domains here */
-    if (! present/* && ! startConnected*/) {
+    if (! present/* && ! startConnected*/)
         goto ignore;
-    }
 
     /* vmx:fileType -> def:type */
-    if (virVMXGetConfigString(conf, fileType_name, &fileType, false) < 0) {
+    if (virVMXGetConfigString(conf, fileType_name, &fileType, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:fileName -> def:data.file.path */
-    if (virVMXGetConfigString(conf, fileName_name, &fileName, true) < 0) {
+    if (virVMXGetConfigString(conf, fileName_name, &fileName, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:network.endPoint -> def:data.tcp.listen */
     if (virVMXGetConfigString(conf, network_endPoint_name, &network_endPoint,
@@ -2727,8 +2714,12 @@ virVMXParseSerial(virVMXContext *ctx, virConfPtr conf, int port,
         goto cleanup;
     }
 
-    /* Setup virDomainChrDef */
-    if (STRCASEEQ(fileType, "device")) {
+    /*
+     * Setup virDomainChrDef. The default fileType is "device", and vmware
+     * will sometimes omit this tag when adding a new serial port of this
+     * type.
+     */
+    if (!fileType || STRCASEEQ(fileType, "device")) {
         (*def)->target.port = port;
         (*def)->source.type = VIR_DOMAIN_CHR_TYPE_DEV;
         (*def)->source.data.file.path = fileName;
@@ -2740,9 +2731,8 @@ virVMXParseSerial(virVMXContext *ctx, virConfPtr conf, int port,
         (*def)->source.data.file.path = ctx->parseFileName(fileName,
                                                            ctx->opaque);
 
-        if ((*def)->source.data.file.path == NULL) {
+        if ((*def)->source.data.file.path == NULL)
             goto cleanup;
-        }
     } else if (STRCASEEQ(fileType, "pipe")) {
         /*
          * FIXME: Differences between client/server and VM/application pipes
@@ -2817,7 +2807,7 @@ virVMXParseSerial(virVMXContext *ctx, virConfPtr conf, int port,
 
     result = 0;
 
-  cleanup:
+ cleanup:
     if (result < 0) {
         virDomainChrDefFree(*def);
         *def = NULL;
@@ -2830,7 +2820,7 @@ virVMXParseSerial(virVMXContext *ctx, virConfPtr conf, int port,
 
     return result;
 
-  ignore:
+ ignore:
     virDomainChrDefFree(*def);
     *def = NULL;
 
@@ -2884,9 +2874,8 @@ virVMXParseParallel(virVMXContext *ctx, virConfPtr conf, int port,
     VMX_BUILD_NAME(fileName);
 
     /* vmx:present */
-    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0) {
+    if (virVMXGetConfigBoolean(conf, present_name, &present, false, true) < 0)
         goto cleanup;
-    }
 
     /* vmx:startConnected */
     if (virVMXGetConfigBoolean(conf, startConnected_name, &startConnected,
@@ -2895,19 +2884,16 @@ virVMXParseParallel(virVMXContext *ctx, virConfPtr conf, int port,
     }
 
     /* FIXME: Need to distiguish between active and inactive domains here */
-    if (! present/* && ! startConnected*/) {
+    if (! present/* && ! startConnected*/)
         goto ignore;
-    }
 
     /* vmx:fileType -> def:type */
-    if (virVMXGetConfigString(conf, fileType_name, &fileType, false) < 0) {
+    if (virVMXGetConfigString(conf, fileType_name, &fileType, false) < 0)
         goto cleanup;
-    }
 
     /* vmx:fileName -> def:data.file.path */
-    if (virVMXGetConfigString(conf, fileName_name, &fileName, false) < 0) {
+    if (virVMXGetConfigString(conf, fileName_name, &fileName, false) < 0)
         goto cleanup;
-    }
 
     /* Setup virDomainChrDef */
     if (STRCASEEQ(fileType, "device")) {
@@ -2922,9 +2908,8 @@ virVMXParseParallel(virVMXContext *ctx, virConfPtr conf, int port,
         (*def)->source.data.file.path = ctx->parseFileName(fileName,
                                                            ctx->opaque);
 
-        if ((*def)->source.data.file.path == NULL) {
+        if ((*def)->source.data.file.path == NULL)
             goto cleanup;
-        }
     } else {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Expecting VMX entry '%s' to be 'device' or 'file' but "
@@ -2934,7 +2919,7 @@ virVMXParseParallel(virVMXContext *ctx, virConfPtr conf, int port,
 
     result = 0;
 
-  cleanup:
+ cleanup:
     if (result < 0) {
         virDomainChrDefFree(*def);
         *def = NULL;
@@ -2945,7 +2930,7 @@ virVMXParseParallel(virVMXContext *ctx, virConfPtr conf, int port,
 
     return result;
 
-  ignore:
+ ignore:
     virDomainChrDefFree(*def);
     *def = NULL;
 
@@ -2982,7 +2967,7 @@ virVMXParseSVGA(virConfPtr conf, virDomainVideoDefPtr *def)
 
     result = 0;
 
-  cleanup:
+ cleanup:
     if (result < 0) {
         virDomainVideoDefFree(*def);
         *def = NULL;
@@ -3082,15 +3067,13 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
     /* def:name -> vmx:displayName */
     preliminaryDisplayName = virVMXEscapeHexPipe(def->name);
 
-    if (preliminaryDisplayName == NULL) {
+    if (preliminaryDisplayName == NULL)
         goto cleanup;
-    }
 
     displayName = virVMXEscapeHexPercent(preliminaryDisplayName);
 
-    if (displayName == NULL) {
+    if (displayName == NULL)
         goto cleanup;
-    }
 
     virBufferAsprintf(&buffer, "displayName = \"%s\"\n", displayName);
 
@@ -3104,7 +3087,7 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
 
     /* def:mem.max_balloon -> vmx:memsize */
     /* max-memory must be a multiple of 4096 kilobyte */
-    max_balloon = VIR_DIV_UP(def->mem.max_balloon, 4096) * 4096;
+    max_balloon = VIR_DIV_UP(virDomainDefGetMemoryActual(def), 4096) * 4096;
 
     virBufferAsprintf(&buffer, "memsize = \"%llu\"\n",
                       max_balloon / 1024); /* Scale from kilobytes to megabytes */
@@ -3148,9 +3131,8 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
         sched_cpu_affinity_length = 0;
 
         bit = -1;
-        while ((bit = virBitmapNextSetBit(def->cpumask, bit)) >= 0) {
+        while ((bit = virBitmapNextSetBit(def->cpumask, bit)) >= 0)
             ++sched_cpu_affinity_length;
-        }
 
         if (sched_cpu_affinity_length < def->maxvcpus) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -3164,9 +3146,8 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
         while ((bit = virBitmapNextSetBit(def->cpumask, bit)) >= 0) {
             virBufferAsprintf(&buffer, "%d", bit);
 
-            if (sched_cpu_affinity_length > 1) {
+            if (sched_cpu_affinity_length > 1)
                 virBufferAddChar(&buffer, ',');
-            }
 
             --sched_cpu_affinity_length;
         }
@@ -3175,7 +3156,7 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
     }
 
     /* def:cputune.shares -> vmx:sched.cpu.shares */
-    if (def->cputune.shares > 0) {
+    if (def->cputune.sharesSpecified) {
         /* See http://www.vmware.com/support/developer/vc-sdk/visdk41pubs/ApiReference/vim.SharesInfo.Level.html */
         if (def->cputune.shares == def->vcpus * 500) {
             virBufferAddLit(&buffer, "sched.cpu.shares = \"low\"\n");
@@ -3193,9 +3174,8 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
     for (i = 0; i < def->ngraphics; ++i) {
         switch (def->graphics[i]->type) {
           case VIR_DOMAIN_GRAPHICS_TYPE_VNC:
-            if (virVMXFormatVNC(def->graphics[i], &buffer) < 0) {
+            if (virVMXFormatVNC(def->graphics[i], &buffer) < 0)
                 goto cleanup;
-            }
 
             break;
 
@@ -3237,9 +3217,8 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
           case VIR_DOMAIN_DISK_DEVICE_DISK:
           case VIR_DOMAIN_DISK_DEVICE_CDROM:
           case VIR_DOMAIN_DISK_DEVICE_LUN:
-            if (virVMXFormatDisk(ctx, def->disks[i], &buffer) < 0) {
+            if (virVMXFormatDisk(ctx, def->disks[i], &buffer) < 0)
                 goto cleanup;
-            }
 
             break;
 
@@ -3261,9 +3240,8 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
 
     for (i = 0; i < 2; ++i) {
         /* floppy[0..1].present defaults to true, disable it explicitly */
-        if (! floppy_present[i]) {
+        if (! floppy_present[i])
             virBufferAsprintf(&buffer, "floppy%zu.present = \"false\"\n", i);
-        }
     }
 
     /* def:fss */
@@ -3273,16 +3251,14 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
     }
 
     for (i = 0; i < def->nfss; ++i) {
-        if (virVMXFormatFileSystem(def->fss[i], i, &buffer) < 0) {
+        if (virVMXFormatFileSystem(def->fss[i], i, &buffer) < 0)
             goto cleanup;
-        }
     }
 
     /* def:nets */
     for (i = 0; i < def->nnets; ++i) {
-        if (virVMXFormatEthernet(def->nets[i], i, &buffer) < 0) {
+        if (virVMXFormatEthernet(def->nets[i], i, &buffer) < 0)
             goto cleanup;
-        }
     }
 
     /* def:inputs */
@@ -3299,9 +3275,8 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
             goto cleanup;
         }
 
-        if (virVMXFormatSVGA(def->videos[0], &buffer) < 0) {
+        if (virVMXFormatSVGA(def->videos[0], &buffer) < 0)
             goto cleanup;
-        }
     }
 
     /* def:hostdevs */
@@ -3309,30 +3284,25 @@ virVMXFormatConfig(virVMXContext *ctx, virDomainXMLOptionPtr xmlopt, virDomainDe
 
     /* def:serials */
     for (i = 0; i < def->nserials; ++i) {
-        if (virVMXFormatSerial(ctx, def->serials[i], &buffer) < 0) {
+        if (virVMXFormatSerial(ctx, def->serials[i], &buffer) < 0)
             goto cleanup;
-        }
     }
 
     /* def:parallels */
     for (i = 0; i < def->nparallels; ++i) {
-        if (virVMXFormatParallel(ctx, def->parallels[i], &buffer) < 0) {
+        if (virVMXFormatParallel(ctx, def->parallels[i], &buffer) < 0)
             goto cleanup;
-        }
     }
 
     /* Get final VMX output */
-    if (virBufferError(&buffer)) {
-        virReportOOMError();
+    if (virBufferCheckError(&buffer) < 0)
         goto cleanup;
-    }
 
     vmx = virBufferContentAndReset(&buffer);
 
-  cleanup:
-    if (vmx == NULL) {
+ cleanup:
+    if (vmx == NULL)
         virBufferFreeAndReset(&buffer);
-    }
 
     VIR_FREE(preliminaryDisplayName);
     VIR_FREE(displayName);
@@ -3393,11 +3363,12 @@ virVMXFormatDisk(virVMXContext *ctx, virDomainDiskDefPtr def,
     int controllerOrBus, unit;
     const char *vmxDeviceType = NULL;
     char *fileName = NULL;
+    int type = virDomainDiskGetType(def);
 
     /* Convert a handful of types to their string values */
     const char *busType = virDomainDiskBusTypeToString(def->bus);
     const char *deviceType = virDomainDeviceTypeToString(def->device);
-    const char *diskType = virDomainDeviceTypeToString(def->type);
+    const char *diskType = virDomainDeviceTypeToString(type);
 
     /* If we are dealing with a disk its a .vmdk, otherwise it must be
      * an ISO.
@@ -3415,14 +3386,14 @@ virVMXFormatDisk(virVMXContext *ctx, virDomainDiskDefPtr def,
     }
 
     /* We only support type='file' and type='block' */
-    if (def->type != VIR_DOMAIN_DISK_TYPE_FILE &&
-        def->type != VIR_DOMAIN_DISK_TYPE_BLOCK) {
+    if (type != VIR_STORAGE_TYPE_FILE &&
+        type != VIR_STORAGE_TYPE_BLOCK) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("%s %s '%s' has unsupported type '%s', expecting "
                          "'%s' or '%s'"), busType, deviceType, def->dst,
                        diskType,
-                       virDomainDiskTypeToString(VIR_DOMAIN_DISK_TYPE_FILE),
-                       virDomainDiskTypeToString(VIR_DOMAIN_DISK_TYPE_BLOCK));
+                       virStorageTypeToString(VIR_STORAGE_TYPE_FILE),
+                       virStorageTypeToString(VIR_STORAGE_TYPE_BLOCK));
         return -1;
     }
 
@@ -3444,11 +3415,11 @@ virVMXFormatDisk(virVMXContext *ctx, virDomainDiskDefPtr def,
     }
 
     if (def->device == VIR_DOMAIN_DISK_DEVICE_DISK &&
-        def->type == VIR_DOMAIN_DISK_TYPE_FILE) {
+        type == VIR_STORAGE_TYPE_FILE) {
         vmxDeviceType = (def->bus == VIR_DOMAIN_DISK_BUS_SCSI) ?
             "scsi-hardDisk" : "ata-hardDisk";
     } else if (def->device == VIR_DOMAIN_DISK_DEVICE_CDROM) {
-        if (def->type == VIR_DOMAIN_DISK_TYPE_FILE)
+        if (type == VIR_STORAGE_TYPE_FILE)
             vmxDeviceType = "cdrom-image";
         else
             vmxDeviceType = "atapi-cdrom";
@@ -3466,8 +3437,10 @@ virVMXFormatDisk(virVMXContext *ctx, virDomainDiskDefPtr def,
     virBufferAsprintf(buffer, "%s%d:%d.deviceType = \"%s\"\n",
                       busType, controllerOrBus, unit, vmxDeviceType);
 
-    if (def->type == VIR_DOMAIN_DISK_TYPE_FILE) {
-        if (def->src != NULL && ! virFileHasSuffix(def->src, fileExt)) {
+    if (type == VIR_STORAGE_TYPE_FILE) {
+        const char *src = virDomainDiskGetSource(def);
+
+        if (src && ! virFileHasSuffix(src, fileExt)) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("Image file for %s %s '%s' has "
                              "unsupported suffix, expecting '%s'"),
@@ -3475,18 +3448,19 @@ virVMXFormatDisk(virVMXContext *ctx, virDomainDiskDefPtr def,
                 return -1;
         }
 
-        fileName = ctx->formatFileName(def->src, ctx->opaque);
+        fileName = ctx->formatFileName(src, ctx->opaque);
 
-        if (fileName == NULL) {
+        if (fileName == NULL)
             return -1;
-        }
 
         virBufferAsprintf(buffer, "%s%d:%d.fileName = \"%s\"\n",
                           busType, controllerOrBus, unit, fileName);
 
         VIR_FREE(fileName);
-    } else if (def->type == VIR_DOMAIN_DISK_TYPE_BLOCK) {
-        if (!def->src &&
+    } else if (type == VIR_STORAGE_TYPE_BLOCK) {
+        const char *src = virDomainDiskGetSource(def);
+
+        if (!src &&
             def->startupPolicy == VIR_DOMAIN_STARTUP_POLICY_OPTIONAL) {
             virBufferAsprintf(buffer, "%s%d:%d.autodetect = \"true\"\n",
                               busType, controllerOrBus, unit);
@@ -3494,7 +3468,7 @@ virVMXFormatDisk(virVMXContext *ctx, virDomainDiskDefPtr def,
                               busType, controllerOrBus, unit);
         } else {
             virBufferAsprintf(buffer, "%s%d:%d.fileName = \"%s\"\n",
-                              busType, controllerOrBus, unit, def->src);
+                              busType, controllerOrBus, unit, src);
         }
     }
 
@@ -3524,49 +3498,49 @@ virVMXFormatFloppy(virVMXContext *ctx, virDomainDiskDefPtr def,
 {
     int unit;
     char *fileName = NULL;
+    int type = virDomainDiskGetType(def);
+    const char *src = virDomainDiskGetSource(def);
 
     if (def->device != VIR_DOMAIN_DISK_DEVICE_FLOPPY) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s", _("Invalid argument"));
         return -1;
     }
 
-    if (virVMXFloppyDiskNameToUnit(def->dst, &unit) < 0) {
+    if (virVMXFloppyDiskNameToUnit(def->dst, &unit) < 0)
         return -1;
-    }
 
     floppy_present[unit] = true;
 
     virBufferAsprintf(buffer, "floppy%d.present = \"true\"\n", unit);
 
-    if (def->type == VIR_DOMAIN_DISK_TYPE_FILE) {
+    if (type == VIR_STORAGE_TYPE_FILE) {
         virBufferAsprintf(buffer, "floppy%d.fileType = \"file\"\n", unit);
 
-        if (def->src != NULL) {
-            fileName = ctx->formatFileName(def->src, ctx->opaque);
+        if (src) {
+            fileName = ctx->formatFileName(src, ctx->opaque);
 
-            if (fileName == NULL) {
+            if (fileName == NULL)
                 return -1;
-            }
 
             virBufferAsprintf(buffer, "floppy%d.fileName = \"%s\"\n",
                               unit, fileName);
 
             VIR_FREE(fileName);
         }
-    } else if (def->type == VIR_DOMAIN_DISK_TYPE_BLOCK) {
+    } else if (type == VIR_STORAGE_TYPE_BLOCK) {
         virBufferAsprintf(buffer, "floppy%d.fileType = \"device\"\n", unit);
 
-        if (def->src != NULL) {
+        if (src) {
             virBufferAsprintf(buffer, "floppy%d.fileName = \"%s\"\n",
-                              unit, def->src);
+                              unit, src);
         }
     } else {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("Floppy '%s' has unsupported type '%s', expecting '%s' "
                          "or '%s'"), def->dst,
-                       virDomainDiskTypeToString(def->type),
-                       virDomainDiskTypeToString(VIR_DOMAIN_DISK_TYPE_FILE),
-                       virDomainDiskTypeToString(VIR_DOMAIN_DISK_TYPE_BLOCK));
+                       virStorageTypeToString(type),
+                       virStorageTypeToString(VIR_STORAGE_TYPE_FILE),
+                       virStorageTypeToString(VIR_STORAGE_TYPE_BLOCK));
         return -1;
     }
 
@@ -3622,11 +3596,12 @@ virVMXFormatEthernet(virDomainNetDefPtr def, int controller,
             STRCASENEQ(def->model, "vmxnet") &&
             STRCASENEQ(def->model, "vmxnet2") &&
             STRCASENEQ(def->model, "vmxnet3") &&
-            STRCASENEQ(def->model, "e1000")) {
+            STRCASENEQ(def->model, "e1000") &&
+            STRCASENEQ(def->model, "e1000e")) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
                            _("Expecting domain XML entry 'devices/interface/model' "
                              "to be 'vlance' or 'vmxnet' or 'vmxnet2' or 'vmxnet3' "
-                             "or 'e1000' but found '%s'"), def->model);
+                             "or 'e1000' or 'e1000e' but found '%s'"), def->model);
             return -1;
         }
 
@@ -3739,9 +3714,8 @@ virVMXFormatSerial(virVMXContext *ctx, virDomainChrDefPtr def,
 
         fileName = ctx->formatFileName(def->source.data.file.path, ctx->opaque);
 
-        if (fileName == NULL) {
+        if (fileName == NULL)
             return -1;
-        }
 
         virBufferAsprintf(buffer, "serial%d.fileName = \"%s\"\n",
                           def->target.port, fileName);
@@ -3846,9 +3820,8 @@ virVMXFormatParallel(virVMXContext *ctx, virDomainChrDefPtr def,
 
         fileName = ctx->formatFileName(def->source.data.file.path, ctx->opaque);
 
-        if (fileName == NULL) {
+        if (fileName == NULL)
             return -1;
-        }
 
         virBufferAsprintf(buffer, "parallel%d.fileName = \"%s\"\n",
                           def->target.port, fileName);

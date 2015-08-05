@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2013 Red Hat, Inc.
+ * Copyright (C) 2012-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -23,6 +23,8 @@
 #include <stdlib.h>
 
 #include "testutils.h"
+#include "intprops.h"
+#include "verify.h"
 #include "virerror.h"
 #include "viralloc.h"
 #include "virfile.h"
@@ -30,6 +32,8 @@
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
+
+VIR_LOG_INIT("tests.stringtest");
 
 struct testSplitData {
     const char *string;
@@ -49,11 +53,14 @@ static int testSplit(const void *args)
 {
     const struct testSplitData *data = args;
     char **got;
+    size_t ntokens;
+    size_t exptokens = 0;
     char **tmp1;
     const char **tmp2;
     int ret = -1;
 
-    if (!(got = virStringSplit(data->string, data->delim, data->max_tokens))) {
+    if (!(got = virStringSplitCount(data->string, data->delim,
+                                    data->max_tokens, &ntokens))) {
         VIR_DEBUG("Got no tokens at all");
         return -1;
     }
@@ -67,6 +74,7 @@ static int testSplit(const void *args)
         }
         tmp1++;
         tmp2++;
+        exptokens++;
     }
     if (*tmp1) {
         virFilePrintf(stderr, "Too many pieces returned\n");
@@ -77,8 +85,16 @@ static int testSplit(const void *args)
         goto cleanup;
     }
 
+    if (ntokens != exptokens) {
+        virFilePrintf(stderr,
+                      "Returned token count (%zu) doesn't match "
+                      "expected count (%zu)",
+                      ntokens, exptokens);
+        goto cleanup;
+    }
+
     ret = 0;
-cleanup:
+ cleanup:
     virStringFreeList(got);
 
     return ret;
@@ -101,7 +117,7 @@ static int testJoin(const void *args)
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FREE(got);
 
     return ret;
@@ -146,10 +162,12 @@ testStrdup(const void *data ATTRIBUTE_UNUSED)
         virFilePrintf(stderr, "unexpected strdup result %d, expected 1\n", value);
         goto cleanup;
     }
+    /* coverity[dead_error_begin] */
     if (i != 1) {
         virFilePrintf(stderr, "unexpected side effects i=%zu, expected 1\n", i);
         goto cleanup;
     }
+    /* coverity[dead_error_begin] */
     if (j != 1) {
         virFilePrintf(stderr, "unexpected side effects j=%zu, expected 1\n", j);
         goto cleanup;
@@ -166,14 +184,17 @@ testStrdup(const void *data ATTRIBUTE_UNUSED)
         virFilePrintf(stderr, "unexpected strdup result %d, expected 0\n", value);
         goto cleanup;
     }
+    /* coverity[dead_error_begin] */
     if (i != 2) {
         virFilePrintf(stderr, "unexpected side effects i=%zu, expected 2\n", i);
         goto cleanup;
     }
+    /* coverity[dead_error_begin] */
     if (j != 2) {
         virFilePrintf(stderr, "unexpected side effects j=%zu, expected 2\n", j);
         goto cleanup;
     }
+    /* coverity[dead_error_begin] */
     if (k != 1) {
         virFilePrintf(stderr, "unexpected side effects k=%zu, expected 1\n", k);
         goto cleanup;
@@ -190,7 +211,7 @@ testStrdup(const void *data ATTRIBUTE_UNUSED)
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     for (i = 0; i < ARRAY_CARDINALITY(array); i++)
         VIR_FREE(array[i]);
     return ret;
@@ -226,7 +247,7 @@ testStrndupNegative(const void *opaque ATTRIBUTE_UNUSED)
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FREE(dst);
     return ret;
 }
@@ -284,7 +305,7 @@ struct stringSearchData {
 };
 
 static int
-testStringSearch(const void *opaque ATTRIBUTE_UNUSED)
+testStringSearch(const void *opaque)
 {
     const struct stringSearchData *data = opaque;
     char **matches = NULL;
@@ -371,6 +392,189 @@ testStringReplace(const void *opaque ATTRIBUTE_UNUSED)
 }
 
 
+struct stringToLongData {
+    const char *str;
+    const char *suffix;
+    int si; /* syntax-check doesn't like bare 'i' */
+    int si_ret;
+    unsigned int ui;
+    int ui_ret;
+    /* No expected results for long: on 32-bit platforms, it is the
+     * same as int, on 64-bit platforms it is the same as long long */
+    long long ll;
+    int ll_ret;
+    unsigned long long ull;
+    int ull_ret;
+};
+
+/* This test makes assumptions about our compilation platform that are
+ * not guaranteed by POSIX.  Good luck to you if you are crazy enough
+ * to try and port libvirt to a platform with 16-bit int.  */
+verify(sizeof(int) == 4);
+verify(TYPE_TWOS_COMPLEMENT(int));
+verify(sizeof(long) == sizeof(int) || sizeof(long) == sizeof(long long));
+verify(TYPE_TWOS_COMPLEMENT(long));
+verify(sizeof(long long) == 8);
+verify(TYPE_TWOS_COMPLEMENT(long long));
+
+static int
+testStringToLong(const void *opaque)
+{
+    const struct stringToLongData *data = opaque;
+    int ret = 0;
+    char *end;
+    long l;
+    unsigned long ul;
+    bool negative;
+
+    if (data->suffix)
+        negative = !!memchr(data->str, '-',
+                            strlen(data->str) - strlen(data->suffix));
+    else
+        negative = !!strchr(data->str, '-');
+
+#define TEST_ONE(Str, Suff, Type, Fn, Fmt, Exp, Exp_ret)                \
+    do {                                                                \
+        Type value = 5;                                                 \
+        int result;                                                     \
+        end = (char *) "oops";                                          \
+        result = virStrToLong_ ## Fn(Str, Suff ? &end : NULL,           \
+                                     0, &value);                        \
+        /* On failure, end is modified, value is unchanged */           \
+        if (result != (Exp_ret)) {                                      \
+            fprintf(stderr,                                             \
+                    "type " #Fn " returned %d expected %d\n",           \
+                    result, Exp_ret);                                   \
+            ret = -1;                                                   \
+        }                                                               \
+        if (value != ((Exp_ret) ? 5 : Exp)) {                           \
+            fprintf(stderr,                                             \
+                    "type " #Fn " value " Fmt " expected " Fmt "\n",    \
+                    value, ((Exp_ret) ? 5 : Exp));                      \
+            ret = -1;                                                   \
+        }                                                               \
+        if (Suff && STRNEQ_NULLABLE(Suff, end)) {                       \
+            fprintf(stderr,                                             \
+                    "type " #Fn " end '%s' expected '%s'\n",            \
+                    NULLSTR(end), Suff);                                \
+            ret = -1;                                                   \
+        }                                                               \
+    } while (0)
+
+    TEST_ONE(data->str, data->suffix, int, i, "%d",
+             data->si, data->si_ret);
+    TEST_ONE(data->str, data->suffix, unsigned int, ui, "%u",
+             data->ui, data->ui_ret);
+    if (negative)
+        TEST_ONE(data->str, data->suffix, unsigned int, uip, "%u", 0U, -1);
+    else
+        TEST_ONE(data->str, data->suffix, unsigned int, uip, "%u",
+                 data->ui, data->ui_ret);
+
+    /* We hate adding new API with 'long', and prefer 'int' or 'long
+     * long' instead, since platform-specific results are evil */
+    l = (sizeof(int) == sizeof(long)) ? data->si : data->ll;
+    TEST_ONE(data->str, data->suffix, long, l, "%ld",
+             l, (sizeof(int) == sizeof(long)) ? data->si_ret : data->ll_ret);
+    ul = (sizeof(int) == sizeof(long)) ? data->ui : data->ull;
+    TEST_ONE(data->str, data->suffix, unsigned long, ul, "%lu",
+             ul, (sizeof(int) == sizeof(long)) ? data->ui_ret : data->ull_ret);
+    if (negative)
+        TEST_ONE(data->str, data->suffix, unsigned long, ulp, "%lu", 0UL, -1);
+    else
+        TEST_ONE(data->str, data->suffix, unsigned long, ulp, "%lu", ul,
+                 (sizeof(int) == sizeof(long)) ? data->ui_ret : data->ull_ret);
+
+    TEST_ONE(data->str, data->suffix, long long, ll, "%lld",
+             data->ll, data->ll_ret);
+    TEST_ONE(data->str, data->suffix, unsigned long long, ull, "%llu",
+             data->ull, data->ull_ret);
+    if (negative)
+        TEST_ONE(data->str, data->suffix, unsigned long long, ullp, "%llu",
+                 0ULL, -1);
+    else
+        TEST_ONE(data->str, data->suffix, unsigned long long, ullp, "%llu",
+                 data->ull, data->ull_ret);
+
+#undef TEST_ONE
+
+    return ret;
+}
+
+
+/* The point of this test is to check whether all members of the array are
+ * freed. The test has to be checked using valgrind. */
+static int
+testVirStringFreeListCount(const void *opaque ATTRIBUTE_UNUSED)
+{
+    char **list;
+
+    if (VIR_ALLOC_N(list, 4) < 0)
+        return -1;
+
+    ignore_value(VIR_STRDUP(list[0], "test1"));
+    ignore_value(VIR_STRDUP(list[2], "test2"));
+    ignore_value(VIR_STRDUP(list[3], "test3"));
+
+    virStringFreeListCount(list, 4);
+
+    return 0;
+}
+
+
+struct testStripData {
+    const char *string;
+    const char *result;
+};
+
+static int testStripIPv6Brackets(const void *args)
+{
+    const struct testStripData *data = args;
+    int ret = -1;
+    char *res = NULL;
+
+    if (VIR_STRDUP(res, data->string) < 0)
+        goto cleanup;
+
+    virStringStripIPv6Brackets(res);
+
+    if (STRNEQ_NULLABLE(res, data->result)) {
+        fprintf(stderr, "Returned '%s', expected '%s'\n",
+                NULLSTR(res), NULLSTR(data->result));
+        goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    VIR_FREE(res);
+    return ret;
+}
+
+static int testStripControlChars(const void *args)
+{
+    const struct testStripData *data = args;
+    int ret = -1;
+    char *res = NULL;
+
+    if (VIR_STRDUP(res, data->string) < 0)
+        goto cleanup;
+
+    virStringStripControlChars(res);
+
+    if (STRNEQ_NULLABLE(res, data->result)) {
+        fprintf(stderr, "Returned '%s', expected '%s'\n",
+                NULLSTR(res), NULLSTR(data->result));
+        goto cleanup;
+    }
+
+    ret = 0;
+
+ cleanup:
+    VIR_FREE(res);
+    return ret;
+}
+
 static int
 mymain(void)
 {
@@ -416,6 +620,9 @@ mymain(void)
     const char *tokens7[] = { "The", "quick", "brown", "fox", "", NULL };
     TEST_SPLIT("The quick brown fox ", " ", 0, tokens7);
 
+    const char *tokens8[] = { "gluster", "rdma", NULL };
+    TEST_SPLIT("gluster+rdma", "+", 2, tokens8);
+
     if (virtTestRun("strdup", testStrdup, NULL) < 0)
         ret = -1;
 
@@ -424,7 +631,6 @@ mymain(void)
 
     if (virtTestRun("virStringSortCompare", testStringSortCompare, NULL) < 0)
         ret = -1;
-
 
 #define TEST_SEARCH(s, r, x, n, m, e)                                   \
     do {                                                                \
@@ -492,7 +698,131 @@ mymain(void)
     TEST_REPLACE("fooooofoooo", "foo", "barwizzeek", "barwizzeekooobarwizzeekoo");
     TEST_REPLACE("fooooofoooo", "foooo", "foo", "fooofoo");
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+#define TEST_STRTOL(str, suff, i, i_ret, u, u_ret,                      \
+                    ll, ll_ret, ull, ull_ret)                           \
+    do {                                                                \
+        struct stringToLongData data = {                                \
+            str, suff, i, i_ret, u, u_ret, ll, ll_ret, ull, ull_ret,    \
+        };                                                              \
+        if (virtTestRun("virStringToLong '" str "'", testStringToLong,  \
+                        &data) < 0)                                     \
+            ret = -1;                                                   \
+    } while (0)
+
+    /* Start simple */
+    TEST_STRTOL("0", NULL, 0, 0, 0U, 0, 0LL, 0, 0ULL, 0);
+
+    /* All your base are belong to us */
+    TEST_STRTOL("0x0", NULL, 0, 0, 0U, 0, 0LL, 0, 0ULL, 0);
+    TEST_STRTOL("0XaB", NULL, 171, 0, 171U, 0, 171LL, 0, 171ULL, 0);
+    TEST_STRTOL("010", NULL, 8, 0, 8U, 0, 8LL, 0, 8ULL, 0);
+
+    /* Suffix handling */
+    TEST_STRTOL("42", NULL, 42, 0, 42U, 0, 42LL, 0, 42ULL, 0);
+    TEST_STRTOL("42", "",  42, 0, 42U, 0, 42LL, 0, 42ULL, 0);
+    TEST_STRTOL("42.", NULL, 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("42.", ".",  42, 0, 42U, 0, 42LL, 0, 42ULL, 0);
+
+    /* Blatant invalid input */
+    TEST_STRTOL("", "", 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("", NULL, 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("  ", "  ", 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("  ", NULL, 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("  -", "  -", 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("  -", NULL, 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("a", "a", 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("a", NULL, 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+
+    /* Not a hex number, but valid when suffix expected */
+    TEST_STRTOL("  0x", NULL, 0, -1, 0U, -1, 0LL, -1, 0ULL, -1);
+    TEST_STRTOL("  0x", "x", 0, 0, 0U, 0, 0LL, 0, 0ULL, 0);
+
+    /* Upper bounds */
+    TEST_STRTOL("2147483647", NULL, 2147483647, 0, 2147483647U, 0,
+                2147483647LL, 0, 2147483647ULL, 0);
+    TEST_STRTOL("2147483648", NULL, 0, -1, 2147483648U, 0,
+                2147483648LL, 0, 2147483648ULL, 0);
+    TEST_STRTOL("4294967295", NULL, 0, -1, 4294967295U, 0,
+                4294967295LL, 0, 4294967295ULL, 0);
+    TEST_STRTOL("4294967296", NULL, 0, -1, 0U, -1,
+                4294967296LL, 0, 4294967296ULL, 0);
+    TEST_STRTOL("9223372036854775807", NULL, 0, -1, 0U, -1,
+                9223372036854775807LL, 0, 9223372036854775807ULL, 0);
+    TEST_STRTOL("9223372036854775808", NULL, 0, -1, 0U, -1,
+                0LL, -1, 9223372036854775808ULL, 0);
+    TEST_STRTOL("18446744073709551615", NULL, 0, -1, 0U, -1,
+                0LL, -1, 18446744073709551615ULL, 0);
+    TEST_STRTOL("18446744073709551616", NULL, 0, -1, 0U, -1,
+                0LL, -1, 0ULL, -1);
+    TEST_STRTOL("18446744073709551616", "", 0, -1, 0U, -1,
+                0LL, -1, 0ULL, -1);
+
+    /* Negative bounds */
+    TEST_STRTOL("-0", NULL, 0, 0, 0U, 0, 0LL, 0, 0ULL, 0);
+    TEST_STRTOL("-1", "", -1, 0, 4294967295U, 0,
+                -1LL, 0, 18446744073709551615ULL, 0);
+    TEST_STRTOL("-2147483647", NULL, -2147483647, 0, 2147483649U, 0,
+                -2147483647LL, 0, 18446744071562067969ULL, 0);
+    TEST_STRTOL("-2147483648", NULL, INT32_MIN, 0, 2147483648U, 0,
+                -2147483648LL, 0, 18446744071562067968ULL, 0);
+    TEST_STRTOL("-2147483649", NULL, 0, -1, 2147483647U, 0,
+                -2147483649LL, 0, 18446744071562067967ULL, 0);
+    TEST_STRTOL("-4294967295", NULL, 0, -1, 1U, 0,
+                -4294967295LL, 0, 18446744069414584321ULL, 0);
+    TEST_STRTOL("-4294967296", NULL, 0, -1, 0U, -1,
+                -4294967296LL, 0, 18446744069414584320ULL, 0);
+    TEST_STRTOL("-9223372036854775807", NULL, 0, -1, 0U, -1,
+                -9223372036854775807LL, 0, 9223372036854775809ULL, 0);
+    TEST_STRTOL("-9223372036854775808", NULL, 0, -1, 0U, -1,
+                INT64_MIN, 0, 9223372036854775808ULL, 0);
+    TEST_STRTOL("-9223372036854775809", NULL, 0, -1, 0U, -1,
+                0LL, -1, 9223372036854775807ULL, 0);
+    TEST_STRTOL("-18446744073709551615", NULL, 0, -1, 0U, -1,
+                0LL, -1, 1ULL, 0);
+    TEST_STRTOL("-18446744073709551616", NULL, 0, -1, 0U, -1,
+                0LL, -1, 0ULL, -1);
+
+    /* test virStringFreeListCount */
+    if (virtTestRun("virStringFreeListCount", testVirStringFreeListCount,
+                    NULL) < 0)
+        ret = -1;
+
+#define TEST_STRIP_IPV6_BRACKETS(str, res)                              \
+    do {                                                                \
+        struct testStripData stripData = {                              \
+            .string = str,                                              \
+            .result = res,                                              \
+        };                                                              \
+        if (virtTestRun("Strip brackets from IPv6 " #str,               \
+                        testStripIPv6Brackets, &stripData) < 0)         \
+            ret = -1;                                                   \
+    } while (0)
+
+    TEST_STRIP_IPV6_BRACKETS(NULL, NULL);
+    TEST_STRIP_IPV6_BRACKETS("[]", "[]");
+    TEST_STRIP_IPV6_BRACKETS("[:]", ":");
+    TEST_STRIP_IPV6_BRACKETS("[::1]", "::1");
+    TEST_STRIP_IPV6_BRACKETS("[hello:", "[hello:");
+    TEST_STRIP_IPV6_BRACKETS(":hello]", ":hello]");
+    TEST_STRIP_IPV6_BRACKETS(":[]:", ":[]:");
+
+#define TEST_STRIP_CONTROL_CHARS(str, res)                              \
+    do {                                                                \
+        struct testStripData stripData = {                              \
+            .string = str,                                              \
+            .result = res,                                              \
+        };                                                              \
+        if (virtTestRun("Strip control chars from " #str,               \
+                        testStripControlChars, &stripData) < 0)         \
+            ret = -1;                                                   \
+    } while (0)
+
+    TEST_STRIP_CONTROL_CHARS(NULL, NULL);
+    TEST_STRIP_CONTROL_CHARS("\nhello \r hello\t", "\nhello \r hello\t");
+    TEST_STRIP_CONTROL_CHARS("\x01H\x02" "E\x03L\x04L\x05O", "HELLO");
+    TEST_STRIP_CONTROL_CHARS("\x01\x02\x03\x04HELL\x05O", "HELLO");
+    TEST_STRIP_CONTROL_CHARS("\nhello \x01\x07hello\t", "\nhello hello\t");
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

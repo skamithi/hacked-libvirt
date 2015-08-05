@@ -37,11 +37,17 @@
 # include "virportallocator.h"
 # include "virobject.h"
 # include "virchrdev.h"
+# include "virhostdev.h"
+# include "locking/lock_manager.h"
 
-
+# define LIBXL_DRIVER_NAME "xenlight"
 # define LIBXL_VNC_PORT_MIN  5900
 # define LIBXL_VNC_PORT_MAX  65535
 
+# define LIBXL_MIGRATION_PORT_MIN  49152
+# define LIBXL_MIGRATION_PORT_MAX  49216
+
+# define LIBXL_CONFIG_BASE_DIR SYSCONFDIR "/libvirt"
 # define LIBXL_CONFIG_DIR SYSCONFDIR "/libvirt/libxl"
 # define LIBXL_AUTOSTART_DIR LIBXL_CONFIG_DIR "/autostart"
 # define LIBXL_STATE_DIR LOCALSTATEDIR "/run/libvirt/libxl"
@@ -49,8 +55,27 @@
 # define LIBXL_LIB_DIR LOCALSTATEDIR "/lib/libvirt/libxl"
 # define LIBXL_SAVE_DIR LIBXL_LIB_DIR "/save"
 # define LIBXL_DUMP_DIR LIBXL_LIB_DIR "/dump"
-# define LIBXL_BOOTLOADER_PATH BINDIR "/pygrub"
+# define LIBXL_BOOTLOADER_PATH "pygrub"
 
+# ifndef LIBXL_FIRMWARE_DIR
+#  define LIBXL_FIRMWARE_DIR "/usr/lib/xen/boot"
+# endif
+# ifndef LIBXL_EXECBIN_DIR
+#  define LIBXL_EXECBIN_DIR "/usr/lib/xen/bin"
+# endif
+
+
+/* libxl interface for setting VCPU affinity changed in 4.5. In fact, a new
+ * parameter has been added, representative of 'VCPU soft affinity'. If one
+ * does not care about it (and that's libvirt case), passing NULL is the
+ * right thing to do. To mark that change, LIBXL_HAVE_VCPUINFO_SOFT_AFFINITY
+ * is defined. */
+# ifdef LIBXL_HAVE_VCPUINFO_SOFT_AFFINITY
+#  define libxl_set_vcpuaffinity(ctx, domid, vcpuid, map) \
+    libxl_set_vcpuaffinity((ctx), (domid), (vcpuid), (map), NULL)
+#  define libxl_set_vcpuaffinity_all(ctx, domid, max_vcpus, map) \
+    libxl_set_vcpuaffinity_all((ctx), (domid), (max_vcpus), (map), NULL)
+# endif
 
 typedef struct _libxlDriverPrivate libxlDriverPrivate;
 typedef libxlDriverPrivate *libxlDriverPrivatePtr;
@@ -74,9 +99,12 @@ struct _libxlDriverConfig {
      * memory for new domains from domain0. */
     bool autoballoon;
 
+    char *lockManagerName;
+
     /* Once created, caps are immutable */
     virCapsPtr caps;
 
+    char *configBaseDir;
     char *configDir;
     char *autostartDir;
     char *logDir;
@@ -90,6 +118,7 @@ struct _libxlDriverConfig {
 struct _libxlDriverPrivate {
     virMutex lock;
 
+    virHostdevManagerPtr hostdevMgr;
     /* Require lock to get reference on 'config',
      * then lockless thereafter */
     libxlDriverConfigPtr config;
@@ -111,10 +140,16 @@ struct _libxlDriverPrivate {
     virObjectEventStatePtr domainEventState;
 
     /* Immutable pointer, self-locking APIs */
-    virPortAllocatorPtr reservedVNCPorts;
+    virPortAllocatorPtr reservedGraphicsPorts;
+
+    /* Immutable pointer, self-locking APIs */
+    virPortAllocatorPtr migrationPorts;
 
     /* Immutable pointer, lockless APIs*/
     virSysinfoDefPtr hostsysinfo;
+
+    /* Immutable pointer. lockless access */
+    virLockManagerPluginPtr lockManager;
 };
 
 # define LIBXL_SAVE_MAGIC "libvirt-xml\n \0 \r"
@@ -136,8 +171,18 @@ libxlDriverConfigNew(void);
 libxlDriverConfigPtr
 libxlDriverConfigGet(libxlDriverPrivatePtr driver);
 
+int
+libxlDriverNodeGetInfo(libxlDriverPrivatePtr driver,
+                       virNodeInfoPtr info);
+
+int libxlDriverConfigLoadFile(libxlDriverConfigPtr cfg,
+                              const char *filename);
+
 virCapsPtr
 libxlMakeCapabilities(libxl_ctx *ctx);
+
+int
+libxlDomainGetEmulatorType(const virDomainDef *def);
 
 int
 libxlMakeDisk(virDomainDiskDefPtr l_dev, libxl_device_disk *x_dev);
@@ -146,12 +191,20 @@ libxlMakeNic(virDomainDefPtr def,
              virDomainNetDefPtr l_nic,
              libxl_device_nic *x_nic);
 int
-libxlMakeVfb(libxlDriverPrivatePtr driver,
+libxlMakeVfb(virPortAllocatorPtr graphicsports,
              virDomainGraphicsDefPtr l_vfb, libxl_device_vfb *x_vfb);
 
 int
-libxlBuildDomainConfig(libxlDriverPrivatePtr driver,
-                       virDomainObjPtr vm, libxl_domain_config *d_config);
+libxlMakePCI(virDomainHostdevDefPtr hostdev, libxl_device_pci *pcidev);
+
+virDomainXMLOptionPtr
+libxlCreateXMLConf(void);
+
+int
+libxlBuildDomainConfig(virPortAllocatorPtr graphicsports,
+                       virDomainDefPtr def,
+                       libxl_ctx *ctx,
+                       libxl_domain_config *d_config);
 
 static inline void
 libxlDriverLock(libxlDriverPrivatePtr driver)

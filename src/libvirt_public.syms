@@ -645,5 +645,74 @@ LIBVIRT_1.2.1 {
         virConnectNetworkEventDeregisterAny;
 } LIBVIRT_1.1.3;
 
+LIBVIRT_1.2.3 {
+    global:
+        virDomainCoreDumpWithFormat;
+} LIBVIRT_1.2.1;
+
+LIBVIRT_1.2.5 {
+    global:
+        virDomainFSFreeze;
+        virDomainFSThaw;
+        virDomainGetTime;
+        virDomainSetTime;
+} LIBVIRT_1.2.3;
+
+LIBVIRT_1.2.6 {
+    global:
+        virNodeGetFreePages;
+        virNetworkDHCPLeaseFree;
+        virNetworkGetDHCPLeases;
+} LIBVIRT_1.2.5;
+
+LIBVIRT_1.2.7 {
+    global:
+        virConnectGetDomainCapabilities;
+} LIBVIRT_1.2.6;
+
+LIBVIRT_1.2.8 {
+    global:
+        virConnectGetAllDomainStats;
+        virDomainBlockCopy;
+        virDomainListGetStats;
+        virDomainOpenGraphicsFD;
+        virDomainStatsRecordListFree;
+} LIBVIRT_1.2.7;
+
+LIBVIRT_1.2.9 {
+    global:
+        virNodeAllocPages;
+} LIBVIRT_1.2.8;
+
+LIBVIRT_1.2.11 {
+    global:
+        virDomainFSInfoFree;
+        virDomainGetFSInfo;
+} LIBVIRT_1.2.9;
+
+LIBVIRT_1.2.12 {
+    global:
+        virDomainDefineXMLFlags;
+} LIBVIRT_1.2.11;
+
+LIBVIRT_1.2.14 {
+    global:
+        virDomainIOThreadInfoFree;
+        virDomainGetIOThreadInfo;
+        virDomainPinIOThread;
+        virDomainInterfaceAddresses;
+        virDomainInterfaceFree;
+} LIBVIRT_1.2.12;
+
+LIBVIRT_1.2.15 {
+    global:
+        virDomainAddIOThread;
+        virDomainDelIOThread;
+} LIBVIRT_1.2.14;
+
+LIBVIRT_1.2.16 {
+    global:
+        virDomainSetUserPassword;
+} LIBVIRT_1.2.15;
 
 # .... define new API here using predicted next version number ....

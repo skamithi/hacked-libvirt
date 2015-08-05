@@ -1,7 +1,7 @@
 /*
  * lock_driver_lockd.c: A lock driver which locks nothing
  *
- * Copyright (C) 2010-2011 Red Hat, Inc.
+ * Copyright (C) 2010-2011, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -24,6 +24,7 @@
 #include "lock_driver.h"
 #include "virconf.h"
 #include "viralloc.h"
+#include "vircrypto.h"
 #include "virlog.h"
 #include "viruuid.h"
 #include "virfile.h"
@@ -31,14 +32,11 @@
 #include "rpc/virnetclient.h"
 #include "lock_protocol.h"
 #include "configmake.h"
-#include "sha256.h"
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_LOCKING
 
-#define virLockError(code, ...)                                     \
-    virReportErrorHelper(VIR_FROM_THIS, code, __FILE__,             \
-                         __FUNCTION__, __LINE__, __VA_ARGS__)
+VIR_LOG_INIT("locking.lock_driver_lockd");
 
 typedef struct _virLockManagerLockDaemonPrivate virLockManagerLockDaemonPrivate;
 typedef virLockManagerLockDaemonPrivate *virLockManagerLockDaemonPrivatePtr;
@@ -77,23 +75,7 @@ struct _virLockManagerLockDaemonDriver {
     char *scsiLockSpaceDir;
 };
 
-static virLockManagerLockDaemonDriverPtr driver = NULL;
-
-#define VIRTLOCKD_PATH SBINDIR "/virtlockd"
-
-static const char *
-virLockManagerLockDaemonFindDaemon(void)
-{
-    const char *customDaemon = virGetEnvBlockSUID("VIRTLOCKD_PATH");
-
-    if (customDaemon)
-        return customDaemon;
-
-    if (virFileIsExecutable(VIRTLOCKD_PATH))
-        return VIRTLOCKD_PATH;
-
-    return NULL;
-}
+static virLockManagerLockDaemonDriverPtr driver;
 
 static int virLockManagerLockDaemonLoadConfig(const char *configFile)
 {
@@ -113,7 +95,7 @@ static int virLockManagerLockDaemonLoadConfig(const char *configFile)
     if (!(conf = virConfReadFile(configFile, 0)))
         return -1;
 
-#define CHECK_TYPE(name,typ) if (p && p->type != (typ)) {               \
+#define CHECK_TYPE(name, typ) if (p && p->type != (typ)) {              \
         virReportError(VIR_ERR_INTERNAL_ERROR,                          \
                        "%s: %s: expected type " #typ,                   \
                        configFile, (name));                             \
@@ -122,7 +104,7 @@ static int virLockManagerLockDaemonLoadConfig(const char *configFile)
     }
 
     p = virConfGetValue(conf, "auto_disk_leases");
-    CHECK_TYPE("auto_disk_leases", VIR_CONF_LONG);
+    CHECK_TYPE("auto_disk_leases", VIR_CONF_ULONG);
     if (p) driver->autoDiskLease = p->l;
 
     p = virConfGetValue(conf, "file_lockspace_dir");
@@ -156,7 +138,7 @@ static int virLockManagerLockDaemonLoadConfig(const char *configFile)
     }
 
     p = virConfGetValue(conf, "require_lease_for_disks");
-    CHECK_TYPE("require_lease_for_disks", VIR_CONF_LONG);
+    CHECK_TYPE("require_lease_for_disks", VIR_CONF_ULONG);
     if (p)
         driver->requireLeaseForDisks = p->l;
     else
@@ -218,7 +200,7 @@ virLockManagerLockDaemonConnectionRegister(virLockManagerPtr lock,
 
     rv = 0;
 
-cleanup:
+ cleanup:
     return rv;
 }
 
@@ -247,7 +229,7 @@ virLockManagerLockDaemonConnectionRestrict(virLockManagerPtr lock ATTRIBUTE_UNUS
 
     rv = 0;
 
-cleanup:
+ cleanup:
     return rv;
 }
 
@@ -257,15 +239,20 @@ static virNetClientPtr virLockManagerLockDaemonConnectionNew(bool privileged,
 {
     virNetClientPtr client = NULL;
     char *lockdpath;
-    const char *daemonPath = NULL;
+    char *daemonPath = NULL;
 
     *prog = NULL;
 
     if (!(lockdpath = virLockManagerLockDaemonPath(privileged)))
         goto error;
 
-    if (!privileged)
-        daemonPath = virLockManagerLockDaemonFindDaemon();
+    if (!privileged &&
+        !(daemonPath = virFileFindResourceFull("virtlockd",
+                                               NULL, NULL,
+                                               abs_topbuilddir "/src",
+                                               SBINDIR,
+                                               "VIRTLOCKD_PATH")))
+        goto error;
 
     if (!(client = virNetClientNewUNIX(lockdpath,
                                        daemonPath != NULL,
@@ -282,11 +269,13 @@ static virNetClientPtr virLockManagerLockDaemonConnectionNew(bool privileged,
     if (virNetClientAddProgram(client, *prog) < 0)
         goto error;
 
+    VIR_FREE(daemonPath);
     VIR_FREE(lockdpath);
 
     return client;
 
-error:
+ error:
+    VIR_FREE(daemonPath);
     VIR_FREE(lockdpath);
     virNetClientClose(client);
     virObjectUnref(client);
@@ -313,7 +302,7 @@ virLockManagerLockDaemonConnect(virLockManagerPtr lock,
 
     return client;
 
-error:
+ error:
     virNetClientClose(client);
     virObjectUnref(client);
     return NULL;
@@ -353,7 +342,7 @@ static int virLockManagerLockDaemonSetupLockspace(const char *path)
 
     rv = 0;
 
-cleanup:
+ cleanup:
     virObjectUnref(program);
     virNetClientClose(client);
     virObjectUnref(client);
@@ -399,7 +388,7 @@ static int virLockManagerLockDaemonInit(unsigned int version,
 
     return 0;
 
-error:
+ error:
     virLockManagerLockDaemonDeinit();
     return -1;
 }
@@ -446,7 +435,7 @@ static int virLockManagerLockDaemonNew(virLockManagerPtr lock,
     virLockManagerLockDaemonPrivatePtr priv;
     size_t i;
 
-    virCheckFlags(VIR_LOCK_MANAGER_USES_STATE, -1);
+    virCheckFlags(VIR_LOCK_MANAGER_NEW_STARTED, -1);
 
     if (VIR_ALLOC(priv) < 0)
         return -1;
@@ -477,11 +466,8 @@ static int virLockManagerLockDaemonNew(virLockManagerPtr lock,
                            _("Missing ID parameter for domain object"));
             return -1;
         }
-        if (priv->pid == 0) {
-            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                           _("Missing PID parameter for domain object"));
-            return -1;
-        }
+        if (priv->pid == 0)
+            VIR_DEBUG("Missing PID parameter for domain object");
         if (!priv->name) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                            _("Missing name parameter for domain object"));
@@ -502,34 +488,6 @@ static int virLockManagerLockDaemonNew(virLockManagerPtr lock,
     }
 
     return 0;
-}
-
-
-static const char hex[] = { '0', '1', '2', '3', '4', '5', '6', '7',
-                            '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-
-static char *virLockManagerLockDaemonDiskLeaseName(const char *path)
-{
-    unsigned char buf[SHA256_DIGEST_SIZE];
-    char *ret;
-    size_t i;
-
-    if (!(sha256_buffer(path, strlen(path), buf))) {
-        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
-                       _("Unable to compute sha256 checksum"));
-        return NULL;
-    }
-
-    if (VIR_ALLOC_N(ret, (SHA256_DIGEST_SIZE * 2) + 1) < 0)
-        return NULL;
-
-    for (i = 0; i < SHA256_DIGEST_SIZE; i++) {
-        ret[i*2] = hex[(buf[i] >> 4) & 0xf];
-        ret[(i*2)+1] = hex[buf[i] & 0xf];
-    }
-    ret[(SHA256_DIGEST_SIZE * 2) + 1] = '\0';
-
-    return ret;
 }
 
 
@@ -605,7 +563,7 @@ static int virLockManagerLockDaemonAddResource(virLockManagerPtr lock,
         if (driver->fileLockSpaceDir) {
             if (VIR_STRDUP(newLockspace, driver->fileLockSpaceDir) < 0)
                 goto error;
-            if (!(newName = virLockManagerLockDaemonDiskLeaseName(name)))
+            if (virCryptoHashString(VIR_CRYPTO_HASH_SHA256, name, &newName) < 0)
                 goto error;
             autoCreate = true;
             VIR_DEBUG("Using indirect lease %s for %s", newName, name);
@@ -675,7 +633,7 @@ static int virLockManagerLockDaemonAddResource(virLockManagerPtr lock,
 
     return 0;
 
-error:
+ error:
     VIR_FREE(newLockspace);
     VIR_FREE(newName);
     return -1;
@@ -741,7 +699,7 @@ static int virLockManagerLockDaemonAcquire(virLockManagerPtr lock,
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv != 0 && fd)
         VIR_FORCE_CLOSE(*fd);
     virNetClientClose(client);
@@ -796,7 +754,7 @@ static int virLockManagerLockDaemonRelease(virLockManagerPtr lock,
 
     rv = 0;
 
-cleanup:
+ cleanup:
     virNetClientClose(client);
     virObjectUnref(client);
     virObjectUnref(program);

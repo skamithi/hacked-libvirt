@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2013 Red Hat, Inc.
+ * Copyright (C) 2007-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,7 @@
 #include "virnetdevtap.h"
 #include "virnetdev.h"
 #include "virnetdevbridge.h"
+#include "virnetdevmidonet.h"
 #include "virnetdevopenvswitch.h"
 #include "virerror.h"
 #include "virfile.h"
@@ -33,14 +34,20 @@
 #include "virlog.h"
 #include "virstring.h"
 
+#include <dirent.h>
+#include <sys/types.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <fcntl.h>
 #ifdef __linux__
 # include <linux/if_tun.h>    /* IFF_TUN, IFF_NO_PI */
+#elif defined(__FreeBSD__)
+# include <net/if_tap.h>
 #endif
 
 #define VIR_FROM_THIS VIR_FROM_NONE
+
+VIR_LOG_INIT("util.netdevtap");
 
 /**
  * virNetDevTapGetName:
@@ -67,6 +74,80 @@ virNetDevTapGetName(int tapfd ATTRIBUTE_UNUSED, char **ifname ATTRIBUTE_UNUSED)
     return VIR_STRDUP(*ifname, ifr.ifr_name) < 0 ? -1 : 0;
 #else
     return -1;
+#endif
+}
+
+/**
+ * virNetDevTapGetRealDeviceName:
+ * @ifname: the interface name
+ *
+ * Lookup real interface name (i.e. name of the device entry in /dev),
+ * because e.g. on FreeBSD if we rename tap device to vnetN its device
+ * entry still remains unchanged (/dev/tapX), but bhyve needs a name
+ * that matches /dev entry.
+ *
+ * Returns the proper interface name or NULL if no corresponding interface
+ * found.
+ */
+char*
+virNetDevTapGetRealDeviceName(char *ifname ATTRIBUTE_UNUSED)
+{
+#ifdef TAPGIFNAME
+    char *ret = NULL;
+    struct dirent *dp;
+    char *devpath = NULL;
+    int fd;
+
+    DIR *dirp = opendir("/dev");
+    if (dirp == NULL) {
+        virReportSystemError(errno,
+                             _("Failed to opendir path '%s'"),
+                             "/dev");
+        return NULL;
+    }
+
+    while (virDirRead(dirp, &dp, "/dev") > 0) {
+        if (STRPREFIX(dp->d_name, "tap")) {
+            struct ifreq ifr;
+            if (virAsprintf(&devpath, "/dev/%s", dp->d_name) < 0)
+                goto cleanup;
+            if ((fd = open(devpath, O_RDWR)) < 0) {
+                if (errno == EBUSY) {
+                    VIR_FREE(devpath);
+                    continue;
+                }
+
+                virReportSystemError(errno, _("Unable to open '%s'"), devpath);
+                goto cleanup;
+            }
+
+            if (ioctl(fd, TAPGIFNAME, (void *)&ifr) < 0) {
+                virReportSystemError(errno, "%s",
+                                     _("Unable to query tap interface name"));
+                goto cleanup;
+            }
+
+            if (STREQ(ifname, ifr.ifr_name)) {
+                /* we can ignore the return value
+                 * because we still have nothing
+                 * to do but return;
+                 */
+                ignore_value(VIR_STRDUP(ret, dp->d_name));
+                goto cleanup;
+            }
+
+            VIR_FREE(devpath);
+            VIR_FORCE_CLOSE(fd);
+        }
+    }
+
+ cleanup:
+    VIR_FREE(devpath);
+    VIR_FORCE_CLOSE(fd);
+    closedir(dirp);
+    return ret;
+#else
+    return NULL;
 #endif
 }
 
@@ -135,6 +216,7 @@ virNetDevProbeVnetHdr(int tapfd)
 /**
  * virNetDevTapCreate:
  * @ifname: the interface name
+ * @tunpath: path to the tun device (if NULL, /dev/net/tun is used)
  * @tapfds: array of file descriptors return value for the new tap device
  * @tapfdSize: number of file descriptors in @tapfd
  * @flags: OR of virNetDevTapCreateFlags. Only one flag is recognized:
@@ -152,8 +234,9 @@ virNetDevProbeVnetHdr(int tapfd)
  * Returns 0 in case of success or -1 on failure.
  */
 int virNetDevTapCreate(char **ifname,
+                       const char *tunpath,
                        int *tapfd,
-                       int tapfdSize,
+                       size_t tapfdSize,
                        unsigned int flags)
 {
     size_t i;
@@ -161,11 +244,15 @@ int virNetDevTapCreate(char **ifname,
     int ret = -1;
     int fd;
 
+    if (!tunpath)
+        tunpath = "/dev/net/tun";
+
     memset(&ifr, 0, sizeof(ifr));
     for (i = 0; i < tapfdSize; i++) {
-        if ((fd = open("/dev/net/tun", O_RDWR)) < 0) {
-            virReportSystemError(errno, "%s",
-                                 _("Unable to open /dev/net/tun, is tun module loaded?"));
+        if ((fd = open(tunpath, O_RDWR)) < 0) {
+            virReportSystemError(errno,
+                                 _("Unable to open %s, is tun module loaded?"),
+                                 tunpath);
             goto cleanup;
         }
 
@@ -213,7 +300,7 @@ int virNetDevTapCreate(char **ifname,
         }
 
         if ((flags & VIR_NETDEV_TAP_CREATE_PERSIST) &&
-            (errno = ioctl(fd, TUNSETPERSIST, 1))) {
+            ioctl(fd, TUNSETPERSIST, 1) < 0) {
             virReportSystemError(errno,
                                  _("Unable to set tap device %s to persistent"),
                                  NULLSTR(*ifname));
@@ -224,7 +311,7 @@ int virNetDevTapCreate(char **ifname,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     if (ret < 0) {
         VIR_FORCE_CLOSE(fd);
         while (i--)
@@ -235,15 +322,20 @@ cleanup:
 }
 
 
-int virNetDevTapDelete(const char *ifname)
+int virNetDevTapDelete(const char *ifname,
+                       const char *tunpath)
 {
     struct ifreq try;
     int fd;
     int ret = -1;
 
-    if ((fd = open("/dev/net/tun", O_RDWR)) < 0) {
-        virReportSystemError(errno, "%s",
-                             _("Unable to open /dev/net/tun, is tun module loaded?"));
+    if (!tunpath)
+        tunpath = "/dev/net/tun";
+
+    if ((fd = open(tunpath, O_RDWR)) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to open %s, is tun module loaded?"),
+                             tunpath);
         return -1;
     }
 
@@ -271,14 +363,15 @@ int virNetDevTapDelete(const char *ifname)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FORCE_CLOSE(fd);
     return ret;
 }
 #elif defined(SIOCIFCREATE2) && defined(SIOCIFDESTROY) && defined(IF_MAXUNIT)
 int virNetDevTapCreate(char **ifname,
+                       const char *tunpath ATTRIBUTE_UNUSED,
                        int *tapfd,
-                       int tapfdSize,
+                       size_t tapfdSize,
                        unsigned int flags ATTRIBUTE_UNUSED)
 {
     int s;
@@ -351,19 +444,19 @@ int virNetDevTapCreate(char **ifname,
         VIR_FREE(dev_path);
     }
 
-    if (virNetDevSetName(ifr.ifr_name, *ifname) == -1) {
+    if (virNetDevSetName(ifr.ifr_name, *ifname) == -1)
         goto cleanup;
-    }
 
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FORCE_CLOSE(s);
 
     return ret;
 }
 
-int virNetDevTapDelete(const char *ifname)
+int virNetDevTapDelete(const char *ifname,
+                       const char *tunpath ATTRIBUTE_UNUSED)
 {
     int s;
     struct ifreq ifr;
@@ -380,22 +473,24 @@ int virNetDevTapDelete(const char *ifname)
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FORCE_CLOSE(s);
     return ret;
 }
 
 #else
 int virNetDevTapCreate(char **ifname ATTRIBUTE_UNUSED,
+                       const char *tunpath ATTRIBUTE_UNUSED,
                        int *tapfd ATTRIBUTE_UNUSED,
-                       int tapfdSize ATTRIBUTE_UNUSED,
+                       size_t tapfdSize ATTRIBUTE_UNUSED,
                        unsigned int flags ATTRIBUTE_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
                          _("Unable to create TAP devices on this platform"));
     return -1;
 }
-int virNetDevTapDelete(const char *ifname ATTRIBUTE_UNUSED)
+int virNetDevTapDelete(const char *ifname ATTRIBUTE_UNUSED,
+                       const char *tunpath ATTRIBUTE_UNUSED)
 {
     virReportSystemError(ENOSYS, "%s",
                          _("Unable to delete TAP devices on this platform"));
@@ -409,6 +504,7 @@ int virNetDevTapDelete(const char *ifname ATTRIBUTE_UNUSED)
  * @brname: the bridge name
  * @ifname: the interface name (or name template)
  * @macaddr: desired MAC address
+ * @tunpath: path to the tun device (if NULL, /dev/net/tun is used)
  * @tapfd: array of file descriptor return value for the new tap device
  * @tapfdSize: number of file descriptors in @tapfd
  * @virtPortProfile: bridge/port specific configuration
@@ -437,8 +533,9 @@ int virNetDevTapCreateInBridgePort(const char *brname,
                                    char **ifname,
                                    const virMacAddr *macaddr,
                                    const unsigned char *vmuuid,
+                                   const char *tunpath,
                                    int *tapfd,
-                                   int tapfdSize,
+                                   size_t tapfdSize,
                                    virNetDevVPortProfilePtr virtPortProfile,
                                    virNetDevVlanPtr virtVlan,
                                    unsigned int flags)
@@ -447,7 +544,7 @@ int virNetDevTapCreateInBridgePort(const char *brname,
     char macaddrstr[VIR_MAC_STRING_BUFLEN];
     size_t i;
 
-    if (virNetDevTapCreate(ifname, tapfd, tapfdSize, flags) < 0)
+    if (virNetDevTapCreate(ifname, tunpath, tapfd, tapfdSize, flags) < 0)
         return -1;
 
     /* We need to set the interface MAC before adding it
@@ -484,9 +581,13 @@ int virNetDevTapCreateInBridgePort(const char *brname,
         goto error;
 
     if (virtPortProfile) {
-        if (virNetDevOpenvswitchAddPort(brname, *ifname, macaddr, vmuuid,
-                                        virtPortProfile, virtVlan) < 0) {
-            goto error;
+        if (virtPortProfile->virtPortType == VIR_NETDEV_VPORT_PROFILE_MIDONET) {
+            if (virNetDevMidonetBindPort(*ifname, virtPortProfile) < 0)
+                goto error;
+        } else if (virtPortProfile->virtPortType == VIR_NETDEV_VPORT_PROFILE_OPENVSWITCH) {
+            if (virNetDevOpenvswitchAddPort(brname, *ifname, macaddr, vmuuid,
+                                            virtPortProfile, virtVlan) < 0)
+                goto error;
         }
     } else {
         if (virNetDevBridgeAddPort(brname, *ifname) < 0)
@@ -498,7 +599,7 @@ int virNetDevTapCreateInBridgePort(const char *brname,
 
     return 0;
 
-error:
+ error:
     for (i = 0; i < tapfdSize && tapfd[i] >= 0; i++)
         VIR_FORCE_CLOSE(tapfd[i]);
 

@@ -15,17 +15,7 @@
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
-#define testError(...)                                          \
-    do {                                                        \
-        char *str;                                              \
-        if (virAsprintfQuiet(&str, __VA_ARGS__) >= 0) {         \
-            fprintf(stderr, "%s", str);                         \
-            VIR_FREE(str);                                      \
-        }                                                       \
-        /* Pad to line up with test name ... in virTestRun */   \
-        fprintf(stderr, "%74s", "... ");                        \
-    } while (0)
-
+VIR_LOG_INIT("tests.hashtest");
 
 static virHashTablePtr
 testHashInit(int size)
@@ -46,25 +36,22 @@ testHashInit(int size)
             return NULL;
         }
 
-        if (virHashTableSize(hash) != oldsize && virTestGetDebug()) {
-            VIR_WARN("hash grown from %zd to %zd",
+        if (virHashTableSize(hash) != oldsize) {
+            VIR_TEST_DEBUG("hash grown from %zd to %zd",
                      (size_t)oldsize, (size_t)virHashTableSize(hash));
         }
     }
 
     for (i = 0; i < ARRAY_CARDINALITY(uuids); i++) {
         if (!virHashLookup(hash, uuids[i])) {
-            if (virTestGetVerbose()) {
-                VIR_WARN("\nentry \"%s\" could not be found\n",
-                         uuids[i]);
-            }
+            VIR_TEST_VERBOSE("\nentry \"%s\" could not be found\n", uuids[i]);
             virHashFree(hash);
             return NULL;
         }
     }
 
-    if (size && size != virHashTableSize(hash) && virTestGetDebug())
-        fprintf(stderr, "\n");
+    if (size && size != virHashTableSize(hash))
+        VIR_TEST_DEBUG("\n");
 
     return hash;
 }
@@ -82,14 +69,14 @@ testHashCheckCount(virHashTablePtr hash, size_t count)
     ssize_t iter_count = 0;
 
     if (virHashSize(hash) != count) {
-        testError("\nhash contains %zu instead of %zu elements\n",
+        VIR_TEST_VERBOSE("\nhash contains %zu instead of %zu elements\n",
                   (size_t)virHashSize(hash), count);
         return -1;
     }
 
     iter_count = virHashForEach(hash, testHashCheckForEachCount, NULL);
     if (count != iter_count) {
-        testError("\nhash claims to have %zu elements but iteration finds %zu\n",
+        VIR_TEST_VERBOSE("\nhash claims to have %zu elements but iteration finds %zu\n",
                   count, (size_t)iter_count);
         return -1;
     }
@@ -119,7 +106,7 @@ testHashGrow(const void *data)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -138,20 +125,16 @@ testHashUpdate(const void *data ATTRIBUTE_UNUSED)
 
     for (i = 0; i < ARRAY_CARDINALITY(uuids_subset); i++) {
         if (virHashUpdateEntry(hash, uuids_subset[i], (void *) 1) < 0) {
-            if (virTestGetVerbose()) {
-                fprintf(stderr, "\nentry \"%s\" could not be updated\n",
-                        uuids_subset[i]);
-            }
+            VIR_TEST_VERBOSE("\nentry \"%s\" could not be updated\n",
+                    uuids_subset[i]);
             goto cleanup;
         }
     }
 
     for (i = 0; i < ARRAY_CARDINALITY(uuids_new); i++) {
         if (virHashUpdateEntry(hash, uuids_new[i], (void *) 1) < 0) {
-            if (virTestGetVerbose()) {
-                fprintf(stderr, "\nnew entry \"%s\" could not be updated\n",
-                        uuids_new[i]);
-            }
+            VIR_TEST_VERBOSE("\nnew entry \"%s\" could not be updated\n",
+                    uuids_new[i]);
             goto cleanup;
         }
     }
@@ -161,7 +144,7 @@ testHashUpdate(const void *data ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -180,10 +163,8 @@ testHashRemove(const void *data ATTRIBUTE_UNUSED)
 
     for (i = 0; i < ARRAY_CARDINALITY(uuids_subset); i++) {
         if (virHashRemoveEntry(hash, uuids_subset[i]) < 0) {
-            if (virTestGetVerbose()) {
-                fprintf(stderr, "\nentry \"%s\" could not be removed\n",
-                        uuids_subset[i]);
-            }
+            VIR_TEST_VERBOSE("\nentry \"%s\" could not be removed\n",
+                    uuids_subset[i]);
             goto cleanup;
         }
     }
@@ -193,7 +174,7 @@ testHashRemove(const void *data ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -212,8 +193,8 @@ testHashRemoveForEachSome(void *payload ATTRIBUTE_UNUSED,
 
     for (i = 0; i < ARRAY_CARDINALITY(uuids_subset); i++) {
         if (STREQ(uuids_subset[i], name)) {
-            if (virHashRemoveEntry(hash, name) < 0 && virTestGetVerbose()) {
-                fprintf(stderr, "\nentry \"%s\" could not be removed",
+            if (virHashRemoveEntry(hash, name) < 0) {
+                VIR_TEST_VERBOSE("\nentry \"%s\" could not be removed",
                         uuids_subset[i]);
             }
             break;
@@ -249,9 +230,8 @@ testHashRemoveForEachForbidden(void *payload ATTRIBUTE_UNUSED,
         if (STREQ(uuids_subset[i], name)) {
             int next = (i + 1) % ARRAY_CARDINALITY(uuids_subset);
 
-            if (virHashRemoveEntry(hash, uuids_subset[next]) == 0 &&
-                virTestGetVerbose()) {
-                fprintf(stderr,
+            if (virHashRemoveEntry(hash, uuids_subset[next]) == 0) {
+                VIR_TEST_VERBOSE(
                         "\nentry \"%s\" should not be allowed to be removed",
                         uuids_subset[next]);
             }
@@ -275,11 +255,9 @@ testHashRemoveForEach(const void *data)
     count = virHashForEach(hash, (virHashIterator) info->data, hash);
 
     if (count != ARRAY_CARDINALITY(uuids)) {
-        if (virTestGetVerbose()) {
-            testError("\nvirHashForEach didn't go through all entries,"
-                      " %d != %zu\n",
-                      count, ARRAY_CARDINALITY(uuids));
-        }
+        VIR_TEST_VERBOSE("\nvirHashForEach didn't go through all entries,"
+                  " %d != %zu\n",
+                  count, ARRAY_CARDINALITY(uuids));
         goto cleanup;
     }
 
@@ -288,7 +266,7 @@ testHashRemoveForEach(const void *data)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -307,10 +285,8 @@ testHashSteal(const void *data ATTRIBUTE_UNUSED)
 
     for (i = 0; i < ARRAY_CARDINALITY(uuids_subset); i++) {
         if (!virHashSteal(hash, uuids_subset[i])) {
-            if (virTestGetVerbose()) {
-                fprintf(stderr, "\nentry \"%s\" could not be stolen\n",
-                        uuids_subset[i]);
-            }
+            VIR_TEST_VERBOSE("\nentry \"%s\" could not be stolen\n",
+                    uuids_subset[i]);
             goto cleanup;
         }
     }
@@ -320,7 +296,7 @@ testHashSteal(const void *data ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -341,31 +317,21 @@ testHashForEachIter(void *payload ATTRIBUTE_UNUSED,
 {
     virHashTablePtr hash = data;
 
-    if (virHashAddEntry(hash, uuids_new[0], NULL) == 0 &&
-        virTestGetVerbose()) {
-        fprintf(stderr, "\nadding entries in ForEach should be forbidden");
-    }
+    if (virHashAddEntry(hash, uuids_new[0], NULL) == 0)
+        VIR_TEST_VERBOSE("\nadding entries in ForEach should be forbidden");
 
-    if (virHashUpdateEntry(hash, uuids_new[0], NULL) == 0 &&
-        virTestGetVerbose()) {
-        fprintf(stderr, "\nupdating entries in ForEach should be forbidden");
-    }
+    if (virHashUpdateEntry(hash, uuids_new[0], NULL) == 0)
+        VIR_TEST_VERBOSE("\nupdating entries in ForEach should be forbidden");
 
-    if (virHashSteal(hash, uuids_new[0]) != NULL &&
-        virTestGetVerbose()) {
-        fprintf(stderr, "\nstealing entries in ForEach should be forbidden");
-    }
+    if (virHashSteal(hash, uuids_new[0]) != NULL)
+        VIR_TEST_VERBOSE("\nstealing entries in ForEach should be forbidden");
 
-    if (virHashSteal(hash, uuids_new[0]) != NULL &&
-        virTestGetVerbose()) {
-        fprintf(stderr, "\nstealing entries in ForEach should be forbidden");
-    }
+    if (virHashSteal(hash, uuids_new[0]) != NULL)
+        VIR_TEST_VERBOSE("\nstealing entries in ForEach should be forbidden");
 
-    if (virHashForEach(hash, testHashIter, NULL) >= 0 &&
-        virTestGetVerbose()) {
-        fprintf(stderr, "\niterating through hash in ForEach"
+    if (virHashForEach(hash, testHashIter, NULL) >= 0)
+        VIR_TEST_VERBOSE("\niterating through hash in ForEach"
                 " should be forbidden");
-    }
 }
 
 static int
@@ -381,17 +347,15 @@ testHashForEach(const void *data ATTRIBUTE_UNUSED)
     count = virHashForEach(hash, testHashForEachIter, hash);
 
     if (count != ARRAY_CARDINALITY(uuids)) {
-        if (virTestGetVerbose()) {
-            testError("\nvirHashForEach didn't go through all entries,"
-                      " %d != %zu\n",
-                      count, ARRAY_CARDINALITY(uuids));
-        }
+        VIR_TEST_VERBOSE("\nvirHashForEach didn't go through all entries,"
+                  " %d != %zu\n",
+                  count, ARRAY_CARDINALITY(uuids));
         goto cleanup;
     }
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -438,11 +402,9 @@ testHashRemoveSet(const void *data ATTRIBUTE_UNUSED)
     rcount = virHashRemoveSet(hash, testHashRemoveSetIter, &count);
 
     if (count != rcount) {
-        if (virTestGetVerbose()) {
-            testError("\nvirHashRemoveSet didn't remove expected number of"
-                      " entries, %d != %u\n",
-                      rcount, count);
-        }
+        VIR_TEST_VERBOSE("\nvirHashRemoveSet didn't remove expected number of"
+                  " entries, %d != %u\n",
+                  rcount, count);
         goto cleanup;
     }
 
@@ -451,7 +413,7 @@ testHashRemoveSet(const void *data ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -480,10 +442,8 @@ testHashSearch(const void *data ATTRIBUTE_UNUSED)
     entry = virHashSearch(hash, testHashSearchIter, NULL);
 
     if (!entry || STRNEQ(uuids_subset[testSearchIndex], entry)) {
-        if (virTestGetVerbose()) {
-            testError("\nvirHashSearch didn't find entry '%s'\n",
-                      uuids_subset[testSearchIndex]);
-        }
+        VIR_TEST_VERBOSE("\nvirHashSearch didn't find entry '%s'\n",
+                  uuids_subset[testSearchIndex]);
         goto cleanup;
     }
 
@@ -492,7 +452,7 @@ testHashSearch(const void *data ATTRIBUTE_UNUSED)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash);
     return ret;
 }
@@ -529,17 +489,13 @@ testHashGetItems(const void *data ATTRIBUTE_UNUSED)
         virHashAddEntry(hash, keya, value3) < 0 ||
         virHashAddEntry(hash, keyc, value1) < 0 ||
         virHashAddEntry(hash, keyb, value2) < 0) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed to create hash");
-        }
+        VIR_TEST_VERBOSE("\nfailed to create hash");
         goto cleanup;
     }
 
     if (!(array = virHashGetItems(hash, NULL)) ||
         array[3].key || array[3].value) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed to get items with NULL sort");
-        }
+        VIR_TEST_VERBOSE("\nfailed to get items with NULL sort");
         goto cleanup;
     }
     VIR_FREE(array);
@@ -552,9 +508,7 @@ testHashGetItems(const void *data ATTRIBUTE_UNUSED)
         STRNEQ(array[2].key, "c") ||
         STRNEQ(array[2].value, "1") ||
         array[3].key || array[3].value) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed to get items with key sort");
-        }
+        VIR_TEST_VERBOSE("\nfailed to get items with key sort");
         goto cleanup;
     }
     VIR_FREE(array);
@@ -567,15 +521,13 @@ testHashGetItems(const void *data ATTRIBUTE_UNUSED)
         STRNEQ(array[2].key, "a") ||
         STRNEQ(array[2].value, "3") ||
         array[3].key || array[3].value) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed to get items with value sort");
-        }
+        VIR_TEST_VERBOSE("\nfailed to get items with value sort");
         goto cleanup;
     }
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(array);
     virHashFree(hash);
     return ret;
@@ -610,50 +562,38 @@ testHashEqual(const void *data ATTRIBUTE_UNUSED)
         virHashAddEntry(hash1, keyc, value3_l) < 0 ||
         virHashAddEntry(hash2, keya, value1_u) < 0 ||
         virHashAddEntry(hash2, keyb, value2_u) < 0) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed to create hashes");
-        }
+        VIR_TEST_VERBOSE("\nfailed to create hashes");
         goto cleanup;
     }
 
     if (virHashEqual(hash1, hash2, testHashEqualCompValue)) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed equal test for different number of elements");
-        }
+        VIR_TEST_VERBOSE("\nfailed equal test for different number of elements");
         goto cleanup;
     }
 
     if (virHashAddEntry(hash2, keyc, value4_u) < 0) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed to add element to hash2");
-        }
+        VIR_TEST_VERBOSE("\nfailed to add element to hash2");
         goto cleanup;
     }
 
     if (virHashEqual(hash1, hash2, testHashEqualCompValue)) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed equal test for same number of elements");
-        }
+        VIR_TEST_VERBOSE("\nfailed equal test for same number of elements");
         goto cleanup;
     }
 
     if (virHashUpdateEntry(hash2, keyc, value3_u) < 0) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed to update element in hash2");
-        }
+        VIR_TEST_VERBOSE("\nfailed to update element in hash2");
         goto cleanup;
     }
 
     if (!virHashEqual(hash1, hash2, testHashEqualCompValue)) {
-        if (virTestGetVerbose()) {
-            testError("\nfailed equal test for equal hash tables");
-        }
+        VIR_TEST_VERBOSE("\nfailed equal test for equal hash tables");
         goto cleanup;
     }
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virHashFree(hash1);
     virHashFree(hash2);
     return ret;

@@ -1,7 +1,7 @@
 /*
  * virportallocator.c: Allocate & track TCP port allocations
  *
- * Copyright (C) 2013 Red Hat, Inc.
+ * Copyright (C) 2013-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -43,6 +43,8 @@ struct _virPortAllocator {
 
     unsigned short start;
     unsigned short end;
+
+    unsigned int flags;
 };
 
 static virClassPtr virPortAllocatorClass;
@@ -71,7 +73,8 @@ VIR_ONCE_GLOBAL_INIT(virPortAllocator)
 
 virPortAllocatorPtr virPortAllocatorNew(const char *name,
                                         unsigned short start,
-                                        unsigned short end)
+                                        unsigned short end,
+                                        unsigned int flags)
 {
     virPortAllocatorPtr pa;
 
@@ -87,6 +90,7 @@ virPortAllocatorPtr virPortAllocatorNew(const char *name,
     if (!(pa = virObjectLockableNew(virPortAllocatorClass)))
         return NULL;
 
+    pa->flags = flags;
     pa->start = start;
     pa->end = end;
 
@@ -116,7 +120,6 @@ static int virPortAllocatorBindToPort(bool *used,
     struct sockaddr* addr;
     size_t addrlen;
     int v6only = 1;
-    int reuse = 1;
     int ret = -1;
     int fd = -1;
     bool ipv6 = false;
@@ -143,12 +146,8 @@ static int virPortAllocatorBindToPort(bool *used,
         goto cleanup;
     }
 
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void*)&reuse,
-                   sizeof(reuse)) < 0) {
-        virReportSystemError(errno, "%s",
-                             _("Unable to set socket reuse addr flag"));
+    if (virSetSockReuseAddr(fd, true) < 0)
         goto cleanup;
-    }
 
     if (ipv6 && setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (void*)&v6only,
                            sizeof(v6only)) < 0) {
@@ -168,7 +167,7 @@ static int virPortAllocatorBindToPort(bool *used,
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FORCE_CLOSE(fd);
     return ret;
 }
@@ -185,19 +184,14 @@ int virPortAllocatorAcquire(virPortAllocatorPtr pa,
     for (i = pa->start; i <= pa->end && !*port; i++) {
         bool used = false, v6used = false;
 
-        if (virBitmapGetBit(pa->bitmap,
-                            i - pa->start, &used) < 0) {
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("Failed to query port %zu"), i);
-            goto cleanup;
-        }
-
-        if (used)
+        if (virBitmapIsBitSet(pa->bitmap, i - pa->start))
             continue;
 
-        if (virPortAllocatorBindToPort(&v6used, i, AF_INET6) < 0 ||
-            virPortAllocatorBindToPort(&used, i, AF_INET) < 0)
-            goto cleanup;
+        if (!(pa->flags & VIR_PORT_ALLOCATOR_SKIP_BIND_CHECK)) {
+            if (virPortAllocatorBindToPort(&v6used, i, AF_INET6) < 0 ||
+                virPortAllocatorBindToPort(&used, i, AF_INET) < 0)
+                goto cleanup;
+        }
 
         if (!used && !v6used) {
             /* Add port to bitmap of reserved ports */
@@ -217,7 +211,7 @@ int virPortAllocatorAcquire(virPortAllocatorPtr pa,
                        _("Unable to find an unused port in range '%s' (%d-%d)"),
                        pa->name, pa->start, pa->end);
     }
-cleanup:
+ cleanup:
     virObjectUnlock(pa);
     return ret;
 }
@@ -248,7 +242,44 @@ int virPortAllocatorRelease(virPortAllocatorPtr pa,
     }
 
     ret = 0;
-cleanup:
+ cleanup:
+    virObjectUnlock(pa);
+    return ret;
+}
+
+int virPortAllocatorSetUsed(virPortAllocatorPtr pa,
+                            unsigned short port,
+                            bool value)
+{
+    int ret = -1;
+
+    virObjectLock(pa);
+
+    if (port < pa->start ||
+        port > pa->end) {
+        ret = 0;
+        goto cleanup;
+    }
+
+    if (value) {
+        if (virBitmapIsBitSet(pa->bitmap, port - pa->start) ||
+            virBitmapSetBit(pa->bitmap, port - pa->start) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Failed to reserve port %d"), port);
+            goto cleanup;
+        }
+    } else {
+        if (virBitmapClearBit(pa->bitmap,
+                              port - pa->start) < 0) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Failed to release port %d"),
+                           port);
+            goto cleanup;
+        }
+    }
+
+    ret = 0;
+ cleanup:
     virObjectUnlock(pa);
     return ret;
 }

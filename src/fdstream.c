@@ -1,7 +1,7 @@
 /*
  * fdstream.c: generic streams impl for file descriptors
  *
- * Copyright (C) 2009-2012 Red Hat, Inc.
+ * Copyright (C) 2009-2012, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -31,6 +31,7 @@
 # include <sys/un.h>
 #endif
 #include <netinet/in.h>
+#include <termios.h>
 
 #include "fdstream.h"
 #include "virerror.h"
@@ -43,6 +44,8 @@
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_STREAMS
+
+VIR_LOG_INIT("fdstream");
 
 /* Tunnelled migration stream support */
 struct virFDStreamData {
@@ -73,17 +76,6 @@ struct virFDStreamData {
 
     virMutex lock;
 };
-
-
-static const char *iohelper_path = LIBEXECDIR "/libvirt_iohelper";
-
-void virFDStreamSetIOHelper(const char *path)
-{
-    if (path == NULL)
-        iohelper_path = LIBEXECDIR "/libvirt_iohelper";
-    else
-        iohelper_path = path;
-}
 
 
 static int virFDStreamRemoveCallback(virStreamPtr stream)
@@ -118,7 +110,7 @@ static int virFDStreamRemoveCallback(virStreamPtr stream)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virMutexUnlock(&fdst->lock);
     return ret;
 }
@@ -146,7 +138,7 @@ static int virFDStreamUpdateCallback(virStreamPtr stream, int events)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virMutexUnlock(&fdst->lock);
     return ret;
 }
@@ -195,8 +187,7 @@ static void virFDStreamEvent(int watch ATTRIBUTE_UNUSED,
 
 static void virFDStreamCallbackFree(void *opaque)
 {
-    virStreamPtr st = opaque;
-    virStreamFree(st);
+    virObjectUnref(opaque);
 }
 
 
@@ -243,7 +234,7 @@ virFDStreamAddCallback(virStreamPtr st,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virMutexUnlock(&fdst->lock);
     return ret;
 }
@@ -302,6 +293,7 @@ virFDStreamCloseInt(virStreamPtr st, bool streamAbort)
         else
             buf[len] = '\0';
 
+        virCommandRawStatus(fdst->cmd);
         if (virCommandWait(fdst->cmd, &status) < 0) {
             ret = -1;
         } else if (status != 0) {
@@ -392,7 +384,7 @@ static int virFDStreamWrite(virStreamPtr st, const char *bytes, size_t nbytes)
             nbytes = fdst->length - fdst->offset;
     }
 
-retry:
+ retry:
     ret = write(fdst->fd, bytes, nbytes);
     if (ret < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -442,7 +434,7 @@ static int virFDStreamRead(virStreamPtr st, char *bytes, size_t nbytes)
             nbytes = fdst->length - fdst->offset;
     }
 
-retry:
+ retry:
     ret = read(fdst->fd, bytes, nbytes);
     if (ret < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -485,8 +477,10 @@ static int virFDStreamOpenInternal(virStreamPtr st,
               st, fd, cmd, errfd, length);
 
     if ((st->flags & VIR_STREAM_NONBLOCK) &&
-        virSetNonBlock(fd) < 0)
+        virSetNonBlock(fd) < 0) {
+        virReportSystemError(errno, "%s", _("Unable to set non-blocking mode"));
         return -1;
+    }
 
     if (VIR_ALLOC(fdst) < 0)
         return -1;
@@ -561,7 +555,7 @@ int virFDStreamConnectUNIX(virStreamPtr st,
         goto error;
     return 0;
 
-error:
+ error:
     VIR_FORCE_CLOSE(fd);
     return -1;
 }
@@ -582,13 +576,15 @@ virFDStreamOpenFileInternal(virStreamPtr st,
                             unsigned long long offset,
                             unsigned long long length,
                             int oflags,
-                            int mode)
+                            int mode,
+                            bool forceIOHelper)
 {
     int fd = -1;
     int childfd = -1;
     struct stat sb;
     virCommandPtr cmd = NULL;
     int errfd = -1;
+    char *iohelper_path = NULL;
 
     VIR_DEBUG("st=%p path=%s oflags=%x offset=%llu length=%llu mode=%o",
               st, path, oflags, offset, length, mode);
@@ -614,7 +610,7 @@ virFDStreamOpenFileInternal(virStreamPtr st,
     }
 
     if (offset &&
-        lseek(fd, offset, SEEK_SET) != offset) {
+        lseek(fd, offset, SEEK_SET) < 0) {
         virReportSystemError(errno,
                              _("Unable to seek %s to %llu"),
                              path, offset);
@@ -627,8 +623,8 @@ virFDStreamOpenFileInternal(virStreamPtr st,
      * the I/O so we just have a fifo. Or use AIO :-(
      */
     if ((st->flags & VIR_STREAM_NONBLOCK) &&
-        (!S_ISCHR(sb.st_mode) &&
-         !S_ISFIFO(sb.st_mode))) {
+        ((!S_ISCHR(sb.st_mode) &&
+         !S_ISFIFO(sb.st_mode)) || forceIOHelper)) {
         int fds[2] = { -1, -1 };
 
         if ((oflags & O_ACCMODE) == O_RDWR) {
@@ -644,9 +640,17 @@ virFDStreamOpenFileInternal(virStreamPtr st,
             goto error;
         }
 
+        if (!(iohelper_path = virFileFindResource("libvirt_iohelper",
+                                                  abs_topbuilddir "/src",
+                                                  LIBEXECDIR)))
+            goto error;
+
         cmd = virCommandNewArgList(iohelper_path,
                                    path,
                                    NULL);
+
+        VIR_FREE(iohelper_path);
+
         virCommandAddArgFormat(cmd, "%llu", length);
         virCommandPassFD(cmd, fd,
                          VIR_COMMAND_PASS_FD_CLOSE_PARENT);
@@ -674,11 +678,12 @@ virFDStreamOpenFileInternal(virStreamPtr st,
 
     return 0;
 
-error:
+ error:
     virCommandFree(cmd);
     VIR_FORCE_CLOSE(fd);
     VIR_FORCE_CLOSE(childfd);
     VIR_FORCE_CLOSE(errfd);
+    VIR_FREE(iohelper_path);
     if (oflags & O_CREAT)
         unlink(path);
     return -1;
@@ -698,7 +703,7 @@ int virFDStreamOpenFile(virStreamPtr st,
     }
     return virFDStreamOpenFileInternal(st, path,
                                        offset, length,
-                                       oflags, 0);
+                                       oflags, 0, false);
 }
 
 int virFDStreamCreateFile(virStreamPtr st,
@@ -710,7 +715,73 @@ int virFDStreamCreateFile(virStreamPtr st,
 {
     return virFDStreamOpenFileInternal(st, path,
                                        offset, length,
-                                       oflags | O_CREAT, mode);
+                                       oflags | O_CREAT, mode,
+                                       false);
+}
+
+#ifdef HAVE_CFMAKERAW
+int virFDStreamOpenPTY(virStreamPtr st,
+                       const char *path,
+                       unsigned long long offset,
+                       unsigned long long length,
+                       int oflags)
+{
+    struct virFDStreamData *fdst = NULL;
+    struct termios rawattr;
+
+    if (virFDStreamOpenFileInternal(st, path,
+                                    offset, length,
+                                    oflags | O_CREAT, 0,
+                                    false) < 0)
+        return -1;
+
+    fdst = st->privateData;
+
+    if (tcgetattr(fdst->fd, &rawattr) < 0) {
+        virReportSystemError(errno,
+                             _("unable to get tty attributes: %s"),
+                             path);
+        goto cleanup;
+    }
+
+    cfmakeraw(&rawattr);
+
+    if (tcsetattr(fdst->fd, TCSANOW, &rawattr) < 0) {
+        virReportSystemError(errno,
+                             _("unable to set tty attributes: %s"),
+                             path);
+        goto cleanup;
+    }
+
+    return 0;
+
+ cleanup:
+    virFDStreamClose(st);
+    return -1;
+}
+#else /* !HAVE_CFMAKERAW */
+int virFDStreamOpenPTY(virStreamPtr st,
+                       const char *path,
+                       unsigned long long offset,
+                       unsigned long long length,
+                       int oflags)
+{
+    return virFDStreamOpenFileInternal(st, path,
+                                       offset, length,
+                                       oflags | O_CREAT, 0,
+                                       false);
+}
+#endif /* !HAVE_CFMAKERAW */
+
+int virFDStreamOpenBlockDevice(virStreamPtr st,
+                               const char *path,
+                               unsigned long long offset,
+                               unsigned long long length,
+                               int oflags)
+{
+    return virFDStreamOpenFileInternal(st, path,
+                                       offset, length,
+                                       oflags, 0, true);
 }
 
 int virFDStreamSetInternalCloseCb(virStreamPtr st,

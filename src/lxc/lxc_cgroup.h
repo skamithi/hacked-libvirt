@@ -27,7 +27,10 @@
 # include "lxc_fuse.h"
 # include "virusb.h"
 
-virCgroupPtr virLXCCgroupCreate(virDomainDefPtr def);
+virCgroupPtr virLXCCgroupCreate(virDomainDefPtr def,
+                                pid_t initpid,
+                                size_t nnicindexes,
+                                int *nicindexes);
 virCgroupPtr virLXCCgroupJoin(virDomainDefPtr def);
 int virLXCCgroupSetup(virDomainDefPtr def,
                       virCgroupPtr cgroup,
@@ -36,12 +39,12 @@ int virLXCCgroupSetup(virDomainDefPtr def,
 int virLXCCgroupGetMeminfo(virLXCMeminfoPtr meminfo);
 
 int
-virLXCSetupHostUsbDeviceCgroup(virUSBDevicePtr dev,
+virLXCSetupHostUSBDeviceCgroup(virUSBDevicePtr dev,
                                const char *path,
                                void *opaque);
 
 int
-virLXCTeardownHostUsbDeviceCgroup(virUSBDevicePtr dev,
+virLXCTeardownHostUSBDeviceCgroup(virUSBDevicePtr dev,
                                   const char *path,
                                   void *opaque);
 

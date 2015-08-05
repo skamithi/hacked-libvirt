@@ -26,20 +26,27 @@ static int blankProblemElements(char *data)
     if (virtTestClearLineRegex("<name>[[:alnum:]]+</name>", data) < 0 ||
         virtTestClearLineRegex("<uuid>([[:alnum:]]|-)+</uuid>", data) < 0 ||
         virtTestClearLineRegex("<memory.*>[[:digit:]]+</memory>", data) < 0 ||
+        virtTestClearLineRegex("<secret.*>", data) < 0 ||
         virtTestClearLineRegex("<currentMemory.*>[[:digit:]]+</currentMemory>",
                                data) < 0 ||
         virtTestClearLineRegex("<readonly/>", data) < 0 ||
-        virtTestClearLineRegex("<sharable/>", data) < 0)
+        virtTestClearLineRegex("<shareable/>", data) < 0)
         return -1;
     return 0;
 }
 
+typedef enum {
+    FLAG_EXPECT_WARNING     = 1 << 0,
+} virQemuXML2ArgvTestFlags;
+
 static int testCompareXMLToArgvFiles(const char *xml,
                                      const char *cmdfile,
-                                     bool expect_warning) {
+                                     virQemuXML2ArgvTestFlags flags)
+{
     char *expectxml = NULL;
     char *actualxml = NULL;
     char *cmd = NULL;
+    char *log = NULL;
     int ret = -1;
     virDomainDefPtr vmdef = NULL;
 
@@ -53,18 +60,30 @@ static int testCompareXMLToArgvFiles(const char *xml,
         goto fail;
 
     if (!virtTestOOMActive()) {
-        char *log;
         if ((log = virtTestLogContentAndReset()) == NULL)
             goto fail;
-        if ((*log != '\0') != expect_warning) {
-            VIR_FREE(log);
-            goto fail;
+        if (flags & FLAG_EXPECT_WARNING) {
+            if (*log) {
+                VIR_TEST_DEBUG("Got expected warning from "
+                            "qemuParseCommandLineString:\n%s",
+                            log);
+            } else {
+                VIR_TEST_DEBUG("qemuParseCommandLineString "
+                        "should have logged a warning\n");
+                goto fail;
+            }
+        } else { /* didn't expect a warning */
+            if (*log) {
+                VIR_TEST_DEBUG("Got unexpected warning from "
+                            "qemuParseCommandLineString:\n%s",
+                            log);
+                goto fail;
+            }
         }
-        VIR_FREE(log);
     }
 
     if (!virDomainDefCheckABIStability(vmdef, vmdef)) {
-        fprintf(stderr, "ABI stability check failed on %s", xml);
+        VIR_TEST_DEBUG("ABI stability check failed on %s", xml);
         goto fail;
     }
 
@@ -86,6 +105,7 @@ static int testCompareXMLToArgvFiles(const char *xml,
     VIR_FREE(expectxml);
     VIR_FREE(actualxml);
     VIR_FREE(cmd);
+    VIR_FREE(log);
     virDomainDefFree(vmdef);
     return ret;
 }
@@ -93,8 +113,7 @@ static int testCompareXMLToArgvFiles(const char *xml,
 
 struct testInfo {
     const char *name;
-    unsigned long long extraFlags;
-    const char *migrateFrom;
+    unsigned int flags;
 };
 
 static int
@@ -111,9 +130,9 @@ testCompareXMLToArgvHelper(const void *data)
                     abs_srcdir, info->name) < 0)
         goto cleanup;
 
-    result = testCompareXMLToArgvFiles(xml, args, !!info->extraFlags);
+    result = testCompareXMLToArgvFiles(xml, args, info->flags);
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
     VIR_FREE(args);
     return result;
@@ -127,22 +146,25 @@ mymain(void)
     int ret = 0;
 
     driver.config = virQEMUDriverConfigNew(false);
+    if (driver.config == NULL)
+        return EXIT_FAILURE;
+
     if ((driver.caps = testQemuCapsInit()) == NULL)
         return EXIT_FAILURE;
 
     if (!(driver.xmlopt = virQEMUDriverCreateXMLConf(&driver)))
         return EXIT_FAILURE;
 
-# define DO_TEST_FULL(name, extraFlags, migrateFrom)                    \
+# define DO_TEST_FULL(name, flags)                                      \
     do {                                                                \
-        const struct testInfo info = { name, extraFlags, migrateFrom }; \
+        const struct testInfo info = { name, (flags) };                 \
         if (virtTestRun("QEMU ARGV-2-XML " name,                        \
                         testCompareXMLToArgvHelper, &info) < 0)         \
             ret = -1;                                                   \
     } while (0)
 
 # define DO_TEST(name)                                                  \
-        DO_TEST_FULL(name, 0, NULL)
+        DO_TEST_FULL(name, 0)
 
     setenv("PATH", "/bin", 1);
     setenv("USER", "test", 1);
@@ -200,8 +222,10 @@ mymain(void)
     DO_TEST("disk-drive-network-nbd-ipv6-export");
     DO_TEST("disk-drive-network-nbd-unix");
     DO_TEST("disk-drive-network-iscsi");
+    DO_TEST("disk-drive-network-iscsi-auth");
     DO_TEST("disk-drive-network-gluster");
     DO_TEST("disk-drive-network-rbd");
+    DO_TEST("disk-drive-network-rbd-auth");
     DO_TEST("disk-drive-network-rbd-ipv6");
     /* older format using CEPH_ARGS env var */
     DO_TEST("disk-drive-network-rbd-ceph-env");
@@ -255,23 +279,30 @@ mymain(void)
 
     DO_TEST("hyperv");
 
+    DO_TEST("kvm-features");
+
     DO_TEST("pseries-nvram");
     DO_TEST("pseries-disk");
 
     DO_TEST("nosharepages");
 
-    DO_TEST_FULL("restore-v1", 0, "stdio");
-    DO_TEST_FULL("restore-v2", 0, "stdio");
-    DO_TEST_FULL("restore-v2", 0, "exec:cat");
-    DO_TEST_FULL("migrate", 0, "tcp:10.0.0.1:5000");
+    DO_TEST("restore-v1");
+    DO_TEST("restore-v2");
+    DO_TEST("migrate");
 
-    DO_TEST_FULL("qemu-ns-no-env", 1, NULL);
+    DO_TEST_FULL("qemu-ns-no-env", FLAG_EXPECT_WARNING);
+
+    DO_TEST("machine-aeskeywrap-on-argv");
+    DO_TEST("machine-aeskeywrap-off-argv");
+    DO_TEST("machine-deakeywrap-on-argv");
+    DO_TEST("machine-deakeywrap-off-argv");
+    DO_TEST("machine-keywrap-none-argv");
 
     virObjectUnref(driver.config);
     virObjectUnref(driver.caps);
     virObjectUnref(driver.xmlopt);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

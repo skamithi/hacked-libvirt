@@ -11,33 +11,22 @@
 static int
 testCompareXMLToXMLFiles(const char *inxml, const char *outxml)
 {
-    char *inXmlData = NULL;
-    char *outXmlData = NULL;
     char *actual = NULL;
     int ret = -1;
     virSecretDefPtr secret = NULL;
 
-    if (virtTestLoadFile(inxml, &inXmlData) < 0)
-        goto fail;
-    if (virtTestLoadFile(outxml, &outXmlData) < 0)
-        goto fail;
-
-    if (!(secret = virSecretDefParseString(inXmlData)))
+    if (!(secret = virSecretDefParseFile(inxml)))
         goto fail;
 
     if (!(actual = virSecretDefFormat(secret)))
         goto fail;
 
-    if (STRNEQ(outXmlData, actual)) {
-        virtTestDifference(stderr, outXmlData, actual);
+    if (virtTestCompareToFile(actual, outxml) < 0)
         goto fail;
-    }
 
     ret = 0;
 
-fail:
-    VIR_FREE(inXmlData);
-    VIR_FREE(outXmlData);
+ fail:
     VIR_FREE(actual);
     virSecretDefFree(secret);
     return ret;
@@ -67,7 +56,7 @@ testCompareXMLToXMLHelper(const void *data)
 
     result = testCompareXMLToXMLFiles(inxml, outxml);
 
-cleanup:
+ cleanup:
     VIR_FREE(inxml);
     VIR_FREE(outxml);
 

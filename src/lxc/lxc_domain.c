@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  * Copyright IBM Corp. 2008
  *
  * lxc_domain.h: LXC domain helpers
@@ -29,6 +29,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_LXC
 
+VIR_LOG_INIT("lxc.lxc_domain");
+
 static void *virLXCDomainObjPrivateAlloc(void)
 {
     virLXCDomainObjPrivatePtr priv;
@@ -53,7 +55,7 @@ static int virLXCDomainObjPrivateXMLFormat(virBufferPtr buf, void *data)
 {
     virLXCDomainObjPrivatePtr priv = data;
 
-    virBufferAsprintf(buf, "  <init pid='%llu'/>\n",
+    virBufferAsprintf(buf, "<init pid='%llu'/>\n",
                       (unsigned long long)priv->initpid);
 
     return 0;
@@ -92,6 +94,10 @@ virLXCDomainDefPostParse(virDomainDefPtr def,
         !(def->emulator = virDomainDefGetDefaultEmulator(def, caps)))
         return -1;
 
+    /* memory hotplug tunables are not supported by this driver */
+    if (virDomainDefCheckUnsupportedMemoryHotplug(def) < 0)
+        return -1;
+
     return 0;
 }
 
@@ -106,6 +112,10 @@ virLXCDomainDeviceDefPostParse(virDomainDeviceDefPtr dev,
         dev->data.chr->deviceType == VIR_DOMAIN_CHR_DEVICE_TYPE_CONSOLE &&
         dev->data.chr->targetType == VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_NONE)
         dev->data.chr->targetType = VIR_DOMAIN_CHR_CONSOLE_TARGET_TYPE_LXC;
+
+
+    if (virDomainDeviceDefCheckUnsupportedMemoryDevice(dev) < 0)
+        return -1;
 
     return 0;
 }

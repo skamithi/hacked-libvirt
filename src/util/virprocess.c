@@ -1,7 +1,7 @@
 /*
  * virprocess.c: interaction with processes
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,20 +25,27 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #if HAVE_SETRLIMIT
 # include <sys/time.h>
 # include <sys/resource.h>
 #endif
-#include <sched.h>
+#if HAVE_SCHED_SETSCHEDULER
+# include <sched.h>
+#endif
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) || HAVE_BSD_CPU_AFFINITY
 # include <sys/param.h>
+#endif
+
+#ifdef  __FreeBSD__
 # include <sys/sysctl.h>
 # include <sys/user.h>
 #endif
 
-#ifdef HAVE_BSD_CPU_AFFINITY
+#if HAVE_BSD_CPU_AFFINITY
 # include <sys/cpuset.h>
 #endif
 
@@ -54,6 +61,58 @@
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
+VIR_LOG_INIT("util.process");
+
+#ifdef __linux__
+/*
+ * Workaround older glibc. While kernel may support the setns
+ * syscall, the glibc wrapper might not exist. If that's the
+ * case, use our own.
+ */
+# ifndef __NR_setns
+#  if defined(__x86_64__)
+#   define __NR_setns 308
+#  elif defined(__i386__)
+#   define __NR_setns 346
+#  elif defined(__arm__)
+#   define __NR_setns 375
+#  elif defined(__aarch64__)
+#   define __NR_setns 375
+#  elif defined(__powerpc__)
+#   define __NR_setns 350
+#  elif defined(__s390__)
+#   define __NR_setns 339
+#  endif
+# endif
+
+# ifndef HAVE_SETNS
+#  if defined(__NR_setns)
+#   include <sys/syscall.h>
+
+static inline int setns(int fd, int nstype)
+{
+    return syscall(__NR_setns, fd, nstype);
+}
+#  else /* !__NR_setns */
+#   error Please determine the syscall number for setns on your architecture
+#  endif
+# endif
+#else /* !__linux__ */
+static inline int setns(int fd ATTRIBUTE_UNUSED, int nstype ATTRIBUTE_UNUSED)
+{
+    virReportSystemError(ENOSYS, "%s",
+                         _("Namespaces are not supported on this platform."));
+    return -1;
+}
+#endif
+
+VIR_ENUM_IMPL(virProcessSchedPolicy, VIR_PROC_POLICY_LAST,
+              "none",
+              "batch",
+              "idle",
+              "fifo",
+              "rr");
+
 /**
  * virProcessTranslateStatus:
  * @status: child exit status to translate
@@ -67,13 +126,13 @@ virProcessTranslateStatus(int status)
 {
     char *buf;
     if (WIFEXITED(status)) {
-        ignore_value(virAsprintf(&buf, _("exit status %d"),
-                                 WEXITSTATUS(status)));
+        ignore_value(virAsprintfQuiet(&buf, _("exit status %d"),
+                                      WEXITSTATUS(status)));
     } else if (WIFSIGNALED(status)) {
-        ignore_value(virAsprintf(&buf, _("fatal signal %d"),
-                                 WTERMSIG(status)));
+        ignore_value(virAsprintfQuiet(&buf, _("fatal signal %d"),
+                                      WTERMSIG(status)));
     } else {
-        ignore_value(virAsprintf(&buf, _("invalid value %d"), status));
+        ignore_value(virAsprintfQuiet(&buf, _("invalid value %d"), status));
     }
     return buf;
 }
@@ -136,7 +195,7 @@ virProcessAbort(pid_t pid)
     }
     VIR_DEBUG("failed to reap child %lld, abandoning it", (long long) pid);
 
-cleanup:
+ cleanup:
     VIR_FREE(tmp);
     errno = saved_errno;
 }
@@ -154,22 +213,33 @@ virProcessAbort(pid_t pid)
  * virProcessWait:
  * @pid: child to wait on
  * @exitstatus: optional status collection
+ * @raw: whether to pass non-normal status back to caller
  *
- * Wait for a child process to complete.
- * Return -1 on any error waiting for
- * completion. Returns 0 if the command
- * finished with the exit status set.  If @exitstatus is NULL, then the
- * child must exit with status 0 for this to succeed.
+ * Wait for a child process to complete.  If @pid is -1, do nothing, but
+ * return -1 (useful for error cleanup, and assumes an earlier message was
+ * already issued).  All other pids issue an error message on failure.
+ *
+ * If @exitstatus is NULL, then the child must exit normally with status 0.
+ * Otherwise, if @raw is false, the child must exit normally, and
+ * @exitstatus will contain the final exit status (no need for the caller
+ * to use WEXITSTATUS()).  If @raw is true, then the result of waitpid() is
+ * returned in @exitstatus, and the caller must use WIFEXITED() and friends
+ * to decipher the child's status.
+ *
+ * Returns 0 on a successful wait.  Returns -1 on any error waiting for
+ * completion, or if the command completed with a status that cannot be
+ * reflected via the choice of @exitstatus and @raw.
  */
 int
-virProcessWait(pid_t pid, int *exitstatus)
+virProcessWait(pid_t pid, int *exitstatus, bool raw)
 {
     int ret;
     int status;
 
     if (pid <= 0) {
-        virReportSystemError(EINVAL, _("unable to wait for process %lld"),
-                             (long long) pid);
+        if (pid != -1)
+            virReportSystemError(EINVAL, _("unable to wait for process %lld"),
+                                 (long long) pid);
         return -1;
     }
 
@@ -184,19 +254,27 @@ virProcessWait(pid_t pid, int *exitstatus)
     }
 
     if (exitstatus == NULL) {
-        if (status != 0) {
-            char *st = virProcessTranslateStatus(status);
-            virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("Child process (%lld) unexpected %s"),
-                           (long long) pid, NULLSTR(st));
-            VIR_FREE(st);
-            return -1;
-        }
-    } else {
+        if (status != 0)
+            goto error;
+    } else if (raw) {
         *exitstatus = status;
+    } else if (WIFEXITED(status)) {
+        *exitstatus = WEXITSTATUS(status);
+    } else {
+        goto error;
     }
 
     return 0;
+
+ error:
+    {
+        char *st = virProcessTranslateStatus(status);
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Child process (%lld) unexpected %s"),
+                       (long long) pid, NULLSTR(st));
+        VIR_FREE(st);
+    }
+    return -1;
 }
 
 
@@ -261,7 +339,7 @@ int virProcessKill(pid_t pid, int sig)
  * Try to kill the process and verify it has exited
  *
  * Returns 0 if it was killed gracefully, 1 if it
- * was killed forcably, -1 if it is still alive,
+ * was killed forcibly, -1 if it is still alive,
  * or another error occurred.
  */
 int
@@ -276,7 +354,7 @@ virProcessKillPainfully(pid_t pid, bool force)
     /* This loop sends SIGTERM, then waits a few iterations (10 seconds)
      * to see if it dies. If the process still hasn't exited, and
      * @force is requested, a SIGKILL will be sent, and this will
-     * wait upto 5 seconds more for the process to exit before
+     * wait up to 5 seconds more for the process to exit before
      * returning.
      *
      * Note that setting @force could result in dataloss for the process.
@@ -285,7 +363,7 @@ virProcessKillPainfully(pid_t pid, bool force)
         int signum;
         if (i == 0) {
             signum = SIGTERM; /* kindly suggest it should exit */
-        } else if ((i == 50) & force) {
+        } else if (i == 50 && force) {
             VIR_DEBUG("Timed out waiting after SIGTERM to process %lld, "
                       "sending SIGKILL", (long long)pid);
             /* No SIGKILL kill on Win32 ! Use SIGABRT instead which our
@@ -319,7 +397,7 @@ virProcessKillPainfully(pid_t pid, bool force)
                          _("Failed to terminate process %lld with SIG%s"),
                          (long long)pid, signame);
 
-cleanup:
+ cleanup:
     return ret;
 }
 
@@ -329,7 +407,7 @@ cleanup:
 int virProcessSetAffinity(pid_t pid, virBitmapPtr map)
 {
     size_t i;
-    bool set = false;
+    VIR_DEBUG("Set process affinity on %lld\n", (long long)pid);
 # ifdef CPU_ALLOC
     /* New method dynamically allocates cpu mask, allowing unlimted cpus */
     int numcpus = 1024;
@@ -343,7 +421,7 @@ int virProcessSetAffinity(pid_t pid, virBitmapPtr map)
      *
      * http://lkml.org/lkml/2009/7/28/620
      */
-realloc:
+ realloc:
     masklen = CPU_ALLOC_SIZE(numcpus);
     mask = CPU_ALLOC(numcpus);
 
@@ -354,9 +432,7 @@ realloc:
 
     CPU_ZERO_S(masklen, mask);
     for (i = 0; i < virBitmapSize(map); i++) {
-        if (virBitmapGetBit(map, i, &set) < 0)
-            return -1;
-        if (set)
+        if (virBitmapIsBitSet(map, i))
             CPU_SET_S(i, masklen, mask);
     }
 
@@ -378,9 +454,7 @@ realloc:
 
     CPU_ZERO(&mask);
     for (i = 0; i < virBitmapSize(map); i++) {
-        if (virBitmapGetBit(map, i, &set) < 0)
-            return -1;
-        if (set)
+        if (virBitmapIsBitSet(map, i))
             CPU_SET(i, &mask);
     }
 
@@ -412,7 +486,7 @@ int virProcessGetAffinity(pid_t pid,
      *
      * http://lkml.org/lkml/2009/7/28/620
      */
-realloc:
+ realloc:
     masklen = CPU_ALLOC_SIZE(numcpus);
     mask = CPU_ALLOC(numcpus);
 
@@ -534,7 +608,6 @@ int virProcessGetAffinity(pid_t pid ATTRIBUTE_UNUSED,
 #endif /* HAVE_SCHED_GETAFFINITY */
 
 
-#if HAVE_SETNS
 int virProcessGetNamespaces(pid_t pid,
                             size_t *nfdlist,
                             int **fdlist)
@@ -555,7 +628,7 @@ int virProcessGetNamespaces(pid_t pid,
                         ns[i]) < 0)
             goto cleanup;
 
-        if ((fd = open(nsfile, O_RDWR)) >= 0) {
+        if ((fd = open(nsfile, O_RDONLY)) >= 0) {
             if (VIR_EXPAND_N(*fdlist, *nfdlist, 1) < 0) {
                 VIR_FORCE_CLOSE(fd);
                 goto cleanup;
@@ -569,7 +642,7 @@ int virProcessGetNamespaces(pid_t pid,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(nsfile);
     if (ret < 0) {
         for (i = 0; i < *nfdlist; i++)
@@ -605,26 +678,6 @@ int virProcessSetNamespaces(size_t nfdlist,
     }
     return 0;
 }
-#else /* ! HAVE_SETNS */
-int virProcessGetNamespaces(pid_t pid,
-                            size_t *nfdlist ATTRIBUTE_UNUSED,
-                            int **fdlist ATTRIBUTE_UNUSED)
-{
-    virReportSystemError(ENOSYS,
-                         _("Cannot get namespaces for %llu"),
-                         (unsigned long long)pid);
-    return -1;
-}
-
-
-int virProcessSetNamespaces(size_t nfdlist ATTRIBUTE_UNUSED,
-                            int *fdlist ATTRIBUTE_UNUSED)
-{
-    virReportSystemError(ENOSYS, "%s",
-                         _("Cannot set namespaces"));
-    return -1;
-}
-#endif /* ! HAVE_SETNS */
 
 #if HAVE_PRLIMIT
 static int
@@ -834,7 +887,7 @@ int virProcessGetStartTime(pid_t pid,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virStringFreeList(tokens);
     VIR_FREE(filename);
     VIR_FREE(buf);
@@ -868,11 +921,10 @@ int virProcessGetStartTime(pid_t pid,
 int virProcessGetStartTime(pid_t pid,
                            unsigned long long *timestamp)
 {
-    static int warned = 0;
+    static int warned;
     if (virAtomicIntInc(&warned) == 1) {
         VIR_WARN("Process start time of pid %llu not available on this platform",
                  (unsigned long long)pid);
-        warned = true;
     }
     *timestamp = 0;
     return 0;
@@ -880,7 +932,6 @@ int virProcessGetStartTime(pid_t pid,
 #endif
 
 
-#ifdef HAVE_SETNS
 static int virProcessNamespaceHelper(int errfd,
                                      pid_t pid,
                                      virProcessNamespaceCallback cb,
@@ -922,9 +973,9 @@ static int virProcessNamespaceHelper(int errfd,
 
 /* Run cb(opaque) in the mount namespace of pid.  Return -1 with error
  * message raised if we fail to run the child, if the child dies from
- * a signal, or if the child has status 1; otherwise return the exit
- * status of the child. The callback will be run in a child process
- * so must be careful to only use async signal safe functions.
+ * a signal, or if the child has status EXIT_CANCELED; otherwise return
+ * the exit status of the child. The callback will be run in a child
+ * process so must be careful to only use async signal safe functions.
  */
 int
 virProcessRunInMountNamespace(pid_t pid,
@@ -935,51 +986,171 @@ virProcessRunInMountNamespace(pid_t pid,
     pid_t child = -1;
     int errfd[2] = { -1, -1 };
 
-    if (pipe(errfd) < 0) {
+    if (pipe2(errfd, O_CLOEXEC) < 0) {
         virReportSystemError(errno, "%s",
                              _("Cannot create pipe for child"));
         return -1;
     }
 
-    ret = virFork(&child);
-
-    if (ret < 0 || child < 0) {
-        if (child == 0)
-            _exit(1);
-
-        /* parent */
-        virProcessAbort(child);
+    if ((child = virFork()) < 0)
         goto cleanup;
-    }
 
     if (child == 0) {
         VIR_FORCE_CLOSE(errfd[0]);
         ret = virProcessNamespaceHelper(errfd[1], pid,
                                         cb, opaque);
         VIR_FORCE_CLOSE(errfd[1]);
-        _exit(ret < 0 ? 1 : 0);
+        _exit(ret < 0 ? EXIT_CANCELED : ret);
     } else {
         char *buf = NULL;
-        VIR_FORCE_CLOSE(errfd[1]);
+        int status;
 
+        VIR_FORCE_CLOSE(errfd[1]);
         ignore_value(virFileReadHeaderFD(errfd[0], 1024, &buf));
-        ret = virProcessWait(child, NULL);
+        ret = virProcessWait(child, &status, false);
+        if (!ret)
+            ret = status == EXIT_CANCELED ? -1 : status;
         VIR_FREE(buf);
     }
 
-cleanup:
+ cleanup:
     VIR_FORCE_CLOSE(errfd[0]);
     VIR_FORCE_CLOSE(errfd[1]);
     return ret;
 }
-#else /* !HAVE_SETNS */
-int
-virProcessRunInMountNamespace(pid_t pid ATTRIBUTE_UNUSED,
-                              virProcessNamespaceCallback cb ATTRIBUTE_UNUSED,
-                              void *opaque ATTRIBUTE_UNUSED)
+
+
+/**
+ * virProcessExitWithStatus:
+ * @status: raw status to be reproduced when this process dies
+ *
+ * Given a raw status obtained by waitpid() or similar, attempt to
+ * make this process exit in the same manner.  If the child died by
+ * signal, reset that signal handler to default and raise the same
+ * signal; if that doesn't kill this process, then exit with 128 +
+ * signal number.  If @status can't be deciphered, use
+ * EXIT_CANNOT_INVOKE.
+ *
+ * Never returns.
+ */
+void
+virProcessExitWithStatus(int status)
 {
-    virReportSystemError(ENOSYS, "%s",
-                         _("Mount namespaces are not available on this platform"));
+    int value = EXIT_CANNOT_INVOKE;
+
+    if (WIFEXITED(status)) {
+        value = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        struct sigaction act;
+        sigset_t sigs;
+
+        if (sigemptyset(&sigs) == 0 &&
+            sigaddset(&sigs, WTERMSIG(status)) == 0)
+            sigprocmask(SIG_UNBLOCK, &sigs, NULL);
+        memset(&act, 0, sizeof(act));
+        act.sa_handler = SIG_DFL;
+        sigfillset(&act.sa_mask);
+        sigaction(WTERMSIG(status), &act, NULL);
+        raise(WTERMSIG(status));
+        value = 128 + WTERMSIG(status);
+    }
+    exit(value);
+}
+
+#if HAVE_SCHED_SETSCHEDULER && defined(SCHED_BATCH) && defined(SCHED_IDLE)
+
+static int
+virProcessSchedTranslatePolicy(virProcessSchedPolicy policy)
+{
+    switch (policy) {
+    case VIR_PROC_POLICY_NONE:
+        return SCHED_OTHER;
+
+    case VIR_PROC_POLICY_BATCH:
+        return SCHED_BATCH;
+
+    case VIR_PROC_POLICY_IDLE:
+        return SCHED_IDLE;
+
+    case VIR_PROC_POLICY_FIFO:
+        return SCHED_FIFO;
+
+    case VIR_PROC_POLICY_RR:
+        return SCHED_RR;
+
+    case VIR_PROC_POLICY_LAST:
+        /* nada */
+        break;
+    }
+
     return -1;
 }
-#endif
+
+int
+virProcessSetScheduler(pid_t pid,
+                       virProcessSchedPolicy policy,
+                       int priority)
+{
+    struct sched_param param = {0};
+    int pol = virProcessSchedTranslatePolicy(policy);
+
+    VIR_DEBUG("pid=%d, policy=%d, priority=%u", pid, policy, priority);
+
+    if (!policy)
+        return 0;
+
+    if (pol == SCHED_FIFO || pol == SCHED_RR) {
+        int min = 0;
+        int max = 0;
+
+        if ((min = sched_get_priority_min(pol)) < 0) {
+            virReportSystemError(errno, "%s",
+                                 _("Cannot get minimum scheduler "
+                                   "priority value"));
+            return -1;
+        }
+
+        if ((max = sched_get_priority_max(pol)) < 0) {
+            virReportSystemError(errno, "%s",
+                                 _("Cannot get maximum scheduler "
+                                   "priority value"));
+            return -1;
+        }
+
+        if (priority < min || priority > max) {
+            virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                           _("Scheduler priority %d out of range [%d, %d]"),
+                           priority, min, max);
+            return -1;
+        }
+
+        param.sched_priority = priority;
+    }
+
+    if (sched_setscheduler(pid, pol, &param) < 0) {
+        virReportSystemError(errno,
+                             _("Cannot set scheduler parameters for pid %d"),
+                             pid);
+        return -1;
+    }
+
+    return 0;
+}
+
+#else /* ! HAVE_SCHED_SETSCHEDULER */
+
+int
+virProcessSetScheduler(pid_t pid ATTRIBUTE_UNUSED,
+                       virProcessSchedPolicy policy,
+                       int priority ATTRIBUTE_UNUSED)
+{
+    if (!policy)
+        return 0;
+
+    virReportSystemError(ENOSYS, "%s",
+                         _("Process CPU scheduling is not supported "
+                           "on this platform"));
+    return -1;
+}
+
+#endif /* !HAVE_SCHED_SETSCHEDULER */

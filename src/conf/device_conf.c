@@ -32,11 +32,26 @@
 
 #define VIR_FROM_THIS VIR_FROM_DEVICE
 
-VIR_ENUM_IMPL(virDeviceAddressPciMulti,
-              VIR_DEVICE_ADDRESS_PCI_MULTI_LAST,
-              "default",
-              "on",
-              "off")
+VIR_ENUM_IMPL(virInterfaceState,
+              VIR_INTERFACE_STATE_LAST,
+              "" /* value of zero means no state */,
+              "unknown", "notpresent",
+              "down", "lowerlayerdown",
+              "testing", "dormant", "up")
+
+VIR_ENUM_IMPL(virNetDevFeature,
+              VIR_NET_DEV_FEAT_LAST,
+              "rx",
+              "tx",
+              "sg",
+              "tso",
+              "gso",
+              "gro",
+              "lro",
+              "rxvlan",
+              "txvlan",
+              "ntuple",
+              "rxhash")
 
 int virDevicePCIAddressIsValid(virDevicePCIAddressPtr addr)
 {
@@ -63,35 +78,35 @@ virDevicePCIAddressParseXML(xmlNodePtr node,
     multi    = virXMLPropString(node, "multifunction");
 
     if (domain &&
-        virStrToLong_ui(domain, NULL, 0, &addr->domain) < 0) {
+        virStrToLong_uip(domain, NULL, 0, &addr->domain) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Cannot parse <address> 'domain' attribute"));
         goto cleanup;
     }
 
     if (bus &&
-        virStrToLong_ui(bus, NULL, 0, &addr->bus) < 0) {
+        virStrToLong_uip(bus, NULL, 0, &addr->bus) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Cannot parse <address> 'bus' attribute"));
         goto cleanup;
     }
 
     if (slot &&
-        virStrToLong_ui(slot, NULL, 0, &addr->slot) < 0) {
+        virStrToLong_uip(slot, NULL, 0, &addr->slot) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Cannot parse <address> 'slot' attribute"));
         goto cleanup;
     }
 
     if (function &&
-        virStrToLong_ui(function, NULL, 0, &addr->function) < 0) {
+        virStrToLong_uip(function, NULL, 0, &addr->function) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Cannot parse <address> 'function' attribute"));
         goto cleanup;
     }
 
     if (multi &&
-        ((addr->multi = virDeviceAddressPciMultiTypeFromString(multi)) <= 0)) {
+        ((addr->multi = virTristateSwitchTypeFromString(multi)) <= 0)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("Unknown value '%s' for <address> 'multifunction' attribute"),
                        multi);
@@ -106,7 +121,7 @@ virDevicePCIAddressParseXML(xmlNodePtr node,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(domain);
     VIR_FREE(bus);
     VIR_FREE(slot);
@@ -141,4 +156,59 @@ virDevicePCIAddressEqual(virDevicePCIAddress *addr1,
         return true;
     }
     return false;
+}
+
+int
+virInterfaceLinkParseXML(xmlNodePtr node,
+                         virInterfaceLinkPtr lnk)
+{
+    int ret = -1;
+    char *stateStr, *speedStr;
+    int state;
+
+    stateStr = virXMLPropString(node, "state");
+    speedStr = virXMLPropString(node, "speed");
+
+    if (stateStr) {
+        if ((state = virInterfaceStateTypeFromString(stateStr)) < 0) {
+            virReportError(VIR_ERR_XML_ERROR,
+                           _("unknown link state: %s"),
+                           stateStr);
+            goto cleanup;
+        }
+        lnk->state = state;
+    }
+
+    if (speedStr &&
+        virStrToLong_ui(speedStr, NULL, 10, &lnk->speed) < 0) {
+        virReportError(VIR_ERR_XML_ERROR,
+                       _("Unable to parse link speed: %s"),
+                       speedStr);
+        goto cleanup;
+    }
+
+    ret = 0;
+ cleanup:
+    VIR_FREE(stateStr);
+    VIR_FREE(speedStr);
+    return ret;
+}
+
+int
+virInterfaceLinkFormat(virBufferPtr buf,
+                       const virInterfaceLink *lnk)
+{
+    if (!lnk->speed && !lnk->state) {
+        /* If there's nothing to format, return early. */
+        return 0;
+    }
+
+    virBufferAddLit(buf, "<link");
+    if (lnk->speed)
+        virBufferAsprintf(buf, " speed='%u'", lnk->speed);
+    if (lnk->state)
+        virBufferAsprintf(buf, " state='%s'",
+                          virInterfaceStateTypeToString(lnk->state));
+    virBufferAddLit(buf, "/>\n");
+    return 0;
 }

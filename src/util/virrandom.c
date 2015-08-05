@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2013 Red Hat, Inc.
+ * Copyright (C) 2012-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,7 @@
 #include <inttypes.h>
 #include <math.h>
 #include <strings.h>
+#include <time.h>
 
 #include "virrandom.h"
 #include "virthread.h"
@@ -35,6 +36,8 @@
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
+
+VIR_LOG_INIT("util.random");
 
 /* The algorithm of virRandomBits relies on gnulib's guarantee that
  * 'random_r' matches the POSIX requirements on 'random' of being
@@ -54,7 +57,7 @@ enum {
 
 static char randomState[RANDOM_STATE_SIZE];
 static struct random_data randomData;
-static virMutex randomLock;
+static virMutex randomLock = VIR_MUTEX_INITIALIZER;
 
 
 static int
@@ -71,9 +74,6 @@ virRandomOnceInit(void)
     if (debug && virStrToLong_ui(debug, NULL, 0, &seed) < 0)
         return -1;
 #endif
-
-    if (virMutexInit(&randomLock) < 0)
-        return -1;
 
     if (initstate_r(seed,
                     randomState,
@@ -163,7 +163,8 @@ uint32_t virRandomInt(uint32_t max)
 
 int
 virRandomGenerateWWN(char **wwn,
-                     const char *virt_type) {
+                     const char *virt_type)
+{
     const char *oui = NULL;
 
     if (!virt_type) {

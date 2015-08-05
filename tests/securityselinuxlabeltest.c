@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011-2013 Red Hat, Inc.
+ * Copyright (C) 2011-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,6 +28,7 @@
 
 #include <selinux/selinux.h>
 #include <selinux/context.h>
+#include <attr/xattr.h>
 
 #include "internal.h"
 #include "testutils.h"
@@ -42,6 +43,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
+VIR_LOG_INIT("tests.securityselinuxlabeltest");
+
 static virCapsPtr caps;
 static virDomainXMLOptionPtr xmlopt;
 
@@ -54,6 +57,37 @@ struct testSELinuxFile {
     char *context;
 };
 
+static int
+testUserXattrEnabled(void)
+{
+    int ret = -1;
+    ssize_t len;
+    const char *con_value = "system_u:object_r:svirt_image_t:s0:c41,c264";
+    char *path = NULL;
+    if (virAsprintf(&path, "%s/securityselinuxlabeldata/testxattr",
+                    abs_builddir) < 0)
+        goto cleanup;
+
+    if (virFileMakePath(abs_builddir "/securityselinuxlabeldata") < 0 ||
+        virFileTouch(path, 0600) < 0)
+        goto cleanup;
+
+    len = setxattr(path, "user.libvirt.selinux", con_value,
+                   strlen(con_value), 0);
+    if (len < 0) {
+        if (errno == EOPNOTSUPP)
+            ret = 0;
+        goto cleanup;
+    }
+
+    ret = 1;
+
+ cleanup:
+    unlink(path);
+    rmdir(abs_builddir "/securityselinuxlabeldata");
+    VIR_FREE(path);
+    return ret;
+}
 
 static int
 testSELinuxMungePath(char **path)
@@ -86,9 +120,8 @@ testSELinuxLoadFileList(const char *testname,
                     abs_srcdir, testname) < 0)
         goto cleanup;
 
-    if (!(fp = fopen(path, "r"))) {
+    if (!(fp = fopen(path, "r")))
         goto cleanup;
-    }
 
     if (VIR_ALLOC_N(line, 1024) < 0)
         goto cleanup;
@@ -137,7 +170,7 @@ testSELinuxLoadFileList(const char *testname,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FORCE_FCLOSE(fp);
     VIR_FREE(path);
     VIR_FREE(line);
@@ -149,7 +182,6 @@ static virDomainDefPtr
 testSELinuxLoadDef(const char *testname)
 {
     char *xmlfile = NULL;
-    char *xmlstr = NULL;
     virDomainDefPtr def = NULL;
     size_t i;
 
@@ -157,21 +189,15 @@ testSELinuxLoadDef(const char *testname)
                     abs_srcdir, testname) < 0)
         goto cleanup;
 
-    if (virFileReadAll(xmlfile, 1024*1024, &xmlstr) < 0) {
-        goto cleanup;
-    }
-
-    if (!(def = virDomainDefParseString(xmlstr, caps, xmlopt,
-                                        QEMU_EXPECTED_VIRT_TYPES,
-                                        0)))
+    if (!(def = virDomainDefParseFile(xmlfile, caps, xmlopt, 0)))
         goto cleanup;
 
     for (i = 0; i < def->ndisks; i++) {
-        if (def->disks[i]->type != VIR_DOMAIN_DISK_TYPE_FILE &&
-            def->disks[i]->type != VIR_DOMAIN_DISK_TYPE_BLOCK)
+        if (def->disks[i]->src->type != VIR_STORAGE_TYPE_FILE &&
+            def->disks[i]->src->type != VIR_STORAGE_TYPE_BLOCK)
             continue;
 
-        if (testSELinuxMungePath(&def->disks[i]->src) < 0)
+        if (testSELinuxMungePath(&def->disks[i]->src->path) < 0)
             goto cleanup;
     }
 
@@ -198,9 +224,8 @@ testSELinuxLoadDef(const char *testname)
         testSELinuxMungePath(&def->os.initrd) < 0)
         goto cleanup;
 
-cleanup:
+ cleanup:
     VIR_FREE(xmlfile);
-    VIR_FREE(xmlstr);
     return def;
 }
 
@@ -296,7 +321,7 @@ testSELinuxLabeling(const void *opaque)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     if (testSELinuxDeleteDisks(files, nfiles) < 0)
         VIR_WARN("unable to fully clean up");
 
@@ -306,9 +331,9 @@ cleanup:
         VIR_FREE(files[i].context);
     }
     VIR_FREE(files);
-    if (ret < 0 && virTestGetVerbose()) {
+    if (ret < 0) {
         virErrorPtr err = virGetLastError();
-        fprintf(stderr, "%s\n", err ? err->message : "<unknown>");
+        VIR_TEST_VERBOSE("%s\n", err ? err->message : "<unknown>");
     }
     return ret;
 }
@@ -319,13 +344,16 @@ static int
 mymain(void)
 {
     int ret = 0;
+    int rc = testUserXattrEnabled();
+
+    if (rc < 0)
+        return EXIT_FAILURE;
+    if (!rc)
+        return EXIT_AM_SKIP;
 
     if (!(mgr = virSecurityManagerNew("selinux", "QEMU", false, true, false))) {
         virErrorPtr err = virGetLastError();
-        if (err->code == VIR_ERR_CONFIG_UNSUPPORTED)
-            return EXIT_AM_SKIP;
-
-        fprintf(stderr, "Unable to initialize security driver: %s\n",
+        VIR_TEST_VERBOSE("Unable to initialize security driver: %s\n",
                 err->message);
         return EXIT_FAILURE;
     }

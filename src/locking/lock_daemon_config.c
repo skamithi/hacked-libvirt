@@ -1,5 +1,5 @@
 /*
- * lock_daemon_config.h: virtlockd config file handling
+ * lock_daemon_config.c: virtlockd config file handling
  *
  * Copyright (C) 2006-2012 Red Hat, Inc.
  * Copyright (C) 2006 Daniel P. Berrange
@@ -35,6 +35,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_CONF
 
+VIR_LOG_INIT("locking.lock_daemon_config");
+
 
 /* A helper function used by each of the following macros.  */
 static int
@@ -45,8 +47,8 @@ checkType(virConfValuePtr p, const char *filename,
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("remoteReadConfigFile: %s: %s: invalid type:"
                          " got %s; expected %s"), filename, key,
-                       virConfTypeName(p->type),
-                       virConfTypeName(required_type));
+                       virConfTypeToString(p->type),
+                       virConfTypeToString(required_type));
         return -1;
     }
     return 0;
@@ -68,12 +70,24 @@ checkType(virConfValuePtr p, const char *filename,
         }                                                               \
     } while (0)
 
-/* Like GET_CONF_STR, but for integral values.  */
+/* Like GET_CONF_STR, but for signed integer values.  */
 #define GET_CONF_INT(conf, filename, var_name)                          \
     do {                                                                \
         virConfValuePtr p = virConfGetValue(conf, #var_name);           \
         if (p) {                                                        \
-            if (checkType(p, filename, #var_name, VIR_CONF_LONG) < 0)   \
+            if (p->type != VIR_CONF_ULONG &&                            \
+                checkType(p, filename, #var_name, VIR_CONF_LONG) < 0)   \
+                goto error;                                             \
+            data->var_name = p->l;                                      \
+        }                                                               \
+    } while (0)
+
+/* Like GET_CONF_STR, but for unsigned integer values.  */
+#define GET_CONF_UINT(conf, filename, var_name)                         \
+    do {                                                                \
+        virConfValuePtr p = virConfGetValue(conf, #var_name);           \
+        if (p) {                                                        \
+            if (checkType(p, filename, #var_name, VIR_CONF_ULONG) < 0)  \
                 goto error;                                             \
             data->var_name = p->l;                                      \
         }                                                               \
@@ -100,7 +114,7 @@ virLockDaemonConfigFilePath(bool privileged, char **configfile)
 
     return 0;
 
-error:
+ error:
     return -1;
 }
 
@@ -113,7 +127,6 @@ virLockDaemonConfigNew(bool privileged ATTRIBUTE_UNUSED)
     if (VIR_ALLOC(data) < 0)
         return NULL;
 
-    data->log_buffer_size = 64;
     data->max_clients = 1024;
 
     return data;
@@ -136,15 +149,14 @@ virLockDaemonConfigLoadOptions(virLockDaemonConfigPtr data,
                                const char *filename,
                                virConfPtr conf)
 {
-    GET_CONF_INT(conf, filename, log_level);
+    GET_CONF_UINT(conf, filename, log_level);
     GET_CONF_STR(conf, filename, log_filters);
     GET_CONF_STR(conf, filename, log_outputs);
-    GET_CONF_INT(conf, filename, log_buffer_size);
-    GET_CONF_INT(conf, filename, max_clients);
+    GET_CONF_UINT(conf, filename, max_clients);
 
     return 0;
 
-error:
+ error:
     return -1;
 }
 

@@ -27,29 +27,25 @@ testJSONFromString(const void *data)
 
     if (info->pass) {
         if (!json) {
-            if (virTestGetVerbose())
-                fprintf(stderr, "Fail to parse %s\n", info->doc);
+            VIR_TEST_VERBOSE("Fail to parse %s\n", info->doc);
             ret = -1;
             goto cleanup;
         } else {
-            if (virTestGetDebug())
-                fprintf(stderr, "Parsed %s\n", info->doc);
+            VIR_TEST_DEBUG("Parsed %s\n", info->doc);
         }
     } else {
         if (json) {
-            if (virTestGetVerbose())
-                fprintf(stderr, "Should not have parsed %s\n", info->doc);
+            VIR_TEST_VERBOSE("Should not have parsed %s\n", info->doc);
             ret = -1;
             goto cleanup;
         } else {
-            if (virTestGetDebug())
-                fprintf(stderr, "Fail to parse %s\n", info->doc);
+            VIR_TEST_DEBUG("Fail to parse %s\n", info->doc);
         }
     }
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virJSONValueFree(json);
     return ret;
 }
@@ -66,8 +62,7 @@ testJSONAddRemove(const void *data)
 
     json = virJSONValueFromString(info->doc);
     if (!json) {
-        if (virTestGetVerbose())
-            fprintf(stderr, "Fail to parse %s\n", info->doc);
+        VIR_TEST_VERBOSE("Fail to parse %s\n", info->doc);
         ret = -1;
         goto cleanup;
     }
@@ -75,54 +70,47 @@ testJSONAddRemove(const void *data)
     switch (virJSONValueObjectRemoveKey(json, "name", &name)) {
     case 1:
         if (!info->pass) {
-            if (virTestGetVerbose())
-                fprintf(stderr, "should not remove from non-object %s\n",
-                        info->doc);
+            VIR_TEST_VERBOSE("should not remove from non-object %s\n",
+                             info->doc);
             goto cleanup;
         }
         break;
     case -1:
         if (!info->pass)
             ret = 0;
-        else if (virTestGetVerbose())
-            fprintf(stderr, "Fail to recognize non-object %s\n", info->doc);
+        else
+            VIR_TEST_VERBOSE("Fail to recognize non-object %s\n", info->doc);
         goto cleanup;
     default:
-        if (virTestGetVerbose())
-            fprintf(stderr, "unexpected result when removing from %s\n",
-                    info->doc);
+        VIR_TEST_VERBOSE("unexpected result when removing from %s\n",
+                         info->doc);
         goto cleanup;
     }
     if (STRNEQ_NULLABLE(virJSONValueGetString(name), "sample")) {
-        if (virTestGetVerbose())
-            fprintf(stderr, "unexpected value after removing name: %s\n",
-                    NULLSTR(virJSONValueGetString(name)));
+        VIR_TEST_VERBOSE("unexpected value after removing name: %s\n",
+                         NULLSTR(virJSONValueGetString(name)));
         goto cleanup;
     }
     if (virJSONValueObjectRemoveKey(json, "name", NULL)) {
-        if (virTestGetVerbose())
-            fprintf(stderr, "%s",
-                    "unexpected success when removing missing key\n");
+        VIR_TEST_VERBOSE("%s",
+                         "unexpected success when removing missing key\n");
         goto cleanup;
     }
     if (virJSONValueObjectAppendString(json, "newname", "foo") < 0) {
-        if (virTestGetVerbose())
-            fprintf(stderr, "%s", "unexpected failure adding new key\n");
+        VIR_TEST_VERBOSE("%s", "unexpected failure adding new key\n");
         goto cleanup;
     }
     if (!(result = virJSONValueToString(json, false))) {
-        if (virTestGetVerbose())
-            fprintf(stderr, "%s", "failed to stringize result\n");
+        VIR_TEST_VERBOSE("%s", "failed to stringize result\n");
         goto cleanup;
     }
     if (STRNEQ(info->expect, result)) {
-        if (virTestGetVerbose())
-            virtTestDifference(stderr, info->expect, result);
+        virtTestDifference(stderr, info->expect, result);
         goto cleanup;
     }
     ret = 0;
 
-cleanup:
+ cleanup:
     virJSONValueFree(json);
     virJSONValueFree(name);
     VIR_FREE(result);
@@ -151,8 +139,8 @@ mymain(void)
 
     DO_TEST_PARSE("Simple", "{\"return\": {}, \"id\": \"libvirt-1\"}");
     DO_TEST_PARSE("NotSoSimple", "{\"QMP\": {\"version\": {\"qemu\":"
-            "{\"micro\": 91, \"minor\": 13, \"major\": 0},"
-            "\"package\": \" (qemu-kvm-devel)\"}, \"capabilities\": []}}");
+                  "{\"micro\": 91, \"minor\": 13, \"major\": 0},"
+                  "\"package\": \" (qemu-kvm-devel)\"}, \"capabilities\": []}}");
 
 
     DO_TEST_PARSE("Harder", "{\"return\": [{\"filename\": "

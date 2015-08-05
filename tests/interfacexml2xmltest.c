@@ -75,6 +75,7 @@ mymain(void)
         ret = -1
 
     DO_TEST("ethernet-dhcp");
+    DO_TEST("ethernet-dhcp-and-multi-static");
     DO_TEST("ethernet-static");
     DO_TEST("ethernet-static-no-prefix");
     DO_TEST("bridge");
@@ -94,7 +95,7 @@ mymain(void)
     DO_TEST("ipv6-static-multi");
     DO_TEST("ipv6-static");
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

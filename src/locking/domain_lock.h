@@ -1,5 +1,5 @@
 /*
- * domain_lock.c: Locking for domain lifecycle operations
+ * domain_lock.h: Locking for domain lifecycle operations
  *
  * Copyright (C) 2010-2011 Red Hat, Inc.
  *
@@ -49,6 +49,14 @@ int virDomainLockDiskAttach(virLockManagerPluginPtr plugin,
 int virDomainLockDiskDetach(virLockManagerPluginPtr plugin,
                             virDomainObjPtr dom,
                             virDomainDiskDefPtr disk);
+
+int virDomainLockImageAttach(virLockManagerPluginPtr plugin,
+                             const char *uri,
+                             virDomainObjPtr dom,
+                             virStorageSourcePtr src);
+int virDomainLockImageDetach(virLockManagerPluginPtr plugin,
+                             virDomainObjPtr dom,
+                             virStorageSourcePtr src);
 
 int virDomainLockLeaseAttach(virLockManagerPluginPtr plugin,
                              const char *uri,

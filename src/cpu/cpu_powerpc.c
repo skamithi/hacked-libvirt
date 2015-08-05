@@ -36,7 +36,9 @@
 
 #define VIR_FROM_THIS VIR_FROM_CPU
 
-static const virArch archs[] = { VIR_ARCH_PPC64 };
+VIR_LOG_INIT("cpu.cpu_powerpc");
+
+static const virArch archs[] = { VIR_ARCH_PPC64, VIR_ARCH_PPC64LE };
 
 struct ppc_vendor {
     char *name;
@@ -96,6 +98,14 @@ ppcModelFindPVR(const struct ppc_map *map,
 
         model = model->next;
     }
+
+    /* PowerPC Processor Version Register is interpreted as follows :
+     * Higher order 16 bits : Power ISA generation.
+     * Lower order 16 bits : CPU chip version number.
+     * If the exact CPU isn't found, return the nearest matching CPU generation
+     */
+    if (pvr & 0x0000FFFFul)
+        return ppcModelFindPVR(map, (pvr & 0xFFFF0000ul));
 
     return NULL;
 }
@@ -161,7 +171,7 @@ ppcModelFromCPU(const virCPUDef *cpu,
 
     return model;
 
-error:
+ error:
     ppcModelFree(model);
     return NULL;
 }
@@ -196,10 +206,10 @@ ppcVendorLoad(xmlXPathContextPtr ctxt,
         map->vendors = vendor;
     }
 
-cleanup:
+ cleanup:
     return 0;
 
-ignore:
+ ignore:
     ppcVendorFree(vendor);
     goto cleanup;
 }
@@ -261,17 +271,17 @@ ppcModelLoad(xmlXPathContextPtr ctxt,
         map->models = model;
     }
 
-cleanup:
+ cleanup:
     VIR_FREE(vendor);
     return 0;
 
-ignore:
+ ignore:
     ppcModelFree(model);
     goto cleanup;
 }
 
 static int
-ppcMapLoadCallback(enum cpuMapElement element,
+ppcMapLoadCallback(cpuMapElement element,
                    xmlXPathContextPtr ctxt,
                    void *data)
 {
@@ -324,7 +334,7 @@ ppcLoadMap(void)
 
     return map;
 
-error:
+ error:
     ppcMapFree(map);
     return NULL;
 }
@@ -429,7 +439,7 @@ ppcCompute(virCPUDefPtr host,
 
     ret = VIR_CPU_COMPARE_IDENTICAL;
 
-cleanup:
+ cleanup:
     ppcMapFree(map);
     ppcModelFree(host_model);
     ppcModelFree(guest_model);
@@ -438,13 +448,19 @@ cleanup:
 
 static virCPUCompareResult
 ppcCompare(virCPUDefPtr host,
-           virCPUDefPtr cpu)
+           virCPUDefPtr cpu,
+           bool failIncompatible)
 {
     if ((cpu->arch == VIR_ARCH_NONE || host->arch == cpu->arch) &&
         STREQ(host->model, cpu->model))
         return VIR_CPU_COMPARE_IDENTICAL;
 
-    return VIR_CPU_COMPARE_INCOMPATIBLE;
+    if (failIncompatible) {
+        virReportError(VIR_ERR_CPU_INCOMPATIBLE, NULL);
+        return VIR_CPU_COMPARE_ERROR;
+    } else {
+        return VIR_CPU_COMPARE_INCOMPATIBLE;
+    }
 }
 
 static int
@@ -485,7 +501,7 @@ ppcDecode(virCPUDefPtr cpu,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     ppcMapFree(map);
 
     return ret;
@@ -532,7 +548,7 @@ static int
 ppcUpdate(virCPUDefPtr guest,
           const virCPUDef *host)
 {
-    switch ((enum virCPUMode) guest->mode) {
+    switch ((virCPUMode) guest->mode) {
     case VIR_CPU_MODE_HOST_MODEL:
     case VIR_CPU_MODE_HOST_PASSTHROUGH:
         guest->match = VIR_CPU_MATCH_EXACT;
@@ -554,8 +570,8 @@ ppcUpdate(virCPUDefPtr guest,
 static virCPUDefPtr
 ppcBaseline(virCPUDefPtr *cpus,
             unsigned int ncpus,
-            const char **models,
-            unsigned int nmodels,
+            const char **models ATTRIBUTE_UNUSED,
+            unsigned int nmodels ATTRIBUTE_UNUSED,
             unsigned int flags)
 {
     struct ppc_map *map = NULL;
@@ -564,7 +580,8 @@ ppcBaseline(virCPUDefPtr *cpus,
     virCPUDefPtr cpu = NULL;
     size_t i;
 
-    virCheckFlags(VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES, NULL);
+    virCheckFlags(VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES |
+                  VIR_CONNECT_BASELINE_CPU_MIGRATABLE, NULL);
 
     if (!(map = ppcLoadMap()))
         goto error;
@@ -572,13 +589,6 @@ ppcBaseline(virCPUDefPtr *cpus,
     if (!(model = ppcModelFind(map, cpus[0]->model))) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Unknown CPU model %s"), cpus[0]->model);
-        goto error;
-    }
-
-    if (!cpuModelIsAllowed(model->name, models, nmodels)) {
-        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
-                        _("CPU model %s is not supported by hypervisor"),
-                        model->name);
         goto error;
     }
 
@@ -630,14 +640,57 @@ ppcBaseline(virCPUDefPtr *cpus,
     cpu->type = VIR_CPU_TYPE_GUEST;
     cpu->match = VIR_CPU_MATCH_EXACT;
 
-cleanup:
+ cleanup:
     ppcMapFree(map);
 
     return cpu;
 
-error:
+ error:
     virCPUDefFree(cpu);
     cpu = NULL;
+    goto cleanup;
+}
+
+static int
+ppcGetModels(char ***models)
+{
+    struct ppc_map *map;
+    struct ppc_model *model;
+    char *name;
+    size_t nmodels = 0;
+
+    if (!(map = ppcLoadMap()))
+        goto error;
+
+    if (models && VIR_ALLOC_N(*models, 0) < 0)
+        goto error;
+
+    model = map->models;
+    while (model != NULL) {
+        if (models) {
+            if (VIR_STRDUP(name, model->name) < 0)
+                goto error;
+
+            if (VIR_APPEND_ELEMENT(*models, nmodels, name) < 0)
+                goto error;
+        } else {
+            nmodels++;
+        }
+
+        model = model->next;
+    }
+
+ cleanup:
+    ppcMapFree(map);
+
+    return nmodels;
+
+ error:
+    if (models) {
+        virStringFreeList(*models);
+        *models = NULL;
+    }
+    nmodels = -1;
     goto cleanup;
 }
 
@@ -654,4 +707,5 @@ struct cpuArchDriver cpuDriverPowerPC = {
     .baseline   = ppcBaseline,
     .update     = ppcUpdate,
     .hasFeature = NULL,
+    .getModels  = ppcGetModels,
 };

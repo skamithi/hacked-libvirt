@@ -19,33 +19,22 @@
 static int
 testCompareXMLToXMLFiles(const char *inxml, const char *outxml)
 {
-    char *inXmlData = NULL;
-    char *outXmlData = NULL;
     char *actual = NULL;
     int ret = -1;
     virStoragePoolDefPtr dev = NULL;
 
-    if (virtTestLoadFile(inxml, &inXmlData) < 0)
-        goto fail;
-    if (virtTestLoadFile(outxml, &outXmlData) < 0)
-        goto fail;
-
-    if (!(dev = virStoragePoolDefParseString(inXmlData)))
+    if (!(dev = virStoragePoolDefParseFile(inxml)))
         goto fail;
 
     if (!(actual = virStoragePoolDefFormat(dev)))
         goto fail;
 
-    if (STRNEQ(outXmlData, actual)) {
-        virtTestDifference(stderr, outXmlData, actual);
+    if (virtTestCompareToFile(actual, outxml) < 0)
         goto fail;
-    }
 
     ret = 0;
 
  fail:
-    VIR_FREE(inXmlData);
-    VIR_FREE(outXmlData);
     VIR_FREE(actual);
     virStoragePoolDefFree(dev);
     return ret;
@@ -67,7 +56,7 @@ testCompareXMLToXMLHelper(const void *data)
 
     result = testCompareXMLToXMLFiles(inxml, outxml);
 
-cleanup:
+ cleanup:
     VIR_FREE(inxml);
     VIR_FREE(outxml);
 
@@ -98,14 +87,20 @@ mymain(void)
     DO_TEST("pool-scsi");
     DO_TEST("pool-scsi-type-scsi-host");
     DO_TEST("pool-scsi-type-fc-host");
+    DO_TEST("pool-scsi-type-fc-host-managed");
     DO_TEST("pool-mpath");
     DO_TEST("pool-iscsi-multiiqn");
     DO_TEST("pool-iscsi-vendor-product");
     DO_TEST("pool-sheepdog");
     DO_TEST("pool-gluster");
     DO_TEST("pool-gluster-sub");
+    DO_TEST("pool-scsi-type-scsi-host-stable");
+#ifdef WITH_STORAGE_ZFS
+    DO_TEST("pool-zfs");
+    DO_TEST("pool-zfs-sourcedev");
+#endif
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

@@ -25,20 +25,12 @@ static virDomainXMLOptionPtr xmlopt;
 static int
 testCompareXMLToXMLFiles(const char *inxml, const char *outxml, bool live)
 {
-    char *inXmlData = NULL;
-    char *outXmlData = NULL;
     char *actual = NULL;
     int ret = -1;
     virDomainDefPtr def = NULL;
 
-    if (virtTestLoadFile(inxml, &inXmlData) < 0)
-        goto fail;
-    if (virtTestLoadFile(outxml, &outXmlData) < 0)
-        goto fail;
-
-    if (!(def = virDomainDefParseString(inXmlData, caps, xmlopt,
-                                        1 << VIR_DOMAIN_VIRT_LXC,
-                                        live ? 0 : VIR_DOMAIN_XML_INACTIVE)))
+    if (!(def = virDomainDefParseFile(inxml, caps, xmlopt,
+                                      live ? 0 : VIR_DOMAIN_DEF_PARSE_INACTIVE)))
         goto fail;
 
     if (!virDomainDefCheckABIStability(def, def)) {
@@ -46,18 +38,14 @@ testCompareXMLToXMLFiles(const char *inxml, const char *outxml, bool live)
         goto fail;
     }
 
-    if (!(actual = virDomainDefFormat(def, VIR_DOMAIN_XML_SECURE)))
+    if (!(actual = virDomainDefFormat(def, VIR_DOMAIN_DEF_FORMAT_SECURE)))
         goto fail;
 
-    if (STRNEQ(outXmlData, actual)) {
-        virtTestDifference(stderr, outXmlData, actual);
+    if (virtTestCompareToFile(actual, outxml) < 0)
         goto fail;
-    }
 
     ret = 0;
  fail:
-    VIR_FREE(inXmlData);
-    VIR_FREE(outXmlData);
     VIR_FREE(actual);
     virDomainDefFree(def);
     return ret;
@@ -101,7 +89,7 @@ testCompareXMLToXMLHelper(const void *data)
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FREE(xml_in);
     VIR_FREE(xml_out);
     return ret;
@@ -144,11 +132,12 @@ mymain(void)
     DO_TEST_DIFFERENT("filesystem-ram");
     DO_TEST("filesystem-root");
     DO_TEST("idmap");
+    DO_TEST("capabilities");
 
     virObjectUnref(caps);
     virObjectUnref(xmlopt);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

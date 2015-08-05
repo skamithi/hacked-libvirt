@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Red Hat, Inc.
+ * Copyright (C) 2009-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -116,7 +116,8 @@ virSocketAddrParseInternal(struct addrinfo **res,
  *
  * Returns the length of the network address or -1 in case of error.
  */
-int virSocketAddrParse(virSocketAddrPtr addr, const char *val, int family) {
+int virSocketAddrParse(virSocketAddrPtr addr, const char *val, int family)
+{
     int len;
     struct addrinfo *res;
 
@@ -150,7 +151,8 @@ int virSocketAddrParse(virSocketAddrPtr addr, const char *val, int family) {
  * Returns the length of the network address or -1 in case of error.
  */
 int
-virSocketAddrParseIPv4(virSocketAddrPtr addr, const char *val) {
+virSocketAddrParseIPv4(virSocketAddrPtr addr, const char *val)
+{
     return virSocketAddrParse(addr, val, AF_INET);
 }
 
@@ -164,7 +166,8 @@ virSocketAddrParseIPv4(virSocketAddrPtr addr, const char *val) {
  * Returns the length of the network address or -1 in case of error.
  */
 int
-virSocketAddrParseIPv6(virSocketAddrPtr addr, const char *val) {
+virSocketAddrParseIPv6(virSocketAddrPtr addr, const char *val)
+{
     return virSocketAddrParse(addr, val, AF_INET6);
 }
 
@@ -340,7 +343,7 @@ virSocketAddrFormatFull(const virSocketAddr *addr,
 
     return addrstr;
 
-error:
+ error:
     return NULL;
 }
 
@@ -355,7 +358,8 @@ error:
  * Returns 0 on success, -1 on failure
  */
 int
-virSocketAddrSetPort(virSocketAddrPtr addr, int port) {
+virSocketAddrSetPort(virSocketAddrPtr addr, int port)
+{
     if (addr == NULL)
         return -1;
 
@@ -380,7 +384,8 @@ virSocketAddrSetPort(virSocketAddrPtr addr, int port) {
  * Returns -1 if @addr is invalid
  */
 int
-virSocketAddrGetPort(virSocketAddrPtr addr) {
+virSocketAddrGetPort(virSocketAddrPtr addr)
+{
     if (addr == NULL)
         return -1;
 
@@ -401,7 +406,8 @@ virSocketAddrGetPort(virSocketAddrPtr addr) {
  *
  * Returns 0 in case of success and -1 in case of error
  */
-int virSocketAddrIsNetmask(virSocketAddrPtr netmask) {
+int virSocketAddrIsNetmask(virSocketAddrPtr netmask)
+{
     int n = virSocketAddrGetNumNetmaskBits(netmask);
     if (n < 0)
         return -1;
@@ -424,6 +430,7 @@ virSocketAddrMask(const virSocketAddr *addr,
                   const virSocketAddr *netmask,
                   virSocketAddrPtr network)
 {
+    memset(network, 0, sizeof(*network));
     if (addr->data.stor.ss_family != netmask->data.stor.ss_family) {
         network->data.stor.ss_family = AF_UNSPEC;
         return -1;
@@ -549,7 +556,8 @@ virSocketAddrBroadcastByPrefix(const virSocketAddr *addr,
  *         -1 in case of error
  */
 int virSocketAddrCheckNetmask(virSocketAddrPtr addr1, virSocketAddrPtr addr2,
-                              virSocketAddrPtr netmask) {
+                              virSocketAddrPtr netmask)
+{
     size_t i;
 
     if ((addr1 == NULL) || (addr2 == NULL) || (netmask == NULL))
@@ -605,7 +613,8 @@ int virSocketAddrCheckNetmask(virSocketAddrPtr addr1, virSocketAddrPtr addr2,
  *
  * Returns the size of the range or -1 in case of failure
  */
-int virSocketAddrGetRange(virSocketAddrPtr start, virSocketAddrPtr end) {
+int virSocketAddrGetRange(virSocketAddrPtr start, virSocketAddrPtr end)
+{
     int ret = 0;
     size_t i;
 
@@ -684,9 +693,9 @@ int virSocketAddrGetNumNetmaskBits(const virSocketAddr *netmask)
         j = i << 3;
         while (j < (8 * 4)) {
             bit = 1 << (7 - (j & 7));
-            if ((tm[j >> 3] & bit)) {
+            if ((tm[j >> 3] & bit))
                 c++;
-            } else
+            else
                 break;
             j++;
         }
@@ -718,9 +727,9 @@ int virSocketAddrGetNumNetmaskBits(const virSocketAddr *netmask)
         j = i << 4;
         while (j < (16 * 8)) {
             bit = 1 << (15 - (j & 0xf));
-            if ((tm[j >> 4] & bit)) {
+            if ((tm[j >> 4] & bit))
                 c++;
-            } else
+            else
                 break;
             j++;
         }
@@ -793,7 +802,7 @@ virSocketAddrPrefixToNetmask(unsigned int prefix,
         result = 0;
     }
 
-error:
+ error:
     return result;
  }
 
@@ -823,6 +832,12 @@ virSocketAddrGetIpPrefix(const virSocketAddr *address,
          */
         unsigned char octet
             = ntohl(address->data.inet4.sin_addr.s_addr) >> 24;
+
+        /* If address is 0.0.0.0, we surely want to have 0 prefix for
+         * the default route. */
+        if (address->data.inet4.sin_addr.s_addr == 0)
+            return 0;
+
         if ((octet & 0x80) == 0) {
             /* Class A network */
             return 8;
@@ -835,6 +850,8 @@ virSocketAddrGetIpPrefix(const virSocketAddr *address,
         }
         return -1;
     } else if (VIR_SOCKET_ADDR_IS_FAMILY(address, AF_INET6)) {
+        if (virSocketAddrIsWildcard(address))
+            return 0;
         return 64;
     }
 
@@ -847,26 +864,53 @@ virSocketAddrGetIpPrefix(const virSocketAddr *address,
 }
 
 /**
- * virSocketAddrIsNumeric:
+ * virSocketAddrNumericFamily:
  * @address: address to check
  *
- * Check if passed address is an IP address in numeric format. For
- * instance, for 0.0.0.0 true is returned, for 'examplehost"
- * false is returned.
+ * Check if passed address is an IP address in numeric format.
  *
- * Returns: true if @address is an IP address,
- *          false otherwise
+ * Returns: AF_INET or AF_INET6 if @address is an numeric IP address,
+ *          -1 otherwise.
  */
-bool
-virSocketAddrIsNumeric(const char *address)
+int
+virSocketAddrNumericFamily(const char *address)
 {
     struct addrinfo *res;
     unsigned short family;
 
     if (virSocketAddrParseInternal(&res, address, AF_UNSPEC, false) < 0)
-        return false;
+        return -1;
 
     family = res->ai_addr->sa_family;
     freeaddrinfo(res);
-    return family == AF_INET || family == AF_INET6;
+    return family;
+}
+
+/**
+ * virSocketAddrIsNumericLocalhost:
+ * @address: address to check
+ *
+ * Check if passed address is a numeric 'localhost' address.
+ *
+ * Returns: true if @address is a numeric 'localhost' address,
+ *          false otherwise
+ */
+bool
+virSocketAddrIsNumericLocalhost(const char *addr)
+{
+    virSocketAddr res;
+    struct in_addr tmp = { .s_addr = htonl(INADDR_LOOPBACK) };
+
+    if (virSocketAddrParse(&res, addr, AF_UNSPEC) < 0)
+        return false;
+
+    switch (res.data.stor.ss_family) {
+    case AF_INET:
+        return memcmp(&res.data.inet4.sin_addr.s_addr, &tmp.s_addr,
+                     sizeof(res.data.inet4.sin_addr.s_addr)) == 0;
+    case AF_INET6:
+        return IN6_IS_ADDR_LOOPBACK(&res.data.inet6.sin6_addr);
+    }
+
+    return false;
 }

@@ -10,7 +10,7 @@
 #include <libvirt/virterror.h>
 
 #define VIR_DEBUG(fmt) printf("%s:%d: " fmt "\n", __func__, __LINE__)
-#define STREQ(a,b) (strcmp(a,b) == 0)
+#define STREQ(a, b) (strcmp(a, b) == 0)
 
 #ifndef ATTRIBUTE_UNUSED
 # define ATTRIBUTE_UNUSED __attribute__((__unused__))
@@ -244,6 +244,47 @@ networkEventToString(int event)
     return ret;
 }
 
+static const char *
+guestAgentLifecycleEventStateToString(int event)
+{
+    const char *ret = "";
+
+    switch ((virConnectDomainEventAgentLifecycleState) event) {
+    case VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_STATE_DISCONNECTED:
+        ret = "Disconnected";
+        break;
+
+    case VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_STATE_CONNECTED:
+        ret = "Connected";
+        break;
+    }
+
+    return ret;
+}
+
+static const char *
+guestAgentLifecycleEventReasonToString(int event)
+{
+    const char *ret = "";
+
+    switch ((virConnectDomainEventAgentLifecycleReason) event) {
+    case VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_UNKNOWN:
+        ret = "Unknown";
+        break;
+
+    case VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_DOMAIN_STARTED:
+        ret = "Domain started";
+        break;
+
+    case VIR_CONNECT_DOMAIN_EVENT_AGENT_LIFECYCLE_REASON_CHANNEL:
+        ret = "Channel event";
+        break;
+    }
+
+    return ret;
+}
+
+
 static int myDomainEventCallback1(virConnectPtr conn ATTRIBUTE_UNUSED,
                                   virDomainPtr dom,
                                   int event,
@@ -464,6 +505,76 @@ static int myNetworkEventCallback(virConnectPtr conn ATTRIBUTE_UNUSED,
     return 0;
 }
 
+static int
+myDomainEventTunableCallback(virConnectPtr conn ATTRIBUTE_UNUSED,
+                             virDomainPtr dom,
+                             virTypedParameterPtr params,
+                             int nparams,
+                             void *opaque ATTRIBUTE_UNUSED)
+{
+    size_t i;
+
+    printf("%s EVENT: Domain %s(%d) tunable updated:\n",
+           __func__, virDomainGetName(dom), virDomainGetID(dom));
+
+    for (i = 0; i < nparams; i++) {
+        switch (params[i].type) {
+        case VIR_TYPED_PARAM_INT:
+            printf("\t%s: %d\n", params[i].field, params[i].value.i);
+            break;
+        case VIR_TYPED_PARAM_UINT:
+            printf("\t%s: %u\n", params[i].field, params[i].value.ui);
+            break;
+        case VIR_TYPED_PARAM_LLONG:
+            printf("\t%s: %" PRId64 "\n", params[i].field,
+                   (int64_t) params[i].value.l);
+            break;
+        case VIR_TYPED_PARAM_ULLONG:
+            printf("\t%s: %" PRIu64 "\n", params[i].field,
+                   (uint64_t) params[i].value.ul);
+            break;
+        case VIR_TYPED_PARAM_DOUBLE:
+            printf("\t%s: %g\n", params[i].field, params[i].value.d);
+            break;
+        case VIR_TYPED_PARAM_BOOLEAN:
+            printf("\t%s: %d\n", params[i].field, params[i].value.b);
+            break;
+        case VIR_TYPED_PARAM_STRING:
+            printf("\t%s: %s\n", params[i].field, params[i].value.s);
+            break;
+        default:
+            printf("\t%s: unknown type\n", params[i].field);
+        }
+    }
+
+    return 0;
+}
+
+static int
+myDomainEventAgentLifecycleCallback(virConnectPtr conn ATTRIBUTE_UNUSED,
+                                    virDomainPtr dom,
+                                    int state,
+                                    int reason,
+                                    void *opaque ATTRIBUTE_UNUSED)
+{
+    printf("%s EVENT: Domain %s(%d) guest agent state changed: %s reason: %s\n",
+           __func__, virDomainGetName(dom), virDomainGetID(dom),
+           guestAgentLifecycleEventStateToString(state),
+           guestAgentLifecycleEventReasonToString(reason));
+
+    return 0;
+}
+
+static int
+myDomainEventDeviceAddedCallback(virConnectPtr conn ATTRIBUTE_UNUSED,
+                                 virDomainPtr dom,
+                                 const char *devAlias,
+                                 void *opaque ATTRIBUTE_UNUSED)
+{
+    printf("%s EVENT: Domain %s(%d) device added: %s\n",
+           __func__, virDomainGetName(dom), virDomainGetID(dom), devAlias);
+    return 0;
+}
 
 static void myFreeFunc(void *opaque)
 {
@@ -506,6 +617,9 @@ int main(int argc, char **argv)
     int callback14ret = -1;
     int callback15ret = -1;
     int callback16ret = -1;
+    int callback17ret = -1;
+    int callback18ret = -1;
+    int callback19ret = -1;
     struct sigaction action_stop;
 
     memset(&action_stop, 0, sizeof(action_stop));
@@ -624,6 +738,21 @@ int main(int argc, char **argv)
                                                       VIR_NETWORK_EVENT_ID_LIFECYCLE,
                                                       VIR_NETWORK_EVENT_CALLBACK(myNetworkEventCallback),
                                                       strdup("net callback"), myFreeFunc);
+    callback17ret = virConnectDomainEventRegisterAny(dconn,
+                                                     NULL,
+                                                     VIR_DOMAIN_EVENT_ID_TUNABLE,
+                                                     VIR_DOMAIN_EVENT_CALLBACK(myDomainEventTunableCallback),
+                                                     strdup("tunable"), myFreeFunc);
+    callback18ret = virConnectDomainEventRegisterAny(dconn,
+                                                     NULL,
+                                                     VIR_DOMAIN_EVENT_ID_AGENT_LIFECYCLE,
+                                                     VIR_DOMAIN_EVENT_CALLBACK(myDomainEventAgentLifecycleCallback),
+                                                     strdup("guest agent lifecycle"), myFreeFunc);
+    callback19ret = virConnectDomainEventRegisterAny(dconn,
+                                                     NULL,
+                                                     VIR_DOMAIN_EVENT_ID_DEVICE_ADDED,
+                                                     VIR_DOMAIN_EVENT_CALLBACK(myDomainEventDeviceAddedCallback),
+                                                     strdup("device added"), myFreeFunc);
 
     if ((callback1ret != -1) &&
         (callback2ret != -1) &&
@@ -639,7 +768,10 @@ int main(int argc, char **argv)
         (callback13ret != -1) &&
         (callback14ret != -1) &&
         (callback15ret != -1) &&
-        (callback16ret != -1)) {
+        (callback16ret != -1) &&
+        (callback17ret != -1) &&
+        (callback18ret != -1) &&
+        (callback19ret != -1)) {
         if (virConnectSetKeepAlive(dconn, 5, 3) < 0) {
             virErrorPtr err = virGetLastError();
             fprintf(stderr, "Failed to start keepalive protocol: %s\n",
@@ -671,6 +803,10 @@ int main(int argc, char **argv)
         virConnectDomainEventDeregisterAny(dconn, callback14ret);
         virConnectDomainEventDeregisterAny(dconn, callback15ret);
         virConnectNetworkEventDeregisterAny(dconn, callback16ret);
+        virConnectDomainEventDeregisterAny(dconn, callback17ret);
+        virConnectDomainEventDeregisterAny(dconn, callback18ret);
+        virConnectDomainEventDeregisterAny(dconn, callback19ret);
+
         if (callback8ret != -1)
             virConnectDomainEventDeregisterAny(dconn, callback8ret);
     }
@@ -678,9 +814,8 @@ int main(int argc, char **argv)
     virConnectUnregisterCloseCallback(dconn, connectClose);
 
     VIR_DEBUG("Closing connection");
-    if (dconn && virConnectClose(dconn) < 0) {
+    if (dconn && virConnectClose(dconn) < 0)
         printf("error closing\n");
-    }
 
     printf("done\n");
     return 0;

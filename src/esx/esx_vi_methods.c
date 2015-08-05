@@ -1,4 +1,3 @@
-
 /*
  * esx_vi_methods.c: client for the VMware VI API 2.5 to manage ESX hosts
  *
@@ -25,7 +24,6 @@
 
 #include "virbuffer.h"
 #include "viralloc.h"
-#include "virlog.h"
 #include "viruuid.h"
 #include "esx_vi_methods.h"
 #include "esx_util.h"
@@ -128,10 +126,8 @@
         virBufferAddLit(&buffer, "</"#_name">");                              \
         virBufferAddLit(&buffer, ESX_VI__SOAP__REQUEST_FOOTER);               \
                                                                               \
-        if (virBufferError(&buffer)) {                                        \
-            virReportOOMError();                                              \
+        if (virBufferCheckError(&buffer) < 0)                                 \
             goto cleanup;                                                     \
-        }                                                                     \
                                                                               \
         request = virBufferContentAndReset(&buffer);                          \
                                                                               \
@@ -249,7 +245,7 @@ esxVI_RetrieveServiceContent(esxVI_Context *ctx,
 
     result = 0;
 
-  cleanup:
+ cleanup:
     esxVI_Response_Free(&response);
 
     return result;

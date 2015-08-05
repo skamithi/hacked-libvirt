@@ -1,4 +1,3 @@
-
 #include <config.h>
 
 #include <stdio.h>
@@ -11,7 +10,7 @@
 #include "internal.h"
 #include "xen/xend_internal.h"
 #include "xen/xen_driver.h"
-#include "xenxs/xen_sxpr.h"
+#include "xenconfig/xen_sxpr.h"
 #include "testutils.h"
 #include "testutilsxen.h"
 #include "virstring.h"
@@ -24,21 +23,12 @@ static virDomainXMLOptionPtr xmlopt;
 static int
 testCompareFiles(const char *xml, const char *sexpr, int xendConfigVersion)
 {
-  char *xmlData = NULL;
-  char *sexprData = NULL;
   char *gotsexpr = NULL;
   int ret = -1;
   virDomainDefPtr def = NULL;
 
-  if (virtTestLoadFile(xml, &xmlData) < 0)
-      goto fail;
-
-  if (virtTestLoadFile(sexpr, &sexprData) < 0)
-      goto fail;
-
-  if (!(def = virDomainDefParseString(xmlData, caps, xmlopt,
-                                      1 << VIR_DOMAIN_VIRT_XEN,
-                                      VIR_DOMAIN_XML_INACTIVE)))
+  if (!(def = virDomainDefParseFile(xml, caps, xmlopt,
+                                    VIR_DOMAIN_DEF_PARSE_INACTIVE)))
       goto fail;
 
   if (!virDomainDefCheckABIStability(def, def)) {
@@ -49,16 +39,12 @@ testCompareFiles(const char *xml, const char *sexpr, int xendConfigVersion)
   if (!(gotsexpr = xenFormatSxpr(NULL, def, xendConfigVersion)))
       goto fail;
 
-  if (STRNEQ(sexprData, gotsexpr)) {
-      virtTestDifference(stderr, sexprData, gotsexpr);
+  if (virtTestCompareToFile(gotsexpr, sexpr) < 0)
       goto fail;
-  }
 
   ret = 0;
 
  fail:
-  VIR_FREE(xmlData);
-  VIR_FREE(sexprData);
   VIR_FREE(gotsexpr);
   virDomainDefFree(def);
 
@@ -89,7 +75,7 @@ testCompareHelper(const void *data)
 
     result = testCompareFiles(xml, args, info->version);
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
     VIR_FREE(args);
 
@@ -185,7 +171,7 @@ mymain(void)
     virObjectUnref(caps);
     virObjectUnref(xmlopt);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

@@ -28,8 +28,11 @@
 # else
 #  define DBusConnection void
 #  define DBusMessage void
+#  define dbus_message_unref(m) do {} while (0)
 # endif
 # include "internal.h"
+
+# include <stdarg.h>
 
 void virDBusSetSharedBus(bool shared);
 
@@ -38,8 +41,28 @@ bool virDBusHasSystemBus(void);
 void virDBusCloseSystemBus(void);
 DBusConnection *virDBusGetSessionBus(void);
 
+int virDBusCreateMethod(DBusMessage **call,
+                        const char *destination,
+                        const char *path,
+                        const char *iface,
+                        const char *member,
+                        const char *types, ...);
+int virDBusCreateMethodV(DBusMessage **call,
+                         const char *destination,
+                         const char *path,
+                         const char *iface,
+                         const char *member,
+                         const char *types,
+                         va_list args);
+int virDBusCreateReply(DBusMessage **reply,
+                       const char *types, ...);
+int virDBusCreateReplyV(DBusMessage **reply,
+                        const char *types,
+                        va_list args);
+
 int virDBusCallMethod(DBusConnection *conn,
                       DBusMessage **reply,
+                      virErrorPtr error,
                       const char *destination,
                       const char *path,
                       const char *iface,
@@ -47,6 +70,10 @@ int virDBusCallMethod(DBusConnection *conn,
                       const char *types, ...);
 int virDBusMessageRead(DBusMessage *msg,
                        const char *types, ...);
+void virDBusMessageUnref(DBusMessage *msg);
 
 int virDBusIsServiceEnabled(const char *name);
+int virDBusIsServiceRegistered(const char *name);
+
+bool virDBusErrorIsUnknownMethod(virErrorPtr err);
 #endif /* __VIR_DBUS_H__ */
