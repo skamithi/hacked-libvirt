@@ -1,0 +1,28 @@
+From: stanley karunditu <stanleyk@cumulusnetworks.com>
+Date: Wed, 5 Aug 2015 10:14:00 -0400
+Subject: remove conditional in test so that compilation on ubuntu 14.04 amd64
+ works.
+
+---
+ tests/virnetsockettest.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tests/virnetsockettest.c b/tests/virnetsockettest.c
+index 9e5a164..d217d3c 100644
+--- a/tests/virnetsockettest.c
++++ b/tests/virnetsockettest.c
+@@ -499,12 +499,12 @@ mymain(void)
+     if (virtTestRun("Socket UNIX Addrs", testSocketUNIXAddrs, NULL) < 0)
+         ret = -1;
+ 
+-#if 0
++//#if 0
+     if (virtTestRun("Socket External Command /dev/zero", testSocketCommandNormal, NULL) < 0)
+         ret = -1;
+     if (virtTestRun("Socket External Command /dev/does-not-exist", testSocketCommandFail, NULL) < 0)
+         ret = -1;
+-#endif
++//#endif
+ 
+     struct testSSHData sshData1 = {
+         .nodename = "somehost",
