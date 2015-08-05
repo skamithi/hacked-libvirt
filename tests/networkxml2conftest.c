@@ -21,8 +21,6 @@
 static int
 testCompareXMLToConfFiles(const char *inxml, const char *outconf, dnsmasqCapsPtr caps)
 {
-    char *inXmlData = NULL;
-    char *outConfData = NULL;
     char *actual = NULL;
     int ret = -1;
     virNetworkDefPtr dev = NULL;
@@ -31,16 +29,10 @@ testCompareXMLToConfFiles(const char *inxml, const char *outconf, dnsmasqCapsPtr
     char *pidfile = NULL;
     dnsmasqContext *dctx = NULL;
 
-    if (virtTestLoadFile(inxml, &inXmlData) < 0)
+    if (!(dev = virNetworkDefParseFile(inxml)))
         goto fail;
 
-    if (virtTestLoadFile(outconf, &outConfData) < 0)
-        goto fail;
-
-    if (!(dev = virNetworkDefParseString(inXmlData)))
-        goto fail;
-
-    if (VIR_ALLOC(obj) < 0)
+    if (!(obj = virNetworkObjNew()))
         goto fail;
 
     obj->def = dev;
@@ -53,20 +45,16 @@ testCompareXMLToConfFiles(const char *inxml, const char *outconf, dnsmasqCapsPtr
                         dctx, caps) < 0)
         goto fail;
 
-    if (STRNEQ(outConfData, actual)) {
-        virtTestDifference(stderr, outConfData, actual);
+    if (virtTestCompareToFile(actual, outconf) < 0)
         goto fail;
-    }
 
     ret = 0;
 
  fail:
-    VIR_FREE(inXmlData);
-    VIR_FREE(outConfData);
     VIR_FREE(actual);
     VIR_FREE(pidfile);
     virCommandFree(cmd);
-    virNetworkObjFree(obj);
+    virObjectUnref(obj);
     dnsmasqContextFree(dctx);
     return ret;
 }
@@ -93,21 +81,11 @@ testCompareXMLToConfHelper(const void *data)
 
     result = testCompareXMLToConfFiles(inxml, outxml, info->caps);
 
-cleanup:
+ cleanup:
     VIR_FREE(inxml);
     VIR_FREE(outxml);
 
     return result;
-}
-
-static char *
-testDnsmasqLeaseFileName(const char *netname)
-{
-    char *leasefile;
-
-    ignore_value(virAsprintf(&leasefile, "/var/lib/libvirt/dnsmasq/%s.leases",
-                             netname));
-    return leasefile;
 }
 
 static int
@@ -120,8 +98,6 @@ mymain(void)
         = dnsmasqCapsNewFromBuffer("Dnsmasq version 2.63\n--bind-dynamic", DNSMASQ);
     dnsmasqCapsPtr dhcpv6
         = dnsmasqCapsNewFromBuffer("Dnsmasq version 2.64\n--bind-dynamic", DNSMASQ);
-
-    networkDnsmasqLeaseFileName = testDnsmasqLeaseFileName;
 
 #define DO_TEST(xname, xcaps)                                        \
     do {                                                             \
@@ -146,11 +122,12 @@ mymain(void)
     DO_TEST("nat-network-dns-hosts", full);
     DO_TEST("nat-network-dns-forward-plain", full);
     DO_TEST("nat-network-dns-forwarders", full);
+    DO_TEST("nat-network-dns-local-domain", full);
     DO_TEST("dhcp6-network", dhcpv6);
     DO_TEST("dhcp6-nat-network", dhcpv6);
     DO_TEST("dhcp6host-routed-network", dhcpv6);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

@@ -59,25 +59,11 @@
 #  define XENVBD_MAJOR 202
 # endif
 
-static int
-xstrtoint64(char const *s, int base, int64_t *result)
-{
-    long long int lli;
-    char *p;
-
-    errno = 0;
-    lli = strtoll(s, &p, base);
-    if (errno || !(*p == 0 || *p == '\n') || p == s || (int64_t) lli != lli)
-        return -1;
-    *result = lli;
-    return 0;
-}
-
 static int64_t
 read_stat(const char *path)
 {
     char str[64];
-    int64_t r;
+    long long r;
     size_t i;
     FILE *fp;
 
@@ -93,7 +79,7 @@ read_stat(const char *path)
         return -1;
 
     str[i] = '\0';              /* make sure the string is nul-terminated */
-    if (xstrtoint64(str, 10, &r) == -1)
+    if (virStrToLong_ll(str, NULL, 10, &r) < 0)
         return -1;
 
     return r;
@@ -121,9 +107,8 @@ read_bd_stat(int device, int domid, const char *str)
 
         VIR_FREE(path);
 
-        if (r >= 0) {
+        if (r >= 0)
             return r;
-        }
     }
 
     return -1;
@@ -166,7 +151,7 @@ check_bd_connected(xenUnifiedPrivatePtr priv, int device, int domid)
 
 static int
 read_bd_stats(xenUnifiedPrivatePtr priv,
-              int device, int domid, struct _virDomainBlockStats *stats)
+              int device, int domid, virDomainBlockStatsPtr stats)
 {
     stats->rd_req   = read_bd_stat(device, domid, "rd_req");
     stats->rd_bytes = read_bd_stat(device, domid, "rd_sect");
@@ -357,7 +342,7 @@ int
 xenLinuxDomainBlockStats(xenUnifiedPrivatePtr priv,
                          virDomainDefPtr def,
                          const char *path,
-                         struct _virDomainBlockStats *stats)
+                         virDomainBlockStatsPtr stats)
 {
     int device = xenLinuxDomainDeviceID(def->id, path);
 

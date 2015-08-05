@@ -1,7 +1,7 @@
 /*
  * commandhelper.c: Auxiliary program for commandtest
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "internal.h"
 #include "virutil.h"
@@ -37,7 +38,8 @@
 
 # define VIR_FROM_THIS VIR_FROM_NONE
 
-static int envsort(const void *a, const void *b) {
+static int envsort(const void *a, const void *b)
+{
     const char *const*astrptr = a;
     const char *const*bstrptr = b;
     const char *astr = *astrptr;
@@ -60,16 +62,16 @@ int main(int argc, char **argv) {
     size_t i, n;
     int open_max;
     char **origenv;
-    char **newenv;
+    char **newenv = NULL;
     char *cwd;
     FILE *log = fopen(abs_builddir "/commandhelper.log", "w");
+    int ret = EXIT_FAILURE;
 
     if (!log)
-        goto error;
+        goto cleanup;
 
-    for (i = 1; i < argc; i++) {
+    for (i = 1; i < argc; i++)
         fprintf(log, "ARG:%s\n", argv[i]);
-    }
 
     origenv = environ;
     n = 0;
@@ -79,7 +81,7 @@ int main(int argc, char **argv) {
     }
 
     if (VIR_ALLOC_N_QUIET(newenv, n) < 0)
-        return EXIT_FAILURE;
+        goto cleanup;
 
     origenv = environ;
     n = i = 0;
@@ -99,7 +101,7 @@ int main(int argc, char **argv) {
 
     open_max = sysconf(_SC_OPEN_MAX);
     if (open_max < 0)
-        return EXIT_FAILURE;
+        goto cleanup;
     for (i = 0; i < open_max; i++) {
         int f;
         int closed;
@@ -113,18 +115,18 @@ int main(int argc, char **argv) {
 
     fprintf(log, "DAEMON:%s\n", getpgrp() == getsid(0) ? "yes" : "no");
     if (!(cwd = getcwd(NULL, 0)))
-        return EXIT_FAILURE;
+        goto cleanup;
     if (strlen(cwd) > strlen(".../commanddata") &&
         STREQ(cwd + strlen(cwd) - strlen("/commanddata"), "/commanddata"))
         strcpy(cwd, ".../commanddata");
     fprintf(log, "CWD:%s\n", cwd);
     VIR_FREE(cwd);
 
-    VIR_FORCE_FCLOSE(log);
+    fprintf(log, "UMASK:%04o\n", umask(0));
 
     if (argc > 1 && STREQ(argv[1], "--close-stdin")) {
         if (freopen("/dev/null", "r", stdin) != stdin)
-            goto error;
+            goto cleanup;
         usleep(100*1000);
     }
 
@@ -139,13 +141,13 @@ int main(int argc, char **argv) {
     for (;;) {
         got = read(STDIN_FILENO, buf, sizeof(buf));
         if (got < 0)
-            goto error;
+            goto cleanup;
         if (got == 0)
             break;
         if (safewrite(STDOUT_FILENO, buf, got) != got)
-            goto error;
+            goto cleanup;
         if (safewrite(STDERR_FILENO, buf, got) != got)
-            goto error;
+            goto cleanup;
     }
 
     fprintf(stdout, "END STDOUT\n");
@@ -153,10 +155,12 @@ int main(int argc, char **argv) {
     fprintf(stderr, "END STDERR\n");
     fflush(stderr);
 
-    return EXIT_SUCCESS;
+    ret = EXIT_SUCCESS;
 
-error:
-    return EXIT_FAILURE;
+ cleanup:
+    VIR_FORCE_FCLOSE(log);
+    VIR_FREE(newenv);
+    return ret;
 }
 
 #else

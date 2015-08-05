@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in
 
-## Copyright (C) 2005-2013 Red Hat, Inc.
+## Copyright (C) 2005-2014 Red Hat, Inc.
 ##
 ## This library is free software; you can redistribute it and/or
 ## modify it under the terms of the GNU Lesser General Public
@@ -25,9 +25,22 @@ DOC_SOURCE_DIR=../src
 
 DEVHELP_DIR=$(datadir)/gtk-doc/html/libvirt
 
-apihtml =			\
-  html/index.html		\
-  html/libvirt-libvirt.html	\
+apihtml =					\
+  html/index.html				\
+  $(apihtml_generated)
+
+apihtml_generated = \
+  html/libvirt-libvirt-domain.html		\
+  html/libvirt-libvirt-domain-snapshot.html	\
+  html/libvirt-libvirt-event.html		\
+  html/libvirt-libvirt-host.html		\
+  html/libvirt-libvirt-interface.html		\
+  html/libvirt-libvirt-network.html		\
+  html/libvirt-libvirt-nodedev.html		\
+  html/libvirt-libvirt-nwfilter.html		\
+  html/libvirt-libvirt-secret.html		\
+  html/libvirt-libvirt-storage.html		\
+  html/libvirt-libvirt-stream.html		\
   html/libvirt-virterror.html
 
 apipng =	\
@@ -40,7 +53,6 @@ devhelphtml =			\
   devhelp/libvirt.devhelp	\
   devhelp/index.html		\
   devhelp/general.html		\
-  devhelp/libvirt-libvirt.html	\
   devhelp/libvirt-virterror.html
 
 css =         \
@@ -186,11 +198,11 @@ todo:
 
 hvsupport.html:: $(srcdir)/hvsupport.html.in
 
-$(srcdir)/hvsupport.html.in: $(srcdir)/hvsupport.pl \
-		$(srcdir)/../src/libvirt_public.syms \
-	$(srcdir)/../src/libvirt_qemu.syms $(srcdir)/../src/libvirt_lxc.syms \
-	$(srcdir)/../src/driver.h
-	$(AM_V_GEN)$(PERL) $(srcdir)/hvsupport.pl $(srcdir)/../src > $@ \
+$(srcdir)/hvsupport.html.in: $(srcdir)/hvsupport.pl $(api_DATA) \
+		$(top_srcdir)/src/libvirt_public.syms \
+	$(top_srcdir)/src/libvirt_qemu.syms $(top_srcdir)/src/libvirt_lxc.syms \
+	$(top_srcdir)/src/driver.h
+	$(AM_V_GEN)$(PERL) $(srcdir)/hvsupport.pl $(top_srcdir)/src > $@ \
 		|| { rm $@ && exit 1; }
 
 .PHONY: todo
@@ -223,7 +235,7 @@ internals/%.html.tmp: internals/%.html.in subsite.xsl page.xsl sitemap.html.in
 	  SGML_CATALOG_FILES='$(XML_CATALOG_FILE)' \
 	  $(XMLLINT) --catalogs --nonet --format --valid $< > $(srcdir)/$@ \
 	  || { rm $(srcdir)/$@ && exit 1; }; \
-	  else echo "missing XHTML1 DTD" ; fi ; fi
+	  else echo "missing XHTML1 DTD"; cat $< > $(srcdir)/$@ ; fi ; fi
 
 %.php.tmp: %.php.in site.xsl page.xsl sitemap.html.in
 	@if [ -x $(XSLTPROC) ] ; then \
@@ -239,6 +251,8 @@ internals/%.html.tmp: internals/%.html.in subsite.xsl page.xsl sitemap.html.in
 	    -e /php_placeholder/d < $@.tmp > $(srcdir)/$@ \
 	    || { rm $(srcdir)/$@ && exit 1; }; fi
 
+$(apihtml_generated): html/index.html
+
 html/index.html: libvirt-api.xml newapi.xsl page.xsl sitemap.html.in
 	$(AM_V_GEN)if [ -x $(XSLTPROC) ] ; then \
 	  $(XSLTPROC) --nonet -o $(srcdir)/ \
@@ -249,7 +263,7 @@ html/index.html: libvirt-api.xml newapi.xsl page.xsl sitemap.html.in
 	    > /dev/null ; then \
 	  SGML_CATALOG_FILES='$(XML_CATALOG_FILE)' \
 	  $(XMLLINT) --catalogs --nonet --valid --noout $(srcdir)/html/*.html ; \
-	  else echo "missing XHTML1 DTD" ; fi ; fi
+	  else echo "missing XHTML1 DTD"; cat $< > $(srcdir)/$@ ; fi ; fi
 
 $(addprefix $(srcdir)/,$(devhelphtml)): $(srcdir)/libvirt-api.xml $(devhelpxsl)
 	$(AM_V_GEN)if [ -x $(XSLTPROC) ] ; then \
@@ -258,7 +272,6 @@ $(addprefix $(srcdir)/,$(devhelphtml)): $(srcdir)/libvirt-api.xml $(devhelpxsl)
 
 
 python_generated_files = \
-		$(srcdir)/html/libvirt-libvirt.html \
 		$(srcdir)/html/libvirt-libvirt-lxc.html \
 		$(srcdir)/html/libvirt-libvirt-qemu.html \
 		$(srcdir)/html/libvirt-virterror.html \
@@ -277,16 +290,27 @@ EXTRA_DIST += $(APIBUILD_STAMP)
 $(python_generated_files): $(APIBUILD_STAMP)
 
 $(APIBUILD_STAMP): $(srcdir)/apibuild.py \
-		$(srcdir)/../include/libvirt/libvirt.h.in \
-		$(srcdir)/../include/libvirt/libvirt-lxc.h \
-		$(srcdir)/../include/libvirt/libvirt-qemu.h \
-		$(srcdir)/../include/libvirt/virterror.h \
-		$(srcdir)/../src/libvirt.c \
-		$(srcdir)/../src/libvirt-lxc.c \
-		$(srcdir)/../src/libvirt-qemu.c \
-		$(srcdir)/../src/util/virerror.c \
-		$(srcdir)/../src/util/virevent.c \
-		$(srcdir)/../src/util/virtypedparam.c
+		$(top_srcdir)/include/libvirt/libvirt.h.in \
+		$(top_srcdir)/include/libvirt/libvirt-domain-snapshot.h \
+		$(top_srcdir)/include/libvirt/libvirt-domain.h \
+		$(top_srcdir)/include/libvirt/libvirt-event.h \
+		$(top_srcdir)/include/libvirt/libvirt-host.h \
+		$(top_srcdir)/include/libvirt/libvirt-interface.h \
+		$(top_srcdir)/include/libvirt/libvirt-network.h \
+		$(top_srcdir)/include/libvirt/libvirt-nodedev.h \
+		$(top_srcdir)/include/libvirt/libvirt-nwfilter.h \
+		$(top_srcdir)/include/libvirt/libvirt-secret.h \
+		$(top_srcdir)/include/libvirt/libvirt-storage.h \
+		$(top_srcdir)/include/libvirt/libvirt-stream.h \
+		$(top_srcdir)/include/libvirt/libvirt-lxc.h \
+		$(top_srcdir)/include/libvirt/libvirt-qemu.h \
+		$(top_srcdir)/include/libvirt/virterror.h \
+		$(top_srcdir)/src/libvirt.c \
+		$(top_srcdir)/src/libvirt-lxc.c \
+		$(top_srcdir)/src/libvirt-qemu.c \
+		$(top_srcdir)/src/util/virerror.c \
+		$(top_srcdir)/src/util/virevent.c \
+		$(top_srcdir)/src/util/virtypedparam.c
 	$(AM_V_GEN)srcdir=$(srcdir) $(PYTHON) $(APIBUILD)
 	touch $@
 

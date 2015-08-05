@@ -21,9 +21,29 @@ debugsym=None
 # C parser analysis code
 #
 included_files = {
-  "libvirt.h": "header with general libvirt API definitions",
+  "libvirt-domain.h": "header with general libvirt API definitions",
+  "libvirt-domain-snapshot.h": "header with general libvirt API definitions",
+  "libvirt-event.h": "header with general libvirt API definitions",
+  "libvirt-host.h": "header with general libvirt API definitions",
+  "libvirt-interface.h": "header with general libvirt API definitions",
+  "libvirt-network.h": "header with general libvirt API definitions",
+  "libvirt-nodedev.h": "header with general libvirt API definitions",
+  "libvirt-nwfilter.h": "header with general libvirt API definitions",
+  "libvirt-secret.h": "header with general libvirt API definitions",
+  "libvirt-storage.h": "header with general libvirt API definitions",
+  "libvirt-stream.h": "header with general libvirt API definitions",
   "virterror.h": "header with error specific API definitions",
   "libvirt.c": "Main interfaces for the libvirt library",
+  "libvirt-domain.c": "Domain interfaces for the libvirt library",
+  "libvirt-domain-snapshot.c": "Domain snapshot interfaces for the libvirt library",
+  "libvirt-host.c": "Host interfaces for the libvirt library",
+  "libvirt-interface.c": "Interface interfaces for the libvirt library",
+  "libvirt-network.c": "Network interfaces for the libvirt library",
+  "libvirt-nodedev.c": "Node device interfaces for the libvirt library",
+  "libvirt-nwfilter.c": "NWFilter interfaces for the libvirt library",
+  "libvirt-secret.c": "Secret interfaces for the libvirt library",
+  "libvirt-storage.c": "Storage interfaces for the libvirt library",
+  "libvirt-stream.c": "Stream interfaces for the libvirt library",
   "virerror.c": "implements error handling and reporting code for libvirt",
   "virevent.c": "event loop for monitoring file handles",
   "virtypedparam.c": "virTypedParameters APIs",
@@ -65,6 +85,7 @@ ignored_functions = {
   "virDomainMigratePrepareTunnel3": "private function for tunnelled migration",
   "DllMain": "specific function for Win32",
   "virTypedParamsValidate": "internal function in virtypedparam.c",
+  "virTypedParameterValidateSet": "internal function in virtypedparam.c",
   "virTypedParameterAssign": "internal function in virtypedparam.c",
   "virTypedParameterAssignFromStr": "internal function in virtypedparam.c",
   "virTypedParameterToString": "internal function in virtypedparam.c",
@@ -438,6 +459,14 @@ class CLexer:
             if line[0] == '#':
                 self.tokens = map((lambda x: ('preproc', x)),
                                   string.split(line))
+
+                # We might have whitespace between the '#' and preproc
+                # macro name, so instead of having a single token element
+                # of '#define' we might end up with '#' and 'define'. This
+                # merges them back together
+                if self.tokens[0][1] == "#":
+                    self.tokens[0] = ('preproc', self.tokens[0][1] + self.tokens[1][1])
+                    self.tokens = self.tokens[:1] + self.tokens[2:]
                 break
             l = len(line)
             if line[0] == '"' or line[0] == "'":
@@ -926,7 +955,7 @@ class CParser:
                 if i < len(l) and l[i] == ' ':
                     i = i + 1
                 l = l[i:]
-            if len(l) >= 6 and  l[0:7] == "returns" or l[0:7] == "Returns":
+            if len(l) >= 6 and l[0:7] == "Returns":
                 try:
                     l = string.split(l, ' ', 1)[1]
                 except:
@@ -1312,7 +1341,7 @@ class CParser:
         name = None
         self.comment = None
         comment = ""
-        value = "0"
+        value = "-1"
         while token is not None:
             if token[0] == "sep" and token[1] == "{":
                 token = self.token()
@@ -1441,6 +1470,24 @@ class CParser:
                 token = self.token()
 
 
+        if token[0] == "sep" and token[1] == ';':
+            token = self.token()
+
+        return token
+
+    def parseVirLogInit(self, token):
+        if token[0] != "string":
+            self.error("parsing VIR_LOG_INIT: expecting string", token)
+
+        token = self.token()
+
+        if token[0] != "sep":
+            self.error("parsing VIR_LOG_INIT: expecting ')'", token)
+
+        if token[1] != ')':
+            self.error("parsing VIR_LOG_INIT: expecting ')'", token)
+
+        token = self.token()
         if token[0] == "sep" and token[1] == ';':
             token = self.token()
 
@@ -1615,6 +1662,18 @@ class CParser:
             if token is not None:
                 self.lexer.push(token)
                 token = ("name", "virenumimpl")
+            return token
+
+        elif token[0] == "name" and token[1] == "VIR_LOG_INIT":
+            token = self.token()
+            if token is not None and token[0] == "sep" and token[1] == "(":
+                token = self.token()
+                token = self.parseVirLogInit(token)
+            else:
+                self.error("parsing VIR_LOG_INIT: expecting '('", token)
+            if token is not None:
+                self.lexer.push(token)
+                token = ("name", "virloginit")
             return token
 
         elif token[0] == "name":

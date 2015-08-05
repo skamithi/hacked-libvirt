@@ -1,5 +1,5 @@
 /*
- * nodeinfo.c: Helper routines for OS specific node information
+ * nodeinfo.h: Helper routines for OS specific node information
  *
  * Copyright (C) 2006-2008, 2011-2012 Red Hat, Inc.
  * Copyright (C) 2006 Daniel P. Berrange
@@ -40,8 +40,10 @@ int nodeGetMemoryStats(int cellNum,
 int nodeGetCellsFreeMemory(unsigned long long *freeMems,
                            int startCell,
                            int maxCells);
-unsigned long long nodeGetFreeMemory(void);
+int nodeGetMemory(unsigned long long *mem,
+                  unsigned long long *freeMem);
 
+virBitmapPtr nodeGetPresentCPUBitmap(void);
 virBitmapPtr nodeGetCPUBitmap(int *max_id);
 int nodeGetCPUCount(void);
 
@@ -57,4 +59,16 @@ int nodeGetCPUMap(unsigned char **cpumap,
                   unsigned int *online,
                   unsigned int flags);
 
+int nodeGetFreePages(unsigned int npages,
+                     unsigned int *pages,
+                     int startCell,
+                     unsigned int cellCount,
+                     unsigned long long *counts);
+
+int nodeAllocPages(unsigned int npages,
+                   unsigned int *pageSizes,
+                   unsigned long long *pageCounts,
+                   int startCell,
+                   unsigned int cellCount,
+                   bool add);
 #endif /* __VIR_NODEINFO_H__*/

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Red Hat, Inc.
+ * Copyright (C) 2012, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,23 +28,14 @@
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
-struct testDriverData {
-    const char *name;
-    const char *dep1;
-};
-
+VIR_LOG_INIT("tests.drivermoduletest");
 
 static int testDriverModule(const void *args)
 {
-    const struct testDriverData *data = args;
+    const char *name = args;
 
     /* coverity[leaked_storage] */
-    if (data->dep1 &&
-        !virDriverLoadModule(data->dep1))
-        return -1;
-
-    /* coverity[leaked_storage] */
-    if (!virDriverLoadModule(data->name))
+    if (!virDriverLoadModule(name))
         return -1;
 
     return 0;
@@ -58,18 +49,18 @@ mymain(void)
 
 #define TEST(name, dep1)                                                \
     do  {                                                               \
-        const struct testDriverData data = { name, dep1 };              \
-        if (virtTestRun("Test driver " # name, testDriverModule, &data) < 0) \
+        if (virtTestRun("Test driver " # name, testDriverModule, name) < 0) \
             ret = -1;                                                   \
     } while (0)
-
-    virDriverModuleInitialize(abs_builddir "/../src/.libs");
 
 #ifdef WITH_NETWORK
 # define USE_NETWORK "network"
     TEST("network", NULL);
 #else
 # define USE_NETWORK NULL
+#endif
+#ifdef WITH_INTERFACE
+    TEST("interface", NULL);
 #endif
 #ifdef WITH_STORAGE
     TEST("storage", NULL);
@@ -83,8 +74,11 @@ mymain(void)
 #ifdef WITH_NWFILTER
     TEST("nwfilter", NULL);
 #endif
-#ifdef WITH_INTERFACE
-    TEST("interface", NULL);
+#ifdef WITH_XEN
+    TEST("xen", NULL);
+#endif
+#ifdef WITH_LIBXL
+    TEST("libxl", NULL);
 #endif
 #ifdef WITH_QEMU
     TEST("qemu", USE_NETWORK);
@@ -95,14 +89,14 @@ mymain(void)
 #ifdef WITH_UML
     TEST("uml", NULL);
 #endif
-#ifdef WITH_XEN
-    TEST("xen", NULL);
+#ifdef WITH_VBOX
+    TEST("vbox", NULL);
 #endif
-#ifdef WITH_LIBXL
-    TEST("libxl", NULL);
+#ifdef WITH_BHYVE
+    TEST("bhyve", NULL);
 #endif
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

@@ -1,7 +1,7 @@
 /*
  * virsysinfo.c: get SMBIOS/sysinfo information from the host
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  * Copyright (C) 2010 Daniel Veillard
  *
  * This library is free software; you can redistribute it and/or
@@ -32,7 +32,6 @@
 
 #include "virerror.h"
 #include "virsysinfo.h"
-#include "virlog.h"
 #include "viralloc.h"
 #include "vircommand.h"
 #include "virfile.h"
@@ -51,6 +50,7 @@ static const char *sysinfoCpuinfo = "/proc/cpuinfo";
 #define SYSINFO_SMBIOS_DECODER sysinfoDmidecode
 #define SYSINFO sysinfoSysinfo
 #define CPUINFO sysinfoCpuinfo
+#define CPUINFO_FILE_LEN (1024*1024)	/* 1MB limit for /proc/cpuinfo file */
 
 /* only to be used test programs, therefore not in sysinfo.h */
 extern void virSysinfoSetup(const char *dmidecode, const char *sysinfo,
@@ -179,9 +179,8 @@ virSysinfoParseProcessor(const char *base, virSysinfoDefPtr ret)
         eol = strchr(base, '\n');
         cur = strchr(base, ':') + 1;
 
-        if (VIR_EXPAND_N(ret->processor, ret->nprocessor, 1) < 0) {
+        if (VIR_EXPAND_N(ret->processor, ret->nprocessor, 1) < 0)
             return -1;
-        }
         processor = &ret->processor[ret->nprocessor - 1];
 
         virSkipSpaces(&cur);
@@ -216,14 +215,15 @@ virSysinfoParseProcessor(const char *base, virSysinfoDefPtr ret)
 /* virSysinfoRead for PowerPC
  * Gathers sysinfo data from /proc/cpuinfo */
 virSysinfoDefPtr
-virSysinfoRead(void) {
+virSysinfoRead(void)
+{
     virSysinfoDefPtr ret = NULL;
     char *outbuf = NULL;
 
     if (VIR_ALLOC(ret) < 0)
         goto no_memory;
 
-    if (virFileReadAll(CPUINFO, 2048, &outbuf) < 0) {
+    if (virFileReadAll(CPUINFO, CPUINFO_FILE_LEN, &outbuf) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Failed to open %s"), CPUINFO);
         return NULL;
@@ -239,7 +239,7 @@ virSysinfoRead(void) {
 
     return ret;
 
-no_memory:
+ no_memory:
     VIR_FREE(outbuf);
     return NULL;
 }
@@ -289,16 +289,15 @@ virSysinfoParseProcessor(const char *base, virSysinfoDefPtr ret)
     virSysinfoProcessorDefPtr processor;
     char *processor_type = NULL;
 
-    if (!(tmp_base = strstr(base, "Processor")))
+    if (!(tmp_base = strstr(base, "model name")) &&
+        !(tmp_base = strstr(base, "Processor")))
         return 0;
 
-    base = tmp_base;
-    eol = strchr(base, '\n');
-    cur = strchr(base, ':') + 1;
+    eol = strchr(tmp_base, '\n');
+    cur = strchr(tmp_base, ':') + 1;
     virSkipSpaces(&cur);
     if (eol && VIR_STRNDUP(processor_type, cur, eol - cur) < 0)
         goto error;
-    base = cur;
 
     while ((tmp_base = strstr(base, "processor")) != NULL) {
         base = tmp_base;
@@ -315,8 +314,7 @@ virSysinfoParseProcessor(const char *base, virSysinfoDefPtr ret)
                         cur, eol - cur) < 0)
             goto error;
 
-        if (processor_type &&
-            VIR_STRDUP(processor->processor_type, processor_type) < 0)
+        if (VIR_STRDUP(processor->processor_type, processor_type) < 0)
             goto error;
 
         base = cur;
@@ -325,7 +323,7 @@ virSysinfoParseProcessor(const char *base, virSysinfoDefPtr ret)
     VIR_FREE(processor_type);
     return 0;
 
-error:
+ error:
     VIR_FREE(processor_type);
     return -1;
 }
@@ -333,14 +331,15 @@ error:
 /* virSysinfoRead for ARMv7
  * Gathers sysinfo data from /proc/cpuinfo */
 virSysinfoDefPtr
-virSysinfoRead(void) {
+virSysinfoRead(void)
+{
     virSysinfoDefPtr ret = NULL;
     char *outbuf = NULL;
 
     if (VIR_ALLOC(ret) < 0)
         goto no_memory;
 
-    if (virFileReadAll(CPUINFO, 2048, &outbuf) < 0) {
+    if (virFileReadAll(CPUINFO, CPUINFO_FILE_LEN, &outbuf) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Failed to open %s"), CPUINFO);
         return NULL;
@@ -356,7 +355,7 @@ virSysinfoRead(void) {
 
     return ret;
 
-no_memory:
+ no_memory:
     VIR_FREE(outbuf);
     return NULL;
 }
@@ -451,7 +450,7 @@ virSysinfoParseProcessor(const char *base, virSysinfoDefPtr ret)
     }
     result = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(manufacturer);
     VIR_FREE(procline);
     return result;
@@ -460,7 +459,8 @@ cleanup:
 /* virSysinfoRead for s390x
  * Gathers sysinfo data from /proc/sysinfo and /proc/cpuinfo */
 virSysinfoDefPtr
-virSysinfoRead(void) {
+virSysinfoRead(void)
+{
     virSysinfoDefPtr ret = NULL;
     char *outbuf = NULL;
 
@@ -468,7 +468,7 @@ virSysinfoRead(void) {
         goto no_memory;
 
     /* Gather info from /proc/cpuinfo */
-    if (virFileReadAll(CPUINFO, 8192, &outbuf) < 0) {
+    if (virFileReadAll(CPUINFO, CPUINFO_FILE_LEN, &outbuf) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("Failed to open %s"), CPUINFO);
         return NULL;
@@ -494,7 +494,7 @@ virSysinfoRead(void) {
 
     return ret;
 
-no_memory:
+ no_memory:
     virSysinfoDefFree(ret);
     VIR_FREE(outbuf);
     return NULL;
@@ -508,7 +508,8 @@ no_memory:
       defined(__aarch64__) || \
       defined(__powerpc__))
 virSysinfoDefPtr
-virSysinfoRead(void) {
+virSysinfoRead(void)
+{
     /*
      * this can probably be extracted from Windows using API or registry
      * http://www.microsoft.com/whdc/system/platform/firmware/SMBIOS.mspx
@@ -819,7 +820,8 @@ virSysinfoParseMemory(const char *base, virSysinfoDefPtr ret)
 }
 
 virSysinfoDefPtr
-virSysinfoRead(void) {
+virSysinfoRead(void)
+{
     char *path;
     virSysinfoDefPtr ret = NULL;
     char *outbuf = NULL;
@@ -860,13 +862,13 @@ virSysinfoRead(void) {
     if (virSysinfoParseMemory(outbuf, ret) < 0)
         goto error;
 
-cleanup:
+ cleanup:
     VIR_FREE(outbuf);
     virCommandFree(cmd);
 
     return ret;
 
-error:
+ error:
     virSysinfoDefFree(ret);
     ret = NULL;
     goto cleanup;
@@ -880,16 +882,18 @@ virSysinfoBIOSFormat(virBufferPtr buf, virSysinfoDefPtr def)
         !def->bios_date && !def->bios_release)
         return;
 
-    virBufferAddLit(buf, "  <bios>\n");
-    virBufferEscapeString(buf, "    <entry name='vendor'>%s</entry>\n",
+    virBufferAddLit(buf, "<bios>\n");
+    virBufferAdjustIndent(buf, 2);
+    virBufferEscapeString(buf, "<entry name='vendor'>%s</entry>\n",
                           def->bios_vendor);
-    virBufferEscapeString(buf, "    <entry name='version'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='version'>%s</entry>\n",
                           def->bios_version);
-    virBufferEscapeString(buf, "    <entry name='date'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='date'>%s</entry>\n",
                           def->bios_date);
-    virBufferEscapeString(buf, "    <entry name='release'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='release'>%s</entry>\n",
                           def->bios_release);
-    virBufferAddLit(buf, "  </bios>\n");
+    virBufferAdjustIndent(buf, -2);
+    virBufferAddLit(buf, "</bios>\n");
 }
 
 static void
@@ -900,22 +904,24 @@ virSysinfoSystemFormat(virBufferPtr buf, virSysinfoDefPtr def)
         !def->system_uuid && !def->system_sku && !def->system_family)
         return;
 
-    virBufferAddLit(buf, "  <system>\n");
-    virBufferEscapeString(buf, "    <entry name='manufacturer'>%s</entry>\n",
+    virBufferAddLit(buf, "<system>\n");
+    virBufferAdjustIndent(buf, 2);
+    virBufferEscapeString(buf, "<entry name='manufacturer'>%s</entry>\n",
                           def->system_manufacturer);
-    virBufferEscapeString(buf, "    <entry name='product'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='product'>%s</entry>\n",
                           def->system_product);
-    virBufferEscapeString(buf, "    <entry name='version'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='version'>%s</entry>\n",
                           def->system_version);
-    virBufferEscapeString(buf, "    <entry name='serial'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='serial'>%s</entry>\n",
                           def->system_serial);
-    virBufferEscapeString(buf, "    <entry name='uuid'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='uuid'>%s</entry>\n",
                           def->system_uuid);
-    virBufferEscapeString(buf, "    <entry name='sku'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='sku'>%s</entry>\n",
                           def->system_sku);
-    virBufferEscapeString(buf, "    <entry name='family'>%s</entry>\n",
+    virBufferEscapeString(buf, "<entry name='family'>%s</entry>\n",
                           def->system_family);
-    virBufferAddLit(buf, "  </system>\n");
+    virBufferAdjustIndent(buf, -2);
+    virBufferAddLit(buf, "</system>\n");
 }
 
 static void
@@ -940,8 +946,8 @@ virSysinfoProcessorFormat(virBufferPtr buf, virSysinfoDefPtr def)
             !processor->processor_part_number)
             continue;
 
-        virBufferAddLit(buf, "  <processor>\n");
-        virBufferAdjustIndent(buf, 4);
+        virBufferAddLit(buf, "<processor>\n");
+        virBufferAdjustIndent(buf, 2);
         virBufferEscapeString(buf,
                               "<entry name='socket_destination'>%s</entry>\n",
                               processor->processor_socket_destination);
@@ -965,8 +971,8 @@ virSysinfoProcessorFormat(virBufferPtr buf, virSysinfoDefPtr def)
                               processor->processor_serial_number);
         virBufferEscapeString(buf, "<entry name='part_number'>%s</entry>\n",
                               processor->processor_part_number);
-        virBufferAdjustIndent(buf, -4);
-        virBufferAddLit(buf, "  </processor>\n");
+        virBufferAdjustIndent(buf, -2);
+        virBufferAddLit(buf, "</processor>\n");
     }
 }
 
@@ -991,34 +997,36 @@ virSysinfoMemoryFormat(virBufferPtr buf, virSysinfoDefPtr def)
             !memory->memory_part_number)
             continue;
 
-        virBufferAddLit(buf, "  <memory_device>\n");
-        virBufferEscapeString(buf, "    <entry name='size'>%s</entry>\n",
+        virBufferAddLit(buf, "<memory_device>\n");
+        virBufferAdjustIndent(buf, 2);
+        virBufferEscapeString(buf, "<entry name='size'>%s</entry>\n",
                               memory->memory_size);
         virBufferEscapeString(buf,
-                              "    <entry name='form_factor'>%s</entry>\n",
+                              "<entry name='form_factor'>%s</entry>\n",
                               memory->memory_form_factor);
-        virBufferEscapeString(buf, "    <entry name='locator'>%s</entry>\n",
+        virBufferEscapeString(buf, "<entry name='locator'>%s</entry>\n",
                               memory->memory_locator);
         virBufferEscapeString(buf,
-                              "    <entry name='bank_locator'>%s</entry>\n",
+                              "<entry name='bank_locator'>%s</entry>\n",
                               memory->memory_bank_locator);
-        virBufferEscapeString(buf, "    <entry name='type'>%s</entry>\n",
+        virBufferEscapeString(buf, "<entry name='type'>%s</entry>\n",
                               memory->memory_type);
         virBufferEscapeString(buf,
-                              "    <entry name='type_detail'>%s</entry>\n",
+                              "<entry name='type_detail'>%s</entry>\n",
                               memory->memory_type_detail);
-        virBufferEscapeString(buf, "    <entry name='speed'>%s</entry>\n",
+        virBufferEscapeString(buf, "<entry name='speed'>%s</entry>\n",
                               memory->memory_speed);
         virBufferEscapeString(buf,
-                              "    <entry name='manufacturer'>%s</entry>\n",
+                              "<entry name='manufacturer'>%s</entry>\n",
                               memory->memory_manufacturer);
         virBufferEscapeString(buf,
-                              "    <entry name='serial_number'>%s</entry>\n",
+                              "<entry name='serial_number'>%s</entry>\n",
                               memory->memory_serial_number);
         virBufferEscapeString(buf,
-                              "    <entry name='part_number'>%s</entry>\n",
+                              "<entry name='part_number'>%s</entry>\n",
                               memory->memory_part_number);
-        virBufferAddLit(buf, "  </memory_device>\n");
+        virBufferAdjustIndent(buf, -2);
+        virBufferAddLit(buf, "</memory_device>\n");
     }
 }
 
@@ -1032,31 +1040,42 @@ virSysinfoMemoryFormat(virBufferPtr buf, virSysinfoDefPtr def)
 int
 virSysinfoFormat(virBufferPtr buf, virSysinfoDefPtr def)
 {
+    virBuffer childrenBuf = VIR_BUFFER_INITIALIZER;
     const char *type = virSysinfoTypeToString(def->type);
+    int indent = virBufferGetIndent(buf, false);
+    int ret = -1;
 
     if (!type) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("unexpected sysinfo type model %d"),
                        def->type);
         virBufferFreeAndReset(buf);
-        return -1;
+        goto cleanup;
     }
 
-    virBufferAsprintf(buf, "<sysinfo type='%s'>\n", type);
+    virBufferAdjustIndent(&childrenBuf, indent + 2);
 
-    virSysinfoBIOSFormat(buf, def);
-    virSysinfoSystemFormat(buf, def);
-    virSysinfoProcessorFormat(buf, def);
-    virSysinfoMemoryFormat(buf, def);
+    virSysinfoBIOSFormat(&childrenBuf, def);
+    virSysinfoSystemFormat(&childrenBuf, def);
+    virSysinfoProcessorFormat(&childrenBuf, def);
+    virSysinfoMemoryFormat(&childrenBuf, def);
 
-    virBufferAddLit(buf, "</sysinfo>\n");
-
-    if (virBufferError(buf)) {
-        virReportOOMError();
-        return -1;
+    virBufferAsprintf(buf, "<sysinfo type='%s'", type);
+    if (virBufferUse(&childrenBuf)) {
+        virBufferAddLit(buf, ">\n");
+        virBufferAddBuffer(buf, &childrenBuf);
+        virBufferAddLit(buf, "</sysinfo>\n");
+    } else {
+        virBufferAddLit(buf, "/>\n");
     }
 
-    return 0;
+    if (virBufferCheckError(buf) < 0)
+        goto cleanup;
+
+    ret = 0;
+ cleanup:
+    virBufferFreeAndReset(&childrenBuf);
+    return ret;
 }
 
 bool virSysinfoIsEqual(virSysinfoDefPtr src,
@@ -1107,6 +1126,6 @@ bool virSysinfoIsEqual(virSysinfoDefPtr src,
 
     identical = true;
 
-cleanup:
+ cleanup:
     return identical;
 }

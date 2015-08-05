@@ -155,7 +155,7 @@ testDomainCreateXMLOld(const void *data)
     registered = false;
     ret = 0;
 
-cleanup:
+ cleanup:
     if (registered)
         virConnectDomainEventDeregister(test->conn, domainLifecycleCb);
     if (dom) {
@@ -196,7 +196,7 @@ testDomainCreateXMLNew(const void *data)
     id = -1;
     ret = 0;
 
-cleanup:
+ cleanup:
     if (id >= 0)
         virConnectDomainEventDeregisterAny(test->conn, id);
     if (dom) {
@@ -267,7 +267,7 @@ testDomainCreateXMLMixed(const void *data)
     id2 = -1;
     ret = 0;
 
-cleanup:
+ cleanup:
     if (id1 >= 0)
         virConnectDomainEventDeregisterAny(test->conn, id1);
     if (id2 >= 0)
@@ -327,7 +327,7 @@ testDomainDefine(const void *data)
     }
 
 
-cleanup:
+ cleanup:
     virConnectDomainEventDeregisterAny(test->conn, id);
     if (dom != NULL)
         virDomainFree(dom);
@@ -359,7 +359,8 @@ testDomainStartStopEvent(const void *data)
 
     /* Test domain is started */
     virDomainDestroy(dom);
-    virDomainCreate(dom);
+    if (virDomainCreate(dom) < 0)
+        goto cleanup;
 
     if (virEventRunDefaultImpl() < 0)
         goto cleanup;
@@ -388,7 +389,7 @@ testDomainStartStopEvent(const void *data)
         goto cleanup;
 
     ret = 0;
-cleanup:
+ cleanup:
     virConnectDomainEventDeregisterAny(test->conn, id);
     virDomainFree(dom);
     if (dom2)
@@ -416,7 +417,7 @@ testNetworkCreateXML(const void *data)
                            &counter, NULL);
     net = virNetworkCreateXML(test->conn, networkDef);
 
-    if (virEventRunDefaultImpl() < 0) {
+    if (!net || virEventRunDefaultImpl() < 0) {
         ret = -1;
         goto cleanup;
     }
@@ -426,12 +427,12 @@ testNetworkCreateXML(const void *data)
         goto cleanup;
     }
 
-cleanup:
+ cleanup:
     virConnectNetworkEventDeregisterAny(test->conn, id);
-    virNetworkDestroy(net);
-
-    virNetworkFree(net);
-
+    if (net) {
+        virNetworkDestroy(net);
+        virNetworkFree(net);
+    }
     return ret;
 }
 
@@ -454,7 +455,7 @@ testNetworkDefine(const void *data)
     /* Make sure the define event is triggered */
     net = virNetworkDefineXML(test->conn, networkDef);
 
-    if (virEventRunDefaultImpl() < 0) {
+    if (!net || virEventRunDefaultImpl() < 0) {
         ret = -1;
         goto cleanup;
     }
@@ -478,9 +479,10 @@ testNetworkDefine(const void *data)
     }
 
 
-cleanup:
+ cleanup:
     virConnectNetworkEventDeregisterAny(test->conn, id);
-    virNetworkFree(net);
+    if (net)
+        virNetworkFree(net);
 
     return ret;
 }
@@ -492,6 +494,9 @@ testNetworkStartStopEvent(const void *data)
     lifecycleEventCounter counter;
     int id;
     int ret = 0;
+
+    if (!test->net)
+        return -1;
 
     lifecycleEventCounter_reset(&counter);
 
@@ -508,11 +513,11 @@ testNetworkStartStopEvent(const void *data)
     }
 
     if (counter.startEvents != 1 || counter.stopEvents != 1 ||
-            counter.unexpectedEvents > 0) {
+        counter.unexpectedEvents > 0) {
         ret = -1;
         goto cleanup;
     }
-cleanup:
+ cleanup:
     virConnectNetworkEventDeregisterAny(test->conn, id);
 
     return ret;
@@ -566,13 +571,16 @@ mymain(void)
         ret = EXIT_FAILURE;
 
     /* Define a test network */
-    test.net = virNetworkDefineXML(test.conn, networkDef);
+    if (!(test.net = virNetworkDefineXML(test.conn, networkDef)))
+        ret = EXIT_FAILURE;
     if (virtTestRun("Network start stop events ", testNetworkStartStopEvent, &test) < 0)
         ret = EXIT_FAILURE;
 
     /* Cleanup */
-    virNetworkUndefine(test.net);
-    virNetworkFree(test.net);
+    if (test.net) {
+        virNetworkUndefine(test.net);
+        virNetworkFree(test.net);
+    }
     virConnectClose(test.conn);
     virEventRemoveTimeout(timer);
 

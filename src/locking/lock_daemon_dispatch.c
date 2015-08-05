@@ -28,10 +28,14 @@
 #include "virstring.h"
 #include "lock_daemon.h"
 #include "lock_protocol.h"
-#include "lock_daemon_dispatch_stubs.h"
 #include "virerror.h"
+#include "virthreadjob.h"
 
 #define VIR_FROM_THIS VIR_FROM_RPC
+
+VIR_LOG_INIT("locking.lock_daemon_dispatch");
+
+#include "lock_daemon_dispatch_stubs.h"
 
 static int
 virLockSpaceProtocolDispatchAcquireResource(virNetServerPtr server ATTRIBUTE_UNUSED,
@@ -58,7 +62,7 @@ virLockSpaceProtocolDispatchAcquireResource(virNetServerPtr server ATTRIBUTE_UNU
         goto cleanup;
     }
 
-    if (!priv->ownerPid) {
+    if (!priv->ownerId) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("lock owner details have not been registered"));
         goto cleanup;
@@ -85,7 +89,7 @@ virLockSpaceProtocolDispatchAcquireResource(virNetServerPtr server ATTRIBUTE_UNU
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);
@@ -116,7 +120,7 @@ virLockSpaceProtocolDispatchCreateResource(virNetServerPtr server ATTRIBUTE_UNUS
         goto cleanup;
     }
 
-    if (!priv->ownerPid) {
+    if (!priv->ownerId) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("lock owner details have not been registered"));
         goto cleanup;
@@ -134,7 +138,7 @@ virLockSpaceProtocolDispatchCreateResource(virNetServerPtr server ATTRIBUTE_UNUS
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);
@@ -165,7 +169,7 @@ virLockSpaceProtocolDispatchDeleteResource(virNetServerPtr server ATTRIBUTE_UNUS
         goto cleanup;
     }
 
-    if (!priv->ownerPid) {
+    if (!priv->ownerId) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("lock owner details have not been registered"));
         goto cleanup;
@@ -183,7 +187,7 @@ virLockSpaceProtocolDispatchDeleteResource(virNetServerPtr server ATTRIBUTE_UNUS
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);
@@ -214,7 +218,7 @@ virLockSpaceProtocolDispatchNew(virNetServerPtr server ATTRIBUTE_UNUSED,
         goto cleanup;
     }
 
-    if (!priv->ownerPid) {
+    if (!priv->ownerId) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("lock owner details have not been registered"));
         goto cleanup;
@@ -239,7 +243,7 @@ virLockSpaceProtocolDispatchNew(virNetServerPtr server ATTRIBUTE_UNUSED,
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);
@@ -269,9 +273,9 @@ virLockSpaceProtocolDispatchRegister(virNetServerPtr server ATTRIBUTE_UNUSED,
         goto cleanup;
     }
 
-    if (priv->ownerPid) {
+    if (!args->owner.id) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
-                       _("lock owner details have already been registered"));
+                       _("lock owner details have not been registered"));
         goto cleanup;
     }
 
@@ -285,7 +289,7 @@ virLockSpaceProtocolDispatchRegister(virNetServerPtr server ATTRIBUTE_UNUSED,
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);
@@ -316,7 +320,7 @@ virLockSpaceProtocolDispatchReleaseResource(virNetServerPtr server ATTRIBUTE_UNU
         goto cleanup;
     }
 
-    if (!priv->ownerPid) {
+    if (!priv->ownerId) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("lock owner details have not been registered"));
         goto cleanup;
@@ -336,7 +340,7 @@ virLockSpaceProtocolDispatchReleaseResource(virNetServerPtr server ATTRIBUTE_UNU
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);
@@ -366,7 +370,7 @@ virLockSpaceProtocolDispatchRestrict(virNetServerPtr server ATTRIBUTE_UNUSED,
         goto cleanup;
     }
 
-    if (!priv->ownerPid) {
+    if (!priv->ownerId) {
         virReportError(VIR_ERR_OPERATION_INVALID, "%s",
                        _("lock owner details have not been registered"));
         goto cleanup;
@@ -375,7 +379,7 @@ virLockSpaceProtocolDispatchRestrict(virNetServerPtr server ATTRIBUTE_UNUSED,
     priv->restricted = true;
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);
@@ -420,7 +424,7 @@ virLockSpaceProtocolDispatchCreateLockSpace(virNetServerPtr server ATTRIBUTE_UNU
 
     rv = 0;
 
-cleanup:
+ cleanup:
     if (rv < 0)
         virNetMessageSaveError(rerr);
     virMutexUnlock(&priv->lock);

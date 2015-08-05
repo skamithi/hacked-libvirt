@@ -20,33 +20,22 @@ static int
 testCompareXMLToXMLFiles(const char *inxml, const char *outxml,
                          unsigned int flags)
 {
-    char *inXmlData = NULL;
-    char *outXmlData = NULL;
     char *actual = NULL;
     int ret = -1;
     virNetworkDefPtr dev = NULL;
 
-    if (virtTestLoadFile(inxml, &inXmlData) < 0)
-        goto fail;
-    if (virtTestLoadFile(outxml, &outXmlData) < 0)
-        goto fail;
-
-    if (!(dev = virNetworkDefParseString(inXmlData)))
+    if (!(dev = virNetworkDefParseFile(inxml)))
         goto fail;
 
     if (!(actual = virNetworkDefFormat(dev, flags)))
         goto fail;
 
-    if (STRNEQ(outXmlData, actual)) {
-        virtTestDifference(stderr, outXmlData, actual);
+    if (virtTestCompareToFile(actual, outxml) < 0)
         goto fail;
-    }
 
     ret = 0;
 
  fail:
-    VIR_FREE(inXmlData);
-    VIR_FREE(outXmlData);
     VIR_FREE(actual);
     virNetworkDefFree(dev);
     return ret;
@@ -74,7 +63,7 @@ testCompareXMLToXMLHelper(const void *data)
 
     result = testCompareXMLToXMLFiles(inxml, outxml, info->flags);
 
-cleanup:
+ cleanup:
     VIR_FREE(inxml);
     VIR_FREE(outxml);
 
@@ -119,8 +108,11 @@ mymain(void)
     DO_TEST_FULL("passthrough-pf", VIR_NETWORK_XML_INACTIVE);
     DO_TEST("hostdev");
     DO_TEST_FULL("hostdev-pf", VIR_NETWORK_XML_INACTIVE);
+    DO_TEST("passthrough-address-crash");
+    DO_TEST("nat-network-explicit-flood");
+    DO_TEST("host-bridge-no-flood");
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

@@ -11,7 +11,7 @@
 int main(int argc, char **argv)
 {
     int ret, exit_code = EXIT_FAILURE;
-    virConfPtr conf;
+    virConfPtr conf = NULL;
     int len = 10000;
     char *buffer = NULL;
 
@@ -34,7 +34,6 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to serialize %s back\n", argv[1]);
         goto cleanup;
     }
-    virConfFree(conf);
     if (fwrite(buffer, 1, len, stdout) != len) {
         fprintf(stderr, "Write failed: %s\n", strerror(errno));
         goto cleanup;
@@ -42,7 +41,8 @@ int main(int argc, char **argv)
 
     exit_code = EXIT_SUCCESS;
 
-cleanup:
+ cleanup:
     VIR_FREE(buffer);
+    virConfFree(conf);
     return exit_code;
 }

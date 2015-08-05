@@ -1,5 +1,5 @@
 /*
- * virxml.c: helper APIs for dealing with XML documents
+ * virxml.h: helper APIs for dealing with XML documents
  *
  * Copyright (C) 2005, 2007-2012 Red Hat, Inc.
  *
@@ -28,6 +28,7 @@
 # include <libxml/parser.h>
 # include <libxml/tree.h>
 # include <libxml/xpath.h>
+# include <libxml/relaxng.h>
 
 int              virXPathBoolean(const char *xpath,
                                  xmlXPathContextPtr ctxt);
@@ -175,5 +176,9 @@ int virXMLExtractNamespaceXML(xmlNodePtr root,
 int virXMLInjectNamespace(xmlNodePtr node,
                           const char *uri,
                           const char *key);
+
+int
+virXMLValidateAgainstSchema(const char *schemafile,
+                            xmlDocPtr xml);
 
 #endif                          /* __VIR_XML_H__ */

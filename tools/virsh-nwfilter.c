@@ -1,7 +1,7 @@
 /*
  * virsh-nwfilter.c: Commands to manage network filters
  *
- * Copyright (C) 2005, 2007-2013 Red Hat, Inc.
+ * Copyright (C) 2005, 2007-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,17 +26,11 @@
 #include <config.h>
 #include "virsh-nwfilter.h"
 
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-#include <libxml/xpath.h>
-#include <libxml/xmlsave.h>
-
 #include "internal.h"
 #include "virbuffer.h"
 #include "viralloc.h"
 #include "virfile.h"
 #include "virutil.h"
-#include "virxml.h"
 
 virNWFilterPtr
 vshCommandOptNWFilterBy(vshControl *ctl, const vshCmd *cmd,
@@ -46,9 +40,6 @@ vshCommandOptNWFilterBy(vshControl *ctl, const vshCmd *cmd,
     const char *n = NULL;
     const char *optname = "nwfilter";
     virCheckFlags(VSH_BYUUID | VSH_BYNAME, NULL);
-
-    if (!vshCmdHasOption(ctl, cmd, optname))
-        return NULL;
 
     if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
         return NULL;
@@ -284,7 +275,7 @@ vshNWFilterListCollect(vshControl *ctl,
     goto cleanup;
 
 
-fallback:
+ fallback:
     /* fall back to old method (0.9.13 and older) */
     vshResetLibvirtError();
 
@@ -318,7 +309,7 @@ fallback:
     /* truncate network filters that weren't found */
     deleted = nfilters - list->nfilters;
 
-finished:
+ finished:
     /* sort the list */
     if (list->filters && list->nfilters)
         qsort(list->filters, list->nfilters,
@@ -330,7 +321,7 @@ finished:
 
     success = true;
 
-cleanup:
+ cleanup:
     for (i = 0; nfilters != -1 && i < nfilters; i++)
         VIR_FREE(names[i]);
     VIR_FREE(names);
@@ -421,16 +412,16 @@ cmdNWFilterEdit(vshControl *ctl, const vshCmd *cmd)
         goto cleanup;
 
 #define EDIT_GET_XML virNWFilterGetXMLDesc(nwfilter, 0)
-#define EDIT_NOT_CHANGED \
-    vshPrint(ctl, _("Network filter %s XML "            \
-                    "configuration not changed.\n"),    \
-             virNWFilterGetName(nwfilter));             \
-    ret = true; goto edit_cleanup;
+#define EDIT_NOT_CHANGED                                        \
+    do {                                                        \
+        vshPrint(ctl, _("Network filter %s XML "                \
+                        "configuration not changed.\n"),        \
+                 virNWFilterGetName(nwfilter));                 \
+        ret = true;                                             \
+        goto edit_cleanup;                                      \
+    } while (0)
 #define EDIT_DEFINE \
     (nwfilter_edited = virNWFilterDefineXML(ctl->conn, doc_edited))
-#define EDIT_FREE \
-    if (nwfilter_edited)    \
-        virNWFilterFree(nwfilter);
 #include "virsh-edit.c"
 
     vshPrint(ctl, _("Network filter %s XML configuration edited.\n"),
@@ -438,7 +429,7 @@ cmdNWFilterEdit(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     if (nwfilter)
         virNWFilterFree(nwfilter);
     if (nwfilter_edited)

@@ -62,6 +62,7 @@
 
 # include "c-strcase.h"
 # include "ignore-value.h"
+# include "count-leading-zeros.h"
 
 /* On architectures which lack these limits, define them (ie. Cygwin).
  * Note that the libvirt code should be robust enough to handle the
@@ -78,16 +79,16 @@
 # endif
 
 /* String equality tests, suggested by Jim Meyering. */
-# define STREQ(a,b) (strcmp(a,b) == 0)
-# define STRCASEEQ(a,b) (c_strcasecmp(a,b) == 0)
-# define STRNEQ(a,b) (strcmp(a,b) != 0)
-# define STRCASENEQ(a,b) (c_strcasecmp(a,b) != 0)
-# define STREQLEN(a,b,n) (strncmp(a,b,n) == 0)
-# define STRCASEEQLEN(a,b,n) (c_strncasecmp(a,b,n) == 0)
-# define STRNEQLEN(a,b,n) (strncmp(a,b,n) != 0)
-# define STRCASENEQLEN(a,b,n) (c_strncasecmp(a,b,n) != 0)
-# define STRPREFIX(a,b) (strncmp(a,b,strlen(b)) == 0)
-# define STRSKIP(a,b) (STRPREFIX(a,b) ? (a) + strlen(b) : NULL)
+# define STREQ(a, b) (strcmp(a, b) == 0)
+# define STRCASEEQ(a, b) (c_strcasecmp(a, b) == 0)
+# define STRNEQ(a, b) (strcmp(a, b) != 0)
+# define STRCASENEQ(a, b) (c_strcasecmp(a, b) != 0)
+# define STREQLEN(a, b, n) (strncmp(a, b, n) == 0)
+# define STRCASEEQLEN(a, b, n) (c_strncasecmp(a, b, n) == 0)
+# define STRNEQLEN(a, b, n) (strncmp(a, b, n) != 0)
+# define STRCASENEQLEN(a, b, n) (c_strncasecmp(a, b, n) != 0)
+# define STRPREFIX(a, b) (strncmp(a, b, strlen(b)) == 0)
+# define STRSKIP(a, b) (STRPREFIX(a, b) ? (a) + strlen(b) : NULL)
 
 # define STREQ_NULLABLE(a, b)                           \
     ((a) ? (b) && STREQ((a) ? (a) : "", (b) ? (b) : "") : !(b))
@@ -109,7 +110,7 @@
 #    define __GNUC_PREREQ(maj, min)                                        \
     ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
 #   else
-#    define __GNUC_PREREQ(maj,min) 0
+#    define __GNUC_PREREQ(maj, min) 0
 #   endif
 
 /* Work around broken limits.h on debian etch */
@@ -162,10 +163,10 @@
  */
 #  ifndef ATTRIBUTE_FMT_PRINTF
 #   if __GNUC_PREREQ (4, 4)
-#    define ATTRIBUTE_FMT_PRINTF(fmtpos,argpos) \
+#    define ATTRIBUTE_FMT_PRINTF(fmtpos, argpos) \
     __attribute__((__format__ (__gnu_printf__, fmtpos, argpos)))
 #   else
-#    define ATTRIBUTE_FMT_PRINTF(fmtpos,argpos) \
+#    define ATTRIBUTE_FMT_PRINTF(fmtpos, argpos) \
     __attribute__((__format__ (__printf__, fmtpos, argpos)))
 #   endif
 #  endif
@@ -234,10 +235,20 @@
     _Pragma ("GCC diagnostic push") \
     _Pragma ("GCC diagnostic ignored \"-Wcast-align\"")
 
+#  if HAVE_SUGGEST_ATTRIBUTE_FORMAT
+#   define VIR_WARNINGS_NO_PRINTF \
+    _Pragma ("GCC diagnostic push") \
+    _Pragma ("GCC diagnostic ignored \"-Wsuggest-attribute=format\"")
+#  else
+#   define VIR_WARNINGS_NO_PRINTF \
+    _Pragma ("GCC diagnostic push")
+#  endif
+
 #  define VIR_WARNINGS_RESET \
     _Pragma ("GCC diagnostic pop")
 # else
 #  define VIR_WARNINGS_NO_CAST_ALIGN
+#  define VIR_WARNINGS_NO_PRINTF
 #  define VIR_WARNINGS_RESET
 # endif
 
@@ -245,6 +256,11 @@
  * Use this when passing possibly-NULL strings to printf-a-likes.
  */
 # define NULLSTR(s) ((s) ? (s) : "<null>")
+
+/*
+ * Similar to NULLSTR, but print '-' to make it more user friendly.
+ */
+# define EMPTYSTR(s) ((s) ? (s) : "-")
 
 /**
  * TODO:
@@ -254,6 +270,18 @@
 # define TODO								\
     fprintf(stderr, "Unimplemented block at %s:%d\n",			\
             __FILE__, __LINE__);
+
+/**
+ * SWAP:
+ *
+ * In place exchange of two values
+ */
+# define SWAP(a, b)         \
+    do {                    \
+        (a) = (a) ^ (b);    \
+        (b) = (a) ^ (b);    \
+        (a) = (a) ^ (b);    \
+    } while (0)
 
 /**
  * virCheckFlags:
@@ -297,6 +325,103 @@
                                 __unsuppflags, __FUNCTION__);           \
             goto label;                                                 \
         }                                                               \
+    } while (0)
+
+/* Macros to help dealing with mutually exclusive flags. */
+
+/**
+ * VIR_EXCLUSIVE_FLAGS_RET:
+ *
+ * @FLAG1: First flag to be checked.
+ * @FLAG2: Second flag to be checked.
+ * @RET: Return value.
+ *
+ * Reject mutually exclusive API flags.  The checked flags are compared
+ * with flags variable.
+ *
+ * This helper does an early return and therefore it has to be called
+ * before anything that would require cleanup.
+ */
+# define VIR_EXCLUSIVE_FLAGS_RET(FLAG1, FLAG2, RET)                         \
+    do {                                                                    \
+        if ((flags & FLAG1) && (flags & FLAG2)) {                           \
+            virReportInvalidArg(ctl,                                        \
+                                _("Flags '%s' and '%s' are mutually "       \
+                                  "exclusive"),                             \
+                                #FLAG1, #FLAG2);                            \
+            return RET;                                                     \
+        }                                                                   \
+    } while (0)
+
+/**
+ * VIR_EXCLUSIVE_FLAGS_GOTO:
+ *
+ * @FLAG1: First flag to be checked.
+ * @FLAG2: Second flag to be checked.
+ * @LABEL: Label to jump to.
+ *
+ * Reject mutually exclusive API flags.  The checked flags are compared
+ * with flags variable.
+ *
+ * Returns nothing.  Jumps to a label if unsupported flags were
+ * passed to it.
+ */
+# define VIR_EXCLUSIVE_FLAGS_GOTO(FLAG1, FLAG2, LABEL)                      \
+    do {                                                                    \
+        if ((flags & FLAG1) && (flags & FLAG2)) {                           \
+            virReportInvalidArg(ctl,                                        \
+                                _("Flags '%s' and '%s' are mutually "       \
+                                  "exclusive"),                             \
+                                #FLAG1, #FLAG2);                            \
+            goto LABEL;                                                     \
+        }                                                                   \
+    } while (0)
+
+/* Macros to help dealing with flag requirements. */
+
+/**
+ * VIR_REQUIRE_FLAG_RET:
+ *
+ * @FLAG1: First flag to be checked.
+ * @FLAG2: Second flag that is required by first flag.
+ * @RET: Return value.
+ *
+ * Check whether required flag is set.  The checked flags are compared
+ * with flags variable.
+ *
+ * This helper does an early return and therefore it has to be called
+ * before anything that would require cleanup.
+ */
+# define VIR_REQUIRE_FLAG_RET(FLAG1, FLAG2, RET)                            \
+    do {                                                                    \
+        if ((flags & FLAG1) && !(flags & FLAG2)) {                          \
+            virReportInvalidArg(ctl,                                        \
+                                _("Flag '%s' is required by flag '%s'"),    \
+                                #FLAG2, #FLAG1);                            \
+            return RET;                                                     \
+        }                                                                   \
+    } while (0)
+
+/**
+ * VIR_REQUIRE_FLAG_GOTO:
+ *
+ * @FLAG1: First flag to be checked.
+ * @FLAG2: Second flag that is required by first flag.
+ * @LABEL: Label to jump to.
+ *
+ * Check whether required flag is set.  The checked flags are compared
+ * with flags variable.
+ *
+ * Returns nothing.  Jumps to a label if required flag is not set.
+ */
+# define VIR_REQUIRE_FLAG_GOTO(FLAG1, FLAG2, LABEL)                         \
+    do {                                                                    \
+        if ((flags & FLAG1) && !(flags & FLAG2)) {                          \
+            virReportInvalidArg(ctl,                                        \
+                                _("Flag '%s' is required by flag '%s'"),    \
+                                #FLAG2, #FLAG1);                            \
+            goto LABEL;                                                     \
+        }                                                                   \
     } while (0)
 
 # define virCheckNonNullArgReturn(argname, retval)  \
@@ -365,78 +490,19 @@
 /* round up value to the closest multiple of size */
 # define VIR_ROUND_UP(value, size) (VIR_DIV_UP(value, size) * (size))
 
+/* Round up to the next closest power of 2. It will return rounded number or 0
+ * for 0 or number more than 2^31 (for 32bit unsigned int). */
+# define VIR_ROUND_UP_POWER_OF_TWO(value)                                   \
+    ((value) > 0 && (value) <= 1U << (sizeof(unsigned int) * 8 - 1) ?       \
+     1U << (sizeof(unsigned int) * 8 - count_leading_zeros((value) - 1)) : 0)
 
-# if WITH_DTRACE_PROBES
-#  ifndef LIBVIRT_PROBES_H
-#   define LIBVIRT_PROBES_H
-#   include "libvirt_probes.h"
-#  endif /* LIBVIRT_PROBES_H */
 
-/* Systemtap 1.2 headers have a bug where they cannot handle a
- * variable declared with array type.  Work around this by casting all
- * arguments.  This is some gross use of the preprocessor because
- * PROBE is a var-arg macro, but it is better than the alternative of
- * making all callers to PROBE have to be aware of the issues.  And
- * hopefully, if we ever add a call to PROBE with other than 9
- * end arguments, you can figure out the pattern to extend this hack.
- */
-#  define VIR_COUNT_ARGS(...) VIR_ARG11(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-#  define VIR_ARG11(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, ...) _11
-#  define VIR_ADD_CAST_EXPAND(a, b, ...) VIR_ADD_CAST_PASTE(a, b, __VA_ARGS__)
-#  define VIR_ADD_CAST_PASTE(a, b, ...) a##b(__VA_ARGS__)
-
-/* The double cast is necessary to silence gcc warnings; any pointer
- * can safely go to intptr_t and back to void *, which collapses
- * arrays into pointers; while any integer can be widened to intptr_t
- * then cast to void *.  */
-#  define VIR_ADD_CAST(a) ((void *)(intptr_t)(a))
-#  define VIR_ADD_CAST1(a)                                  \
-    VIR_ADD_CAST(a)
-#  define VIR_ADD_CAST2(a, b)                               \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b)
-#  define VIR_ADD_CAST3(a, b, c)                            \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b), VIR_ADD_CAST(c)
-#  define VIR_ADD_CAST4(a, b, c, d)                         \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b), VIR_ADD_CAST(c),      \
-    VIR_ADD_CAST(d)
-#  define VIR_ADD_CAST5(a, b, c, d, e)                      \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b), VIR_ADD_CAST(c),      \
-    VIR_ADD_CAST(d), VIR_ADD_CAST(e)
-#  define VIR_ADD_CAST6(a, b, c, d, e, f)                   \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b), VIR_ADD_CAST(c),      \
-    VIR_ADD_CAST(d), VIR_ADD_CAST(e), VIR_ADD_CAST(f)
-#  define VIR_ADD_CAST7(a, b, c, d, e, f, g)                \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b), VIR_ADD_CAST(c),      \
-    VIR_ADD_CAST(d), VIR_ADD_CAST(e), VIR_ADD_CAST(f),      \
-    VIR_ADD_CAST(g)
-#  define VIR_ADD_CAST8(a, b, c, d, e, f, g, h)             \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b), VIR_ADD_CAST(c),      \
-    VIR_ADD_CAST(d), VIR_ADD_CAST(e), VIR_ADD_CAST(f),      \
-    VIR_ADD_CAST(g), VIR_ADD_CAST(h)
-#  define VIR_ADD_CAST9(a, b, c, d, e, f, g, h, i)          \
-    VIR_ADD_CAST(a), VIR_ADD_CAST(b), VIR_ADD_CAST(c),      \
-    VIR_ADD_CAST(d), VIR_ADD_CAST(e), VIR_ADD_CAST(f),      \
-    VIR_ADD_CAST(g), VIR_ADD_CAST(h), VIR_ADD_CAST(i)
-
-#  define VIR_ADD_CASTS(...)                                            \
-    VIR_ADD_CAST_EXPAND(VIR_ADD_CAST, VIR_COUNT_ARGS(__VA_ARGS__),      \
-                        __VA_ARGS__)
-
-#  define PROBE_EXPAND(NAME, ARGS) NAME(ARGS)
-#  define PROBE(NAME, FMT, ...)                              \
-    VIR_DEBUG_INT(VIR_LOG_FROM_TRACE,                        \
-                  __FILE__, __LINE__, __func__,              \
-                  #NAME ": " FMT, __VA_ARGS__);              \
-    if (LIBVIRT_ ## NAME ## _ENABLED()) {                    \
-        PROBE_EXPAND(LIBVIRT_ ## NAME,                       \
-                     VIR_ADD_CASTS(__VA_ARGS__));            \
-    }
-# else
-#  define PROBE(NAME, FMT, ...)                              \
-    VIR_DEBUG_INT(VIR_LOG_FROM_TRACE,                        \
-                  __FILE__, __LINE__, __func__,              \
-                  #NAME ": " FMT, __VA_ARGS__);
-# endif
-
+/* Specific error values for use in forwarding programs such as
+ * virt-login-shell; these values match what GNU env does.  */
+enum {
+    EXIT_CANCELED = 125, /* Failed before attempting exec */
+    EXIT_CANNOT_INVOKE = 126, /* Exists but couldn't exec */
+    EXIT_ENOENT = 127, /* Could not find program to exec */
+};
 
 #endif                          /* __VIR_INTERNAL_H__ */

@@ -1,7 +1,7 @@
 /*
  * virsh-snapshot.c: Commands to manage domain snapshot
  *
- * Copyright (C) 2005, 2007-2013 Red Hat, Inc.
+ * Copyright (C) 2005, 2007-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -38,6 +38,7 @@
 #include "viralloc.h"
 #include "virfile.h"
 #include "virsh-domain.h"
+#include "virstring.h"
 #include "virxml.h"
 #include "conf/snapshot_conf.h"
 
@@ -99,7 +100,7 @@ vshSnapshotCreate(vshControl *ctl, virDomainPtr dom, const char *buffer,
 
     ret = true;
 
-cleanup:
+ cleanup:
     xmlXPathFreeContext(ctxt);
     xmlFreeDoc(xml);
     if (snapshot)
@@ -128,7 +129,7 @@ static const vshCmdOptDef opts_snapshot_create[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "xmlfile",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("domain snapshot XML")
     },
     {.name = "redefine",
@@ -214,7 +215,7 @@ cmdSnapshotCreate(vshControl *ctl, const vshCmd *cmd)
 
     ret = vshSnapshotCreate(ctl, dom, buffer, flags, from);
 
-cleanup:
+ cleanup:
     VIR_FREE(buffer);
     if (dom)
         virDomainFree(dom);
@@ -253,12 +254,12 @@ vshParseSnapshotMemspec(vshControl *ctl, virBufferPtr buf, const char *str)
             goto cleanup;
     }
 
-    virBufferAddLit(buf, "  <memory");
+    virBufferAddLit(buf, "<memory");
     virBufferEscapeString(buf, " snapshot='%s'", snapshot);
     virBufferEscapeString(buf, " file='%s'", file);
     virBufferAddLit(buf, "/>\n");
     ret = 0;
-cleanup:
+ cleanup:
     if (ret < 0)
         vshError(ctl, _("unable to parse memspec: %s"), str);
     virStringFreeList(array);
@@ -293,21 +294,23 @@ vshParseSnapshotDiskspec(vshControl *ctl, virBufferPtr buf, const char *str)
             goto cleanup;
     }
 
-    virBufferEscapeString(buf, "    <disk name='%s'", name);
+    virBufferEscapeString(buf, "<disk name='%s'", name);
     if (snapshot)
         virBufferAsprintf(buf, " snapshot='%s'", snapshot);
     if (driver || file) {
         virBufferAddLit(buf, ">\n");
+        virBufferAdjustIndent(buf, 2);
         if (driver)
-            virBufferAsprintf(buf, "      <driver type='%s'/>\n", driver);
+            virBufferAsprintf(buf, "<driver type='%s'/>\n", driver);
         if (file)
-            virBufferEscapeString(buf, "      <source file='%s'/>\n", file);
-        virBufferAddLit(buf, "    </disk>\n");
+            virBufferEscapeString(buf, "<source file='%s'/>\n", file);
+        virBufferAdjustIndent(buf, -2);
+        virBufferAddLit(buf, "</disk>\n");
     } else {
         virBufferAddLit(buf, "/>\n");
     }
     ret = 0;
-cleanup:
+ cleanup:
     if (ret < 0)
         vshError(ctl, _("unable to parse diskspec: %s"), str);
     virStringFreeList(array);
@@ -331,11 +334,11 @@ static const vshCmdOptDef opts_snapshot_create_as[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "name",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("name of snapshot")
     },
     {.name = "description",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("description of snapshot")
     },
     {.name = "print-xml",
@@ -424,8 +427,9 @@ cmdSnapshotCreateAs(vshControl *ctl, const vshCmd *cmd)
         goto cleanup;
 
     virBufferAddLit(&buf, "<domainsnapshot>\n");
-    virBufferEscapeString(&buf, "  <name>%s</name>\n", name);
-    virBufferEscapeString(&buf, "  <description>%s</description>\n", desc);
+    virBufferAdjustIndent(&buf, 2);
+    virBufferEscapeString(&buf, "<name>%s</name>\n", name);
+    virBufferEscapeString(&buf, "<description>%s</description>\n", desc);
 
     if (vshCommandOptStringReq(ctl, cmd, "memspec", &memspec) < 0)
         goto cleanup;
@@ -434,13 +438,16 @@ cmdSnapshotCreateAs(vshControl *ctl, const vshCmd *cmd)
         goto cleanup;
 
     if (vshCommandOptBool(cmd, "diskspec")) {
-        virBufferAddLit(&buf, "  <disks>\n");
+        virBufferAddLit(&buf, "<disks>\n");
+        virBufferAdjustIndent(&buf, 2);
         while ((opt = vshCommandOptArgv(cmd, opt))) {
             if (vshParseSnapshotDiskspec(ctl, &buf, opt->data) < 0)
                 goto cleanup;
         }
-        virBufferAddLit(&buf, "  </disks>\n");
+        virBufferAdjustIndent(&buf, -2);
+        virBufferAddLit(&buf, "</disks>\n");
     }
+    virBufferAdjustIndent(&buf, -2);
     virBufferAddLit(&buf, "</domainsnapshot>\n");
 
     if (virBufferError(&buf)) {
@@ -458,7 +465,7 @@ cmdSnapshotCreateAs(vshControl *ctl, const vshCmd *cmd)
 
     ret = vshSnapshotCreate(ctl, dom, buffer, flags, NULL);
 
-cleanup:
+ cleanup:
     virBufferFreeAndReset(&buf);
     VIR_FREE(buffer);
     virDomainFree(dom);
@@ -523,7 +530,7 @@ static const vshCmdOptDef opts_snapshot_edit[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "snapshotname",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("snapshot name")
     },
     {.name = "current",
@@ -570,22 +577,21 @@ cmdSnapshotEdit(vshControl *ctl, const vshCmd *cmd)
 
 #define EDIT_GET_XML \
     virDomainSnapshotGetXMLDesc(snapshot, getxml_flags)
-#define EDIT_NOT_CHANGED \
-    /* Depending on flags, we re-edit even if XML is unchanged.  */ \
-    if (!(define_flags & VIR_DOMAIN_SNAPSHOT_CREATE_CURRENT)) {     \
-        vshPrint(ctl,                                               \
-                 _("Snapshot %s XML configuration not changed.\n"), \
-                 name);                                             \
-        ret = true;                                                 \
-        goto edit_cleanup;                                          \
-    }
+#define EDIT_NOT_CHANGED                                                \
+    do {                                                                \
+        /* Depending on flags, we re-edit even if XML is unchanged.  */ \
+        if (!(define_flags & VIR_DOMAIN_SNAPSHOT_CREATE_CURRENT)) {     \
+            vshPrint(ctl,                                               \
+                     _("Snapshot %s XML configuration not changed.\n"), \
+                     name);                                             \
+            ret = true;                                                 \
+            goto edit_cleanup;                                          \
+        }                                                               \
+    } while (0)
 #define EDIT_DEFINE \
     (strstr(doc, "<state>disk-snapshot</state>") ? \
     define_flags |= VIR_DOMAIN_SNAPSHOT_CREATE_DISK_ONLY : 0), \
     edited = virDomainSnapshotCreateXML(dom, doc_edited, define_flags)
-#define EDIT_FREE \
-    if (edited) \
-        virDomainSnapshotFree(edited);
 #include "virsh-edit.c"
 
     edited_name = virDomainSnapshotGetName(edited);
@@ -614,7 +620,7 @@ cmdSnapshotEdit(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     if (!ret && name)
         vshError(ctl, _("Failed to update %s"), name);
     if (edited)
@@ -653,7 +659,7 @@ static const vshCmdOptDef opts_snapshot_current[] = {
      .help = N_("include security sensitive information in XML dump")
     },
     {.name = "snapshotname",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("name of existing snapshot to make current")
     },
     {.name = NULL}
@@ -733,7 +739,7 @@ cmdSnapshotCurrent(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     if (!ret)
         vshReportError(ctl);
     VIR_FREE(xml);
@@ -789,7 +795,7 @@ vshGetSnapshotParent(vshControl *ctl, virDomainSnapshotPtr snapshot,
     *parent_name = virXPathString("string(/domainsnapshot/parent/name)", ctxt);
     ret = 0;
 
-cleanup:
+ cleanup:
     if (ret < 0) {
         vshReportError(ctl);
         vshError(ctl, "%s", _("unable to determine if snapshot has parent"));
@@ -853,7 +859,7 @@ vshSnapshotFilter(vshControl *ctl, virDomainSnapshotPtr snapshot,
             ret = !!(flags & VIR_DOMAIN_SNAPSHOT_LIST_ACTIVE);
     }
 
-cleanup:
+ cleanup:
     VIR_FREE(state);
     xmlXPathFreeContext(ctxt);
     xmlFreeDoc(xmldoc);
@@ -881,7 +887,7 @@ static const vshCmdOptDef opts_snapshot_info[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "snapshotname",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("snapshot name")
     },
     {.name = "current",
@@ -1024,7 +1030,7 @@ cmdSnapshotInfo(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     VIR_FREE(state);
     xmlXPathFreeContext(ctxt);
     xmlFreeDoc(xmldoc);
@@ -1369,7 +1375,7 @@ vshSnapshotListCollect(vshControl *ctl, virDomainPtr dom,
         }
     }
 
-success:
+ success:
     if (filter_fallback) {
         /* Older API didn't filter on status or location, but the
          * information is available in domain XML.  */
@@ -1400,7 +1406,7 @@ success:
     ret = snaplist;
     snaplist = NULL;
 
-cleanup:
+ cleanup:
     vshSnapshotListFree(snaplist);
     if (names && count > 0)
         for (i = 0; i < count; i++)
@@ -1486,7 +1492,7 @@ static const vshCmdOptDef opts_snapshot_list[] = {
      .help = N_("list snapshots in a tree")
     },
     {.name = "from",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("limit list to children of given snapshot")
     },
     {.name = "current",
@@ -1667,7 +1673,7 @@ cmdSnapshotList(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     /* this frees up memory from the last iteration of the loop */
     vshSnapshotListFree(snaplist);
     VIR_FREE(parent_snap);
@@ -1741,7 +1747,7 @@ cmdSnapshotDumpXML(vshControl *ctl, const vshCmd *cmd)
     vshPrint(ctl, "%s", xml);
     ret = true;
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
     if (snapshot)
         virDomainSnapshotFree(snapshot);
@@ -1770,7 +1776,7 @@ static const vshCmdOptDef opts_snapshot_parent[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "snapshotname",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("find parent of snapshot name")
     },
     {.name = "current",
@@ -1808,7 +1814,7 @@ cmdSnapshotParent(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     VIR_FREE(parent);
     if (snapshot)
         virDomainSnapshotFree(snapshot);
@@ -1838,7 +1844,7 @@ static const vshCmdOptDef opts_snapshot_revert[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "snapshotname",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("snapshot name")
     },
     {.name = "current",
@@ -1902,7 +1908,7 @@ cmdDomainSnapshotRevert(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     if (snapshot)
         virDomainSnapshotFree(snapshot);
     if (dom)
@@ -1931,7 +1937,7 @@ static const vshCmdOptDef opts_snapshot_delete[] = {
      .help = N_("domain name, id or uuid")
     },
     {.name = "snapshotname",
-     .type = VSH_OT_DATA,
+     .type = VSH_OT_STRING,
      .help = N_("snapshot name")
     },
     {.name = "current",
@@ -1992,7 +1998,7 @@ cmdSnapshotDelete(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     if (snapshot)
         virDomainSnapshotFree(snapshot);
     if (dom)

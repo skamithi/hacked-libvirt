@@ -1,7 +1,7 @@
 /*
  * AppArmor security driver for libvirt
  *
- * Copyright (C) 2011-2013 Red Hat, Inc.
+ * Copyright (C) 2011-2014 Red Hat, Inc.
  * Copyright (C) 2009-2010 Canonical Ltd.
  *
  * This library is free software; you can redistribute it and/or
@@ -52,6 +52,9 @@
 #include "virscsi.h"
 
 #define VIR_FROM_THIS VIR_FROM_SECURITY
+
+VIR_LOG_INIT("security.security_apparmor");
+
 #define SECURITY_APPARMOR_VOID_DOI      "0"
 #define SECURITY_APPARMOR_NAME          "apparmor"
 #define VIRT_AA_HELPER LIBEXECDIR "/virt-aa-helper"
@@ -103,7 +106,7 @@ profile_status(const char *str, const int check_enforcing)
     }
 
     VIR_FREE(content);
-  cleanup:
+ cleanup:
     VIR_FREE(tmp);
     VIR_FREE(etmp);
 
@@ -150,7 +153,7 @@ profile_status_file(const char *str)
     else
         rc = 1;
 
-  failed:
+ failed:
     VIR_FREE(tmp);
     VIR_FREE(profile);
     VIR_FREE(content);
@@ -175,7 +178,7 @@ load_profile(virSecurityManagerPtr mgr,
     const char *probe = virSecurityManagerGetAllowDiskFormatProbing(mgr)
         ? "1" : "0";
 
-    xml = virDomainDefFormat(def, VIR_DOMAIN_XML_SECURE);
+    xml = virDomainDefFormat(def, VIR_DOMAIN_DEF_FORMAT_SECURE);
     if (!xml)
         goto cleanup;
 
@@ -196,7 +199,7 @@ load_profile(virSecurityManagerPtr mgr,
     virCommandSetInputBuffer(cmd, xml);
     rc = virCommandRun(cmd, NULL);
 
-cleanup:
+ cleanup:
     VIR_FREE(xml);
     virCommandFree(cmd);
 
@@ -246,12 +249,17 @@ use_apparmor(void)
         return rc;
     }
 
+    /* If libvirt_lxc is calling us, then consider apparmor is used
+     * and enforced. */
+    if (strstr(libvirt_daemon, "libvirt_lxc"))
+        return 1;
+
     if (access(APPARMOR_PROFILES_PATH, R_OK) != 0)
         goto cleanup;
 
     rc = profile_status(libvirt_daemon, 1);
 
-cleanup:
+ cleanup:
     VIR_FREE(libvirt_daemon);
     return rc;
 }
@@ -273,7 +281,7 @@ reload_profile(virSecurityManagerPtr mgr,
     if (!secdef)
         return rc;
 
-    if (secdef->norelabel)
+    if (!secdef->relabel)
         return 0;
 
     if ((profile_name = get_profile_name(def)) == NULL)
@@ -291,7 +299,7 @@ reload_profile(virSecurityManagerPtr mgr,
     }
 
     rc = 0;
-  cleanup:
+ cleanup:
     VIR_FREE(profile_name);
 
     return rc;
@@ -341,31 +349,39 @@ AppArmorSetSecuritySCSILabel(virSCSIDevicePtr dev ATTRIBUTE_UNUSED,
 
 /* Called on libvirtd startup to see if AppArmor is available */
 static int
-AppArmorSecurityManagerProbe(const char *virtDriver)
+AppArmorSecurityManagerProbe(const char *virtDriver ATTRIBUTE_UNUSED)
 {
-    char *template = NULL;
+    char *template_qemu = NULL;
+    char *template_lxc = NULL;
     int rc = SECURITY_DRIVER_DISABLE;
 
     if (use_apparmor() < 0)
         return rc;
 
-    if (virtDriver && STREQ(virtDriver, "LXC"))
-        return rc;
-
     /* see if template file exists */
-    if (virAsprintf(&template, "%s/TEMPLATE",
+    if (virAsprintf(&template_qemu, "%s/TEMPLATE.qemu",
                                APPARMOR_DIR "/libvirt") == -1)
         return rc;
 
-    if (!virFileExists(template)) {
+    if (virAsprintf(&template_lxc, "%s/TEMPLATE.lxc",
+                               APPARMOR_DIR "/libvirt") == -1)
+        goto cleanup;
+
+    if (!virFileExists(template_qemu)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("template \'%s\' does not exist"), template);
+                       _("template \'%s\' does not exist"), template_qemu);
+        goto cleanup;
+    }
+    if (!virFileExists(template_lxc)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("template \'%s\' does not exist"), template_lxc);
         goto cleanup;
     }
     rc = SECURITY_DRIVER_ENABLE;
 
-  cleanup:
-    VIR_FREE(template);
+ cleanup:
+    VIR_FREE(template_qemu);
+    VIR_FREE(template_lxc);
 
     return rc;
 }
@@ -415,7 +431,8 @@ AppArmorGenSecurityLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
     if (!secdef)
         return -1;
 
-    if (secdef->type == VIR_DOMAIN_SECLABEL_STATIC)
+    if ((secdef->type == VIR_DOMAIN_SECLABEL_STATIC) ||
+        (secdef->type == VIR_DOMAIN_SECLABEL_NONE))
         return 0;
 
     if (secdef->baselabel) {
@@ -455,12 +472,12 @@ AppArmorGenSecurityLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
     rc = 0;
     goto cleanup;
 
-  err:
+ err:
     VIR_FREE(secdef->label);
     VIR_FREE(secdef->imagelabel);
     VIR_FREE(secdef->model);
 
-  cleanup:
+ cleanup:
     VIR_FREE(profile_name);
 
     return rc;
@@ -475,7 +492,7 @@ AppArmorSetSecurityAllLabel(virSecurityManagerPtr mgr,
     if (!secdef)
         return -1;
 
-    if (secdef->norelabel)
+    if (!secdef->relabel)
         return 0;
 
     /* Reload the profile if stdin_path is specified. Note that
@@ -515,7 +532,7 @@ AppArmorGetSecurityProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
     }
     rc = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(profile_name);
 
     return rc;
@@ -544,7 +561,7 @@ AppArmorReleaseSecurityLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 static int
 AppArmorRestoreSecurityAllLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
                                 virDomainDefPtr def,
-                                int migrated ATTRIBUTE_UNUSED)
+                                bool migrated ATTRIBUTE_UNUSED)
 {
     int rc = 0;
     virSecurityLabelDefPtr secdef =
@@ -578,6 +595,9 @@ AppArmorSetSecurityProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
     if (!secdef)
         return -1;
 
+    if (secdef->label == NULL)
+        return 0;
+
     if ((profile_name = get_profile_name(def)) == NULL)
         return rc;
 
@@ -591,6 +611,7 @@ AppArmorSetSecurityProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
             goto cleanup;
     }
 
+    VIR_DEBUG("Changing AppArmor profile to %s", profile_name);
     if (aa_change_profile(profile_name) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("error calling aa_change_profile()"));
@@ -598,7 +619,7 @@ AppArmorSetSecurityProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
     }
     rc = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(profile_name);
 
     return rc;
@@ -616,11 +637,15 @@ AppArmorSetSecurityChildProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 {
     int rc = -1;
     char *profile_name = NULL;
+    char *cmd_str = NULL;
     virSecurityLabelDefPtr secdef =
         virDomainDefGetSecurityLabelDef(def, SECURITY_APPARMOR_NAME);
 
     if (!secdef)
         goto cleanup;
+
+    if (secdef->label == NULL)
+        return 0;
 
     if (STRNEQ(SECURITY_APPARMOR_NAME, secdef->model)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -635,11 +660,14 @@ AppArmorSetSecurityChildProcessLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
     if ((profile_name = get_profile_name(def)) == NULL)
         goto cleanup;
 
+    cmd_str = virCommandToString(cmd);
+    VIR_DEBUG("Changing AppArmor profile to %s on %s", profile_name, cmd_str);
     virCommandSetAppArmorProfile(cmd, profile_name);
     rc = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(profile_name);
+    VIR_FREE(cmd_str);
     return rc;
 }
 
@@ -669,48 +697,57 @@ AppArmorClearSecuritySocketLabel(virSecurityManagerPtr mgr ATTRIBUTE_UNUSED,
 static int
 AppArmorRestoreSecurityImageLabel(virSecurityManagerPtr mgr,
                                   virDomainDefPtr def,
-                                  virDomainDiskDefPtr disk)
+                                  virStorageSourcePtr src)
 {
-    if (disk->type == VIR_DOMAIN_DISK_TYPE_NETWORK)
+    if (!virStorageSourceIsLocalStorage(src))
         return 0;
 
     return reload_profile(mgr, def, NULL, false);
 }
 
+static int
+AppArmorRestoreSecurityDiskLabel(virSecurityManagerPtr mgr,
+                                 virDomainDefPtr def,
+                                 virDomainDiskDefPtr disk)
+{
+    return AppArmorRestoreSecurityImageLabel(mgr, def, disk->src);
+}
+
 /* Called when hotplugging */
 static int
 AppArmorSetSecurityImageLabel(virSecurityManagerPtr mgr,
-                              virDomainDefPtr def, virDomainDiskDefPtr disk)
+                              virDomainDefPtr def,
+                              virStorageSourcePtr src)
 {
     int rc = -1;
     char *profile_name = NULL;
-    virSecurityLabelDefPtr secdef =
-        virDomainDefGetSecurityLabelDef(def, SECURITY_APPARMOR_NAME);
+    virSecurityLabelDefPtr secdef;
 
-    if (!secdef)
-        return -1;
-
-    if (secdef->norelabel)
+    if (!src->path || !virStorageSourceIsLocalStorage(src))
         return 0;
 
-    if (!disk->src || disk->type == VIR_DOMAIN_DISK_TYPE_NETWORK)
+    if (!(secdef = virDomainDefGetSecurityLabelDef(def, SECURITY_APPARMOR_NAME)))
+        return -1;
+
+    if (!secdef->relabel)
         return 0;
 
     if (secdef->imagelabel) {
         /* if the device doesn't exist, error out */
-        if (!virFileExists(disk->src)) {
+        if (!virFileExists(src->path)) {
             virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("\'%s\' does not exist"), disk->src);
-            return rc;
+                           _("\'%s\' does not exist"),
+                           src->path);
+            return -1;
         }
 
         if ((profile_name = get_profile_name(def)) == NULL)
-            return rc;
+            return -1;
 
         /* update the profile only if it is loaded */
         if (profile_loaded(secdef->imagelabel) >= 0) {
-            if (load_profile(mgr, secdef->imagelabel, def, disk->src,
-                             false) < 0) {
+            if (load_profile(mgr, secdef->imagelabel, def,
+                             src->path, false) < 0) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("cannot update AppArmor profile "
                                  "\'%s\'"),
@@ -721,10 +758,18 @@ AppArmorSetSecurityImageLabel(virSecurityManagerPtr mgr,
     }
     rc = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(profile_name);
 
     return rc;
+}
+
+static int
+AppArmorSetSecurityDiskLabel(virSecurityManagerPtr mgr,
+                             virDomainDefPtr def,
+                             virDomainDiskDefPtr disk)
+{
+    return AppArmorSetSecurityImageLabel(mgr, def, disk->src);
 }
 
 static int
@@ -767,14 +812,24 @@ AppArmorSetSecurityHostdevLabel(virSecurityManagerPtr mgr,
     int ret = -1;
     virSecurityLabelDefPtr secdef =
         virDomainDefGetSecurityLabelDef(def, SECURITY_APPARMOR_NAME);
+    virDomainHostdevSubsysUSBPtr usbsrc = &dev->source.subsys.u.usb;
+    virDomainHostdevSubsysPCIPtr pcisrc = &dev->source.subsys.u.pci;
+    virDomainHostdevSubsysSCSIPtr scsisrc = &dev->source.subsys.u.scsi;
 
     if (!secdef)
         return -1;
 
-    if (secdef->norelabel)
+    if (!secdef->relabel)
         return 0;
 
     if (dev->mode != VIR_DOMAIN_HOSTDEV_MODE_SUBSYS)
+        return 0;
+
+    /* Like AppArmorRestoreSecurityImageLabel() for a networked disk,
+     * do nothing for an iSCSI hostdev
+     */
+    if (dev->source.subsys.type == VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI &&
+        scsisrc->protocol == VIR_DOMAIN_HOSTDEV_SCSI_PROTOCOL_TYPE_ISCSI)
         return 0;
 
     if (profile_loaded(secdef->imagelabel) < 0)
@@ -788,10 +843,7 @@ AppArmorSetSecurityHostdevLabel(virSecurityManagerPtr mgr,
     switch (dev->source.subsys.type) {
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_USB: {
         virUSBDevicePtr usb =
-            virUSBDeviceNew(dev->source.subsys.u.usb.bus,
-                            dev->source.subsys.u.usb.device,
-                            vroot);
-
+            virUSBDeviceNew(usbsrc->bus, usbsrc->device, vroot);
         if (!usb)
             goto done;
 
@@ -802,16 +854,13 @@ AppArmorSetSecurityHostdevLabel(virSecurityManagerPtr mgr,
 
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_PCI: {
         virPCIDevicePtr pci =
-            virPCIDeviceNew(dev->source.subsys.u.pci.addr.domain,
-                            dev->source.subsys.u.pci.addr.bus,
-                            dev->source.subsys.u.pci.addr.slot,
-                            dev->source.subsys.u.pci.addr.function);
+            virPCIDeviceNew(pcisrc->addr.domain, pcisrc->addr.bus,
+                            pcisrc->addr.slot, pcisrc->addr.function);
 
         if (!pci)
             goto done;
 
-        if (dev->source.subsys.u.pci.backend
-            == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
+        if (pcisrc->backend == VIR_DOMAIN_HOSTDEV_PCI_BACKEND_VFIO) {
             char *vfioGroupDev = virPCIDeviceGetIOMMUGroupDev(pci);
 
             if (!vfioGroupDev) {
@@ -828,14 +877,12 @@ AppArmorSetSecurityHostdevLabel(virSecurityManagerPtr mgr,
     }
 
     case VIR_DOMAIN_HOSTDEV_SUBSYS_TYPE_SCSI: {
+        virDomainHostdevSubsysSCSIHostPtr scsihostsrc = &scsisrc->u.host;
         virSCSIDevicePtr scsi =
             virSCSIDeviceNew(NULL,
-                             dev->source.subsys.u.scsi.adapter,
-                             dev->source.subsys.u.scsi.bus,
-                             dev->source.subsys.u.scsi.target,
-                             dev->source.subsys.u.scsi.unit,
-                             dev->readonly,
-                             dev->shareable);
+                             scsihostsrc->adapter, scsihostsrc->bus,
+                             scsihostsrc->target, scsihostsrc->unit,
+                             dev->readonly, dev->shareable);
 
          if (!scsi)
              goto done;
@@ -851,7 +898,7 @@ AppArmorSetSecurityHostdevLabel(virSecurityManagerPtr mgr,
         break;
     }
 
-done:
+ done:
     VIR_FREE(ptr);
     return ret;
 }
@@ -870,7 +917,7 @@ AppArmorRestoreSecurityHostdevLabel(virSecurityManagerPtr mgr,
     if (!secdef)
         return -1;
 
-    if (secdef->norelabel)
+    if (!secdef->relabel)
         return 0;
 
     return reload_profile(mgr, def, NULL, false);
@@ -951,6 +998,9 @@ virSecurityDriver virAppArmorSecurityDriver = {
     .getDOI                             = AppArmorSecurityManagerGetDOI,
 
     .domainSecurityVerify               = AppArmorSecurityVerify,
+
+    .domainSetSecurityDiskLabel         = AppArmorSetSecurityDiskLabel,
+    .domainRestoreSecurityDiskLabel     = AppArmorRestoreSecurityDiskLabel,
 
     .domainSetSecurityImageLabel        = AppArmorSetSecurityImageLabel,
     .domainRestoreSecurityImageLabel    = AppArmorRestoreSecurityImageLabel,

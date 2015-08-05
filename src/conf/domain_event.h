@@ -127,6 +127,17 @@ virDomainEventBlockJobNewFromDom(virDomainPtr dom,
                                  int status);
 
 virObjectEventPtr
+virDomainEventBlockJob2NewFromObj(virDomainObjPtr obj,
+                                  const char *dst,
+                                  int type,
+                                  int status);
+virObjectEventPtr
+virDomainEventBlockJob2NewFromDom(virDomainPtr dom,
+                                  const char *dst,
+                                  int type,
+                                  int status);
+
+virObjectEventPtr
 virDomainEventDiskChangeNewFromObj(virDomainObjPtr obj,
                                    const char *oldSrcPath,
                                    const char *newSrcPath,
@@ -173,6 +184,30 @@ virDomainEventDeviceRemovedNewFromObj(virDomainObjPtr obj,
 virObjectEventPtr
 virDomainEventDeviceRemovedNewFromDom(virDomainPtr dom,
                                       const char *devAlias);
+virObjectEventPtr
+virDomainEventDeviceAddedNewFromObj(virDomainObjPtr obj,
+                                    const char *devAlias);
+virObjectEventPtr
+virDomainEventDeviceAddedNewFromDom(virDomainPtr dom,
+                                    const char *devAlias);
+virObjectEventPtr
+virDomainEventTunableNewFromObj(virDomainObjPtr obj,
+                                virTypedParameterPtr params,
+                                int nparams);
+virObjectEventPtr
+virDomainEventTunableNewFromDom(virDomainPtr dom,
+                                virTypedParameterPtr params,
+                                int nparams);
+
+virObjectEventPtr
+virDomainEventAgentLifecycleNewFromObj(virDomainObjPtr obj,
+                                       int state,
+                                       int reason);
+
+virObjectEventPtr
+virDomainEventAgentLifecycleNewFromDom(virDomainPtr dom,
+                                       int state,
+                                       int reason);
 
 int
 virDomainEventStateRegister(virConnectPtr conn,
@@ -218,5 +253,28 @@ virDomainEventStateDeregister(virConnectPtr conn,
                               virObjectEventStatePtr state,
                               virConnectDomainEventCallback callback)
     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3);
+
+int
+virDomainQemuMonitorEventStateRegisterID(virConnectPtr conn,
+                                         virObjectEventStatePtr state,
+                                         virDomainPtr dom,
+                                         const char *event,
+                                         virConnectDomainQemuMonitorEventCallback cb,
+                                         void *opaque,
+                                         virFreeCallback freecb,
+                                         unsigned int flags,
+                                         int *callbackID)
+    ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(5)
+    ATTRIBUTE_NONNULL(9);
+
+virObjectEventPtr
+virDomainQemuMonitorEventNew(int id,
+                             const char *name,
+                             const unsigned char *uuid,
+                             const char *event,
+                             long long seconds,
+                             unsigned int micros,
+                             const char *details)
+    ATTRIBUTE_NONNULL(2) ATTRIBUTE_NONNULL(3) ATTRIBUTE_NONNULL(4);
 
 #endif

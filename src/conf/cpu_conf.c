@@ -1,7 +1,7 @@
 /*
  * cpu_conf.c: CPU XML handling
  *
- * Copyright (C) 2009-2013 Red Hat, Inc.
+ * Copyright (C) 2009-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -56,7 +56,6 @@ VIR_ENUM_IMPL(virCPUFeaturePolicy, VIR_CPU_FEATURE_LAST,
               "disable",
               "forbid")
 
-
 void ATTRIBUTE_NONNULL(1)
 virCPUDefFreeModel(virCPUDefPtr def)
 {
@@ -74,18 +73,11 @@ virCPUDefFreeModel(virCPUDefPtr def)
 void
 virCPUDefFree(virCPUDefPtr def)
 {
-    size_t i;
-
     if (!def)
         return;
 
     virCPUDefFreeModel(def);
 
-    for (i = 0; i < def->ncells; i++) {
-        virBitmapFree(def->cells[i].cpumask);
-        VIR_FREE(def->cells[i].cpustr);
-    }
-    VIR_FREE(def->cells);
     VIR_FREE(def->vendor_id);
 
     VIR_FREE(def);
@@ -129,7 +121,6 @@ virCPUDefPtr
 virCPUDefCopy(const virCPUDef *cpu)
 {
     virCPUDefPtr copy;
-    size_t i;
 
     if (!cpu || VIR_ALLOC(copy) < 0)
         return NULL;
@@ -146,29 +137,9 @@ virCPUDefCopy(const virCPUDef *cpu)
     if (virCPUDefCopyModel(copy, cpu, false) < 0)
         goto error;
 
-    if (cpu->ncells) {
-        if (VIR_ALLOC_N(copy->cells, cpu->ncells) < 0)
-            goto error;
-        copy->ncells_max = copy->ncells = cpu->ncells;
-
-        for (i = 0; i < cpu->ncells; i++) {
-            copy->cells[i].cellid = cpu->cells[i].cellid;
-            copy->cells[i].mem = cpu->cells[i].mem;
-
-            copy->cells[i].cpumask = virBitmapNewCopy(cpu->cells[i].cpumask);
-
-            if (!copy->cells[i].cpumask)
-                goto error;
-
-            if (VIR_STRDUP(copy->cells[i].cpustr, cpu->cells[i].cpustr) < 0)
-                goto error;
-        }
-        copy->cells_cpus = cpu->cells_cpus;
-    }
-
     return copy;
 
-error:
+ error:
     virCPUDefFree(copy);
     return NULL;
 }
@@ -176,10 +147,11 @@ error:
 virCPUDefPtr
 virCPUDefParseXML(xmlNodePtr node,
                   xmlXPathContextPtr ctxt,
-                  enum virCPUType mode)
+                  virCPUType mode)
 {
     virCPUDefPtr def;
     xmlNodePtr *nodes = NULL;
+    xmlNodePtr oldnode = ctxt->node;
     int n;
     size_t i;
     char *cpuMode;
@@ -199,7 +171,7 @@ virCPUDefParseXML(xmlNodePtr node,
         if (virXPathBoolean("boolean(./arch)", ctxt)) {
             if (virXPathBoolean("boolean(./@match)", ctxt)) {
                 virReportError(VIR_ERR_XML_ERROR, "%s",
-                               _("'arch' element element cannot be used inside 'cpu'"
+                               _("'arch' element cannot be used inside 'cpu'"
                                  " element with 'match' attribute'"));
                 goto error;
             }
@@ -361,7 +333,8 @@ virCPUDefParseXML(xmlNodePtr node,
         goto error;
 
     if (n > 0) {
-        if (!def->model && def->mode != VIR_CPU_MODE_HOST_MODEL) {
+        if (!def->model && def->mode != VIR_CPU_MODE_HOST_MODEL &&
+            def->mode != VIR_CPU_MODE_HOST_PASSTHROUGH) {
             virReportError(VIR_ERR_XML_ERROR, "%s",
                            _("Non-empty feature list specified without "
                              "CPU model"));
@@ -409,7 +382,7 @@ virCPUDefParseXML(xmlNodePtr node,
         for (j = 0; j < i; j++) {
             if (STREQ(name, def->features[j].name)) {
                 virReportError(VIR_ERR_XML_ERROR,
-                               _("CPU feature `%s' specified more than once"),
+                               _("CPU feature '%s' specified more than once"),
                                name);
                 VIR_FREE(name);
                 goto error;
@@ -420,65 +393,14 @@ virCPUDefParseXML(xmlNodePtr node,
         def->features[i].policy = policy;
     }
 
-    if (virXPathNode("./numa[1]", ctxt)) {
-        VIR_FREE(nodes);
-        n = virXPathNodeSet("./numa[1]/cell", ctxt, &nodes);
-        if (n <= 0) {
-            virReportError(VIR_ERR_XML_ERROR, "%s",
-                           _("NUMA topology defined without NUMA cells"));
-            goto error;
-        }
-
-        if (VIR_RESIZE_N(def->cells, def->ncells_max,
-                         def->ncells, n) < 0)
-            goto error;
-
-        def->ncells = n;
-
-        for (i = 0; i < n; i++) {
-            char *cpus, *memory;
-            int ret, ncpus = 0;
-
-            def->cells[i].cellid = i;
-            cpus = virXMLPropString(nodes[i], "cpus");
-            if (!cpus) {
-                virReportError(VIR_ERR_XML_ERROR, "%s",
-                               _("Missing 'cpus' attribute in NUMA cell"));
-                goto error;
-            }
-            def->cells[i].cpustr = cpus;
-
-            ncpus = virBitmapParse(cpus, 0, &def->cells[i].cpumask,
-                                   VIR_DOMAIN_CPUMASK_LEN);
-            if (ncpus <= 0)
-                goto error;
-            def->cells_cpus += ncpus;
-
-            memory = virXMLPropString(nodes[i], "memory");
-            if (!memory) {
-                virReportError(VIR_ERR_XML_ERROR, "%s",
-                               _("Missing 'memory' attribute in NUMA cell"));
-                goto error;
-            }
-
-            ret  = virStrToLong_ui(memory, NULL, 10, &def->cells[i].mem);
-            if (ret == -1) {
-                virReportError(VIR_ERR_XML_ERROR, "%s",
-                               _("Invalid 'memory' attribute in NUMA cell"));
-                VIR_FREE(memory);
-                goto error;
-            }
-            VIR_FREE(memory);
-        }
-    }
-
-cleanup:
+ cleanup:
+    ctxt->node = oldnode;
     VIR_FREE(fallback);
     VIR_FREE(vendor_id);
     VIR_FREE(nodes);
     return def;
 
-error:
+ error:
     virCPUDefFree(def);
     def = NULL;
     goto cleanup;
@@ -487,21 +409,20 @@ error:
 
 char *
 virCPUDefFormat(virCPUDefPtr def,
-                unsigned int flags)
+                virDomainNumaPtr numa,
+                bool updateCPU)
 {
     virBuffer buf = VIR_BUFFER_INITIALIZER;
 
-    if (virCPUDefFormatBufFull(&buf, def, flags) < 0)
+    if (virCPUDefFormatBufFull(&buf, def, numa, updateCPU) < 0)
         goto cleanup;
 
-    if (virBufferError(&buf))
-        goto no_memory;
+    if (virBufferCheckError(&buf) < 0)
+        goto cleanup;
 
     return virBufferContentAndReset(&buf);
 
-no_memory:
-    virReportOOMError();
-cleanup:
+ cleanup:
     virBufferFreeAndReset(&buf);
     return NULL;
 }
@@ -510,12 +431,18 @@ cleanup:
 int
 virCPUDefFormatBufFull(virBufferPtr buf,
                        virCPUDefPtr def,
-                       unsigned int flags)
+                       virDomainNumaPtr numa,
+                       bool updateCPU)
 {
+    int ret = -1;
+    virBuffer attributeBuf = VIR_BUFFER_INITIALIZER;
+    virBuffer childrenBuf = VIR_BUFFER_INITIALIZER;
+    int indent = virBufferGetIndent(buf, false);
+
     if (!def)
         return 0;
 
-    virBufferAddLit(buf, "<cpu");
+    /* Format attributes */
     if (def->type == VIR_CPU_TYPE_GUEST) {
         const char *tmp;
 
@@ -523,43 +450,62 @@ virCPUDefFormatBufFull(virBufferPtr buf,
             if (!(tmp = virCPUModeTypeToString(def->mode))) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("Unexpected CPU mode %d"), def->mode);
-                return -1;
+                goto cleanup;
             }
-            virBufferAsprintf(buf, " mode='%s'", tmp);
+            virBufferAsprintf(&attributeBuf, " mode='%s'", tmp);
         }
 
         if (def->model &&
             (def->mode == VIR_CPU_MODE_CUSTOM ||
-             (flags & VIR_DOMAIN_XML_UPDATE_CPU))) {
+             updateCPU)) {
             if (!(tmp = virCPUMatchTypeToString(def->match))) {
                 virReportError(VIR_ERR_INTERNAL_ERROR,
                                _("Unexpected CPU match policy %d"),
                                def->match);
-                return -1;
+                goto cleanup;
             }
-            virBufferAsprintf(buf, " match='%s'", tmp);
+            virBufferAsprintf(&attributeBuf, " match='%s'", tmp);
         }
     }
-    virBufferAddLit(buf, ">\n");
 
+    /* Format children */
+    virBufferAdjustIndent(&childrenBuf, indent + 2);
     if (def->arch)
-        virBufferAsprintf(buf, "  <arch>%s</arch>\n",
+        virBufferAsprintf(&childrenBuf, "<arch>%s</arch>\n",
                           virArchToString(def->arch));
+    if (virCPUDefFormatBuf(&childrenBuf, def, updateCPU) < 0)
+        goto cleanup;
 
-    virBufferAdjustIndent(buf, 2);
-    if (virCPUDefFormatBuf(buf, def, flags) < 0)
-        return -1;
-    virBufferAdjustIndent(buf, -2);
+    if (virDomainNumaDefCPUFormat(&childrenBuf, numa) < 0)
+        goto cleanup;
 
-    virBufferAddLit(buf, "</cpu>\n");
+    /* Put it all together */
+    if (virBufferUse(&attributeBuf) || virBufferUse(&childrenBuf)) {
+        virBufferAddLit(buf, "<cpu");
 
-    return 0;
+        if (virBufferUse(&attributeBuf))
+            virBufferAddBuffer(buf, &attributeBuf);
+
+        if (virBufferUse(&childrenBuf)) {
+            virBufferAddLit(buf, ">\n");
+            virBufferAddBuffer(buf, &childrenBuf);
+            virBufferAddLit(buf, "</cpu>\n");
+        } else {
+            virBufferAddLit(buf, "/>\n");
+        }
+    }
+
+    ret = 0;
+ cleanup:
+    virBufferFreeAndReset(&attributeBuf);
+    virBufferFreeAndReset(&childrenBuf);
+    return ret;
 }
 
 int
 virCPUDefFormatBuf(virBufferPtr buf,
                    virCPUDefPtr def,
-                   unsigned int flags)
+                   bool updateCPU)
 {
     size_t i;
     bool formatModel;
@@ -569,13 +515,15 @@ virCPUDefFormatBuf(virBufferPtr buf,
         return 0;
 
     formatModel = (def->mode == VIR_CPU_MODE_CUSTOM ||
-                   (flags & VIR_DOMAIN_XML_UPDATE_CPU));
+                   def->mode == VIR_CPU_MODE_HOST_MODEL ||
+                   updateCPU);
     formatFallback = (def->type == VIR_CPU_TYPE_GUEST &&
                       (def->mode == VIR_CPU_MODE_HOST_MODEL ||
                        (def->mode == VIR_CPU_MODE_CUSTOM && def->model)));
 
     if (!def->model &&
         def->mode != VIR_CPU_MODE_HOST_MODEL &&
+        def->mode != VIR_CPU_MODE_HOST_PASSTHROUGH &&
         def->nfeatures) {
         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("Non-empty feature list specified without CPU model"));
@@ -596,17 +544,17 @@ virCPUDefFormatBuf(virBufferPtr buf,
             }
             virBufferAsprintf(buf, " fallback='%s'", fallback);
             if (def->vendor_id)
-                virBufferAsprintf(buf, " vendor_id='%s'", def->vendor_id);
+                virBufferEscapeString(buf, " vendor_id='%s'", def->vendor_id);
         }
         if (formatModel && def->model) {
-            virBufferAsprintf(buf, ">%s</model>\n", def->model);
+            virBufferEscapeString(buf, ">%s</model>\n", def->model);
         } else {
             virBufferAddLit(buf, "/>\n");
         }
     }
 
     if (formatModel && def->vendor)
-        virBufferAsprintf(buf, "<vendor>%s</vendor>\n", def->vendor);
+        virBufferEscapeString(buf, "<vendor>%s</vendor>\n", def->vendor);
 
     if (def->sockets && def->cores && def->threads) {
         virBufferAddLit(buf, "<topology");
@@ -643,16 +591,6 @@ virCPUDefFormatBuf(virBufferPtr buf,
         }
     }
 
-    if (def->ncells) {
-        virBufferAddLit(buf, "<numa>\n");
-        for (i = 0; i < def->ncells; i++) {
-            virBufferAddLit(buf, "  <cell");
-            virBufferAsprintf(buf, " cpus='%s'", def->cells[i].cpustr);
-            virBufferAsprintf(buf, " memory='%d'", def->cells[i].mem);
-            virBufferAddLit(buf, "/>\n");
-        }
-        virBufferAddLit(buf, "</numa>\n");
-    }
     return 0;
 }
 
@@ -675,7 +613,7 @@ virCPUDefUpdateFeatureInternal(virCPUDefPtr def,
             }
 
             virReportError(VIR_ERR_INTERNAL_ERROR,
-                           _("CPU feature `%s' specified more than once"),
+                           _("CPU feature '%s' specified more than once"),
                            name);
 
             return -1;
@@ -819,6 +757,6 @@ virCPUDefIsEqual(virCPUDefPtr src,
 
     identical = true;
 
-cleanup:
+ cleanup:
     return identical;
 }

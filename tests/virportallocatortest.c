@@ -23,8 +23,11 @@
 #include "virfile.h"
 #include "testutils.h"
 
-#if HAVE_DLFCN_H && defined(RTLD_NEXT)
+#if HAVE_DLFCN_H
+# include <dlfcn.h>
+#endif
 
+#if defined(RTLD_NEXT)
 # ifdef MOCK_HELPER
 #  include "internal.h"
 #  include <sys/socket.h>
@@ -32,9 +35,8 @@
 #  include <arpa/inet.h>
 #  include <netinet/in.h>
 #  include <stdio.h>
-#  include <dlfcn.h>
 
-static bool host_has_ipv6 = false;
+static bool host_has_ipv6;
 static int (*realsocket)(int domain, int type, int protocol);
 
 static void init_syms(void)
@@ -47,7 +49,7 @@ static void init_syms(void)
     realsocket = dlsym(RTLD_NEXT, "socket");
 
     if (!realsocket) {
-        fprintf(stderr, "Unable to find 'socket' symbol\n");
+        VIR_TEST_DEBUG("Unable to find 'socket' symbol\n");
         abort();
     }
 
@@ -116,10 +118,11 @@ int bind(int sockfd ATTRIBUTE_UNUSED,
 
 #  define VIR_FROM_THIS VIR_FROM_RPC
 
+VIR_LOG_INIT("tests.portallocatortest");
 
 static int testAllocAll(const void *args ATTRIBUTE_UNUSED)
 {
-    virPortAllocatorPtr alloc = virPortAllocatorNew("test", 5900, 5909);
+    virPortAllocatorPtr alloc = virPortAllocatorNew("test", 5900, 5909, 0);
     int ret = -1;
     unsigned short p1, p2, p3, p4, p5, p6, p7;
 
@@ -129,59 +132,52 @@ static int testAllocAll(const void *args ATTRIBUTE_UNUSED)
     if (virPortAllocatorAcquire(alloc, &p1) < 0)
         goto cleanup;
     if (p1 != 5901) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5901, got %d", p1);
+        VIR_TEST_DEBUG("Expected 5901, got %d", p1);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p2) < 0)
         goto cleanup;
     if (p2 != 5902) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5902, got %d", p2);
+        VIR_TEST_DEBUG("Expected 5902, got %d", p2);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p3) < 0)
         goto cleanup;
     if (p3 != 5903) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5903, got %d", p3);
+        VIR_TEST_DEBUG("Expected 5903, got %d", p3);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p4) < 0)
         goto cleanup;
     if (p4 != 5907) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5907, got %d", p4);
+        VIR_TEST_DEBUG("Expected 5907, got %d", p4);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p5) < 0)
         goto cleanup;
     if (p5 != 5908) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5908, got %d", p5);
+        VIR_TEST_DEBUG("Expected 5908, got %d", p5);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p6) < 0)
         goto cleanup;
     if (p6 != 5909) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5909, got %d", p6);
+        VIR_TEST_DEBUG("Expected 5909, got %d", p6);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p7) == 0) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected error, got %d", p7);
+        VIR_TEST_DEBUG("Expected error, got %d", p7);
         goto cleanup;
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     virObjectUnref(alloc);
     return ret;
 }
@@ -190,7 +186,7 @@ cleanup:
 
 static int testAllocReuse(const void *args ATTRIBUTE_UNUSED)
 {
-    virPortAllocatorPtr alloc = virPortAllocatorNew("test", 5900, 5910);
+    virPortAllocatorPtr alloc = virPortAllocatorNew("test", 5900, 5910, 0);
     int ret = -1;
     unsigned short p1, p2, p3, p4;
 
@@ -200,24 +196,21 @@ static int testAllocReuse(const void *args ATTRIBUTE_UNUSED)
     if (virPortAllocatorAcquire(alloc, &p1) < 0)
         goto cleanup;
     if (p1 != 5901) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5901, got %d", p1);
+        VIR_TEST_DEBUG("Expected 5901, got %d", p1);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p2) < 0)
         goto cleanup;
     if (p2 != 5902) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5902, got %d", p2);
+        VIR_TEST_DEBUG("Expected 5902, got %d", p2);
         goto cleanup;
     }
 
     if (virPortAllocatorAcquire(alloc, &p3) < 0)
         goto cleanup;
     if (p3 != 5903) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5903, got %d", p3);
+        VIR_TEST_DEBUG("Expected 5903, got %d", p3);
         goto cleanup;
     }
 
@@ -228,13 +221,12 @@ static int testAllocReuse(const void *args ATTRIBUTE_UNUSED)
     if (virPortAllocatorAcquire(alloc, &p4) < 0)
         goto cleanup;
     if (p4 != 5902) {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expected 5902, got %d", p4);
+        VIR_TEST_DEBUG("Expected 5902, got %d", p4);
         goto cleanup;
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     virObjectUnref(alloc);
     return ret;
 }
@@ -259,13 +251,13 @@ mymain(void)
     if (virtTestRun("Test IPv4-only alloc reuse", testAllocReuse, NULL) < 0)
         ret = -1;
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN_PRELOAD(mymain, abs_builddir "/.libs/libvirportallocatormock.so")
 # endif
 
-#else /* ! HAVE_DLFCN_H */
+#else /* ! defined(RTLD_NEXT) */
 int
 main(void)
 {

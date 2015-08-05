@@ -7,7 +7,8 @@
 #include "domain_conf.h"
 
 
-virCapsPtr testXenCapsInit(void) {
+virCapsPtr testXenCapsInit(void)
+{
     struct utsname utsname;
     virCapsPtr caps;
     virCapsGuestPtr guest;
@@ -22,21 +23,21 @@ virCapsPtr testXenCapsInit(void) {
 
     uname(&utsname);
     if ((caps = virCapabilitiesNew(VIR_ARCH_I686,
-                                   0, 0)) == NULL)
+                                   false, false)) == NULL)
         return NULL;
 
     nmachines = ARRAY_CARDINALITY(x86_machines);
     if ((machines = virCapabilitiesAllocMachines(x86_machines, nmachines)) == NULL)
         goto cleanup;
 
-    if ((guest = virCapabilitiesAddGuest(caps, "hvm", VIR_ARCH_I686,
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM, VIR_ARCH_I686,
                                          "/usr/lib/xen/bin/qemu-dm", NULL,
                                          nmachines, machines)) == NULL)
         goto cleanup;
     machines = NULL;
 
     if (virCapabilitiesAddGuestDomain(guest,
-                                      "xen",
+                                      VIR_DOMAIN_VIRT_XEN,
                                       NULL,
                                       NULL,
                                       0,
@@ -47,14 +48,14 @@ virCapsPtr testXenCapsInit(void) {
     if ((machines = virCapabilitiesAllocMachines(xen_machines, nmachines)) == NULL)
         goto cleanup;
 
-    if ((guest = virCapabilitiesAddGuest(caps, "xen", VIR_ARCH_I686,
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_XEN, VIR_ARCH_I686,
                                          "/usr/lib/xen/bin/qemu-dm", NULL,
                                          nmachines, machines)) == NULL)
         goto cleanup;
     machines = NULL;
 
     if (virCapabilitiesAddGuestDomain(guest,
-                                      "xen",
+                                      VIR_DOMAIN_VIRT_XEN,
                                       NULL,
                                       NULL,
                                       0,
@@ -63,7 +64,61 @@ virCapsPtr testXenCapsInit(void) {
 
     return caps;
 
-cleanup:
+ cleanup:
+    virCapabilitiesFreeMachines(machines, nmachines);
+    virObjectUnref(caps);
+    return NULL;
+}
+
+
+virCapsPtr
+testXLInitCaps(void)
+{
+    virCapsPtr caps;
+    virCapsGuestPtr guest;
+    virCapsGuestMachinePtr *machines;
+    int nmachines;
+    static const char *const x86_machines[] = {
+        "xenfv"
+    };
+    static const char *const xen_machines[] = {
+        "xenpv"
+    };
+
+    if ((caps = virCapabilitiesNew(virArchFromHost(),
+                                   false, false)) == NULL)
+        return NULL;
+    nmachines = ARRAY_CARDINALITY(x86_machines);
+    if ((machines = virCapabilitiesAllocMachines(x86_machines, nmachines)) == NULL)
+        goto cleanup;
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM,
+                                         VIR_ARCH_X86_64,
+                                         "/usr/lib/xen/bin/qemu-system-i386",
+                                         "/usr/lib/xen/boot/hvmloader",
+                                         nmachines, machines)) == NULL)
+        goto cleanup;
+    machines = NULL;
+    if (virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_XEN, NULL,
+                                      NULL, 0, NULL) == NULL)
+        goto cleanup;
+    nmachines = ARRAY_CARDINALITY(xen_machines);
+    if ((machines = virCapabilitiesAllocMachines(xen_machines, nmachines)) == NULL)
+        goto cleanup;
+
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_XEN,
+                                         VIR_ARCH_X86_64,
+                                         "/usr/lib/xen/bin/qemu-system-i386",
+                                         NULL,
+                                         nmachines, machines)) == NULL)
+        goto cleanup;
+    machines = NULL;
+
+    if (virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_XEN, NULL,
+                                      NULL, 0, NULL) == NULL)
+        goto cleanup;
+    return caps;
+
+ cleanup:
     virCapabilitiesFreeMachines(machines, nmachines);
     virObjectUnref(caps);
     return NULL;

@@ -238,9 +238,15 @@ typedef enum {
 
     /**
      * @desc: Trim domain filesystems
-     * @message: Trimming domain filesystems require authorization
+     * @message: Trimming domain filesystems requires authorization
      */
     VIR_ACCESS_PERM_DOMAIN_FS_TRIM,      /* Issue TRIM to guest filesystems */
+
+    /**
+     * @desc: Freeze and thaw domain filesystems
+     * @message: Freezing and thawing domain filesystems requires authorization
+     */
+    VIR_ACCESS_PERM_DOMAIN_FS_FREEZE,    /* Freeze and thaw guest filesystems */
 
     /* Peeking at guest */
 
@@ -282,12 +288,23 @@ typedef enum {
      */
     VIR_ACCESS_PERM_DOMAIN_SCREENSHOT,    /* Trigger a screen shot */
 
-
     /**
      * @desc: Open domain namespace
      * @message: Opening domain namespaces requires authorization
      */
     VIR_ACCESS_PERM_DOMAIN_OPEN_NAMESPACE,
+
+    /**
+     * @desc: Write domain time
+     * @message: Setting the domain time requires authorization
+     */
+    VIR_ACCESS_PERM_DOMAIN_SET_TIME,
+
+    /**
+     * @desc: Set password of the domain's account
+     * @message: Setting the domain accounts' password requires authorization
+     */
+    VIR_ACCESS_PERM_DOMAIN_SET_PASSWORD,
 
     VIR_ACCESS_PERM_DOMAIN_LAST,
 } virAccessPermDomain;

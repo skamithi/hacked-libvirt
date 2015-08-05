@@ -15,8 +15,13 @@ static int virLockSpaceProtocolDispatchAcquireResourceHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchAcquireResource(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchAcquireResource");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchAcquireResource(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchAcquireResource body has to be implemented manually */
 
@@ -36,8 +41,13 @@ static int virLockSpaceProtocolDispatchCreateLockSpaceHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchCreateLockSpace(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchCreateLockSpace");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchCreateLockSpace(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchCreateLockSpace body has to be implemented manually */
 
@@ -57,8 +67,13 @@ static int virLockSpaceProtocolDispatchCreateResourceHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchCreateResource(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchCreateResource");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchCreateResource(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchCreateResource body has to be implemented manually */
 
@@ -78,8 +93,13 @@ static int virLockSpaceProtocolDispatchDeleteResourceHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchDeleteResource(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchDeleteResource");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchDeleteResource(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchDeleteResource body has to be implemented manually */
 
@@ -99,8 +119,13 @@ static int virLockSpaceProtocolDispatchNewHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchNew(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchNew");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchNew(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchNew body has to be implemented manually */
 
@@ -120,8 +145,13 @@ static int virLockSpaceProtocolDispatchRegisterHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchRegister(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchRegister");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchRegister(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchRegister body has to be implemented manually */
 
@@ -141,8 +171,13 @@ static int virLockSpaceProtocolDispatchReleaseResourceHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchReleaseResource(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchReleaseResource");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchReleaseResource(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchReleaseResource body has to be implemented manually */
 
@@ -162,8 +197,13 @@ static int virLockSpaceProtocolDispatchRestrictHelper(
     void *args,
     void *ret ATTRIBUTE_UNUSED)
 {
-  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p", server, client, msg, rerr, args, ret);
-  return virLockSpaceProtocolDispatchRestrict(server, client, msg, rerr, args);
+  int rv;
+  virThreadJobSet("virLockSpaceProtocolDispatchRestrict");
+  VIR_DEBUG("server=%p client=%p msg=%p rerr=%p args=%p ret=%p",
+            server, client, msg, rerr, args, ret);
+  rv = virLockSpaceProtocolDispatchRestrict(server, client, msg, rerr, args);
+  virThreadJobClear(rv);
+  return rv;
 }
 /* virLockSpaceProtocolDispatchRestrict body has to be implemented manually */
 

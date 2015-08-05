@@ -1,7 +1,7 @@
 /*
  * secret_conf.c: internal <secret> XML handling
  *
- * Copyright (C) 2009, 2011, 2013 Red Hat, Inc.
+ * Copyright (C) 2009-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -34,7 +34,9 @@
 
 #define VIR_FROM_THIS VIR_FROM_SECRET
 
-VIR_ENUM_IMPL(virSecretUsageType, VIR_SECRET_USAGE_TYPE_LAST,
+VIR_LOG_INIT("conf.secret_conf");
+
+VIR_ENUM_IMPL(virSecretUsage, VIR_SECRET_USAGE_TYPE_LAST,
               "none", "volume", "ceph", "iscsi")
 
 void
@@ -80,7 +82,7 @@ virSecretDefParseUsage(xmlXPathContextPtr ctxt,
                        _("unknown secret usage type"));
         return -1;
     }
-    type = virSecretUsageTypeTypeFromString(type_str);
+    type = virSecretUsageTypeFromString(type_str);
     if (type < 0) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
                        _("unknown secret usage type %s"), type_str);
@@ -157,11 +159,11 @@ secretXMLParseNode(xmlDocPtr xml, xmlNodePtr root)
 
     prop = virXPathString("string(./@ephemeral)", ctxt);
     if (prop != NULL) {
-        if (STREQ(prop, "yes"))
+        if (STREQ(prop, "yes")) {
             def->ephemeral = true;
-        else if (STREQ(prop, "no"))
+        } else if (STREQ(prop, "no")) {
             def->ephemeral = false;
-        else {
+        } else {
             virReportError(VIR_ERR_XML_ERROR, "%s",
                            _("invalid value of 'ephemeral'"));
             goto cleanup;
@@ -171,11 +173,11 @@ secretXMLParseNode(xmlDocPtr xml, xmlNodePtr root)
 
     prop = virXPathString("string(./@private)", ctxt);
     if (prop != NULL) {
-        if (STREQ(prop, "yes"))
+        if (STREQ(prop, "yes")) {
             def->private = true;
-        else if (STREQ(prop, "no"))
+        } else if (STREQ(prop, "no")) {
             def->private = false;
-        else {
+        } else {
             virReportError(VIR_ERR_XML_ERROR, "%s",
                            _("invalid value of 'private'"));
             goto cleanup;
@@ -247,34 +249,35 @@ virSecretDefFormatUsage(virBufferPtr buf,
 {
     const char *type;
 
-    type = virSecretUsageTypeTypeToString(def->usage_type);
+    type = virSecretUsageTypeToString(def->usage_type);
     if (type == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("unexpected secret usage type %d"),
                        def->usage_type);
         return -1;
     }
-    virBufferAsprintf(buf, "  <usage type='%s'>\n", type);
+    virBufferAsprintf(buf, "<usage type='%s'>\n", type);
+    virBufferAdjustIndent(buf, 2);
     switch (def->usage_type) {
     case VIR_SECRET_USAGE_TYPE_NONE:
         break;
 
     case VIR_SECRET_USAGE_TYPE_VOLUME:
         if (def->usage.volume != NULL)
-            virBufferEscapeString(buf, "    <volume>%s</volume>\n",
+            virBufferEscapeString(buf, "<volume>%s</volume>\n",
                                   def->usage.volume);
         break;
 
     case VIR_SECRET_USAGE_TYPE_CEPH:
         if (def->usage.ceph != NULL) {
-            virBufferEscapeString(buf, "    <name>%s</name>\n",
+            virBufferEscapeString(buf, "<name>%s</name>\n",
                                   def->usage.ceph);
         }
         break;
 
     case VIR_SECRET_USAGE_TYPE_ISCSI:
         if (def->usage.target != NULL) {
-            virBufferEscapeString(buf, "    <target>%s</target>\n",
+            virBufferEscapeString(buf, "<target>%s</target>\n",
                                   def->usage.target);
         }
         break;
@@ -285,7 +288,8 @@ virSecretDefFormatUsage(virBufferPtr buf,
                        def->usage_type);
         return -1;
     }
-    virBufferAddLit(buf, "  </usage>\n");
+    virBufferAdjustIndent(buf, -2);
+    virBufferAddLit(buf, "</usage>\n");
 
     return 0;
 }
@@ -303,22 +307,22 @@ virSecretDefFormat(const virSecretDef *def)
 
     uuid = def->uuid;
     virUUIDFormat(uuid, uuidstr);
-    virBufferEscapeString(&buf, "  <uuid>%s</uuid>\n", uuidstr);
+    virBufferAdjustIndent(&buf, 2);
+    virBufferEscapeString(&buf, "<uuid>%s</uuid>\n", uuidstr);
     if (def->description != NULL)
-        virBufferEscapeString(&buf, "  <description>%s</description>\n",
+        virBufferEscapeString(&buf, "<description>%s</description>\n",
                               def->description);
     if (def->usage_type != VIR_SECRET_USAGE_TYPE_NONE &&
         virSecretDefFormatUsage(&buf, def) < 0)
         goto error;
+    virBufferAdjustIndent(&buf, -2);
     virBufferAddLit(&buf, "</secret>\n");
 
-    if (virBufferError(&buf))
-        goto no_memory;
+    if (virBufferCheckError(&buf) < 0)
+        goto error;
 
     return virBufferContentAndReset(&buf);
 
- no_memory:
-    virReportOOMError();
  error:
     virBufferFreeAndReset(&buf);
     return NULL;

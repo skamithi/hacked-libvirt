@@ -1,7 +1,7 @@
 /*
  * vircommand.h: Child command execution
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -33,7 +33,7 @@ typedef virCommand *virCommandPtr;
  * call any function that is not async-signal-safe.  */
 typedef int (*virExecHook)(void *data);
 
-int virFork(pid_t *pid) ATTRIBUTE_RETURN_CHECK;
+pid_t virFork(void) ATTRIBUTE_RETURN_CHECK;
 
 int virRun(const char *const*argv, int *status) ATTRIBUTE_RETURN_CHECK;
 
@@ -60,6 +60,11 @@ void virCommandPassFD(virCommandPtr cmd,
                       int fd,
                       unsigned int flags);
 
+void virCommandPassListenFDs(virCommandPtr cmd);
+
+int virCommandPassFDGetFDIndex(virCommandPtr cmd,
+                               int fd);
+
 void virCommandSetPidFile(virCommandPtr cmd,
                           const char *pidfile) ATTRIBUTE_NONNULL(2);
 
@@ -70,6 +75,7 @@ void virCommandSetUID(virCommandPtr cmd, uid_t uid);
 void virCommandSetMaxMemLock(virCommandPtr cmd, unsigned long long bytes);
 void virCommandSetMaxProcesses(virCommandPtr cmd, unsigned int procs);
 void virCommandSetMaxFiles(virCommandPtr cmd, unsigned int files);
+void virCommandSetUmask(virCommandPtr cmd, int umask);
 
 void virCommandClearCaps(virCommandPtr cmd);
 
@@ -85,6 +91,8 @@ void virCommandSetAppArmorProfile(virCommandPtr cmd,
 void virCommandDaemonize(virCommandPtr cmd);
 
 void virCommandNonblockingFDs(virCommandPtr cmd);
+
+void virCommandRawStatus(virCommandPtr cmd);
 
 void virCommandAddEnvFormat(virCommandPtr cmd, const char *format, ...)
     ATTRIBUTE_NONNULL(2) ATTRIBUTE_FMT_PRINTF(2, 3);
@@ -185,5 +193,24 @@ void virCommandFree(virCommandPtr cmd);
 
 void virCommandDoAsyncIO(virCommandPtr cmd);
 
-void virCommandSetDryRun(virBufferPtr buf);
+typedef int (*virCommandRunRegexFunc)(char **const groups,
+                                      void *data);
+typedef int (*virCommandRunNulFunc)(size_t n_tokens,
+                                    char **const groups,
+                                    void *data);
+
+int virCommandRunRegex(virCommandPtr cmd,
+                       int nregex,
+                       const char **regex,
+                       int *nvars,
+                       virCommandRunRegexFunc func,
+                       void *data,
+                       const char *cmd_to_ignore);
+
+int virCommandRunNul(virCommandPtr cmd,
+                     size_t n_columns,
+                     virCommandRunNulFunc func,
+                     void *data);
+
+
 #endif /* __VIR_COMMAND_H__ */

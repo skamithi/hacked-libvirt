@@ -1,5 +1,5 @@
 /*
- * openvz_config.h: config information for OpenVZ VPSs
+ * openvz_conf.h: config information for OpenVZ VPSs
  *
  * Copyright (C) 2010 Red Hat, Inc.
  * Copyright (C) 2006, 2007 Binary Karma.
@@ -35,9 +35,10 @@
 
 
 /* OpenVZ commands - Replace with wrapper scripts later? */
-# define VZLIST  "/usr/sbin/vzlist"
-# define VZCTL   "/usr/sbin/vzctl"
-# define VZ_CONF_FILE "/etc/vz/vz.conf"
+# define VZLIST         "/usr/sbin/vzlist"
+# define VZCTL          "/usr/sbin/vzctl"
+# define VZMIGRATE      "/usr/sbin/vzmigrate"
+# define VZ_CONF_FILE   "/etc/vz/vz.conf"
 
 # define VZCTL_BRIDGE_MIN_VERSION ((3 * 1000 * 1000) + (0 * 1000) + 22 + 1)
 

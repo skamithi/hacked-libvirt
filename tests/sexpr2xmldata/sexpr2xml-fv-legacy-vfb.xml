@@ -6,7 +6,7 @@
   <vcpu placement='static'>1</vcpu>
   <os>
     <type>hvm</type>
-    <loader>/usr/lib/xen/boot/hvmloader</loader>
+    <loader type='rom'>/usr/lib/xen/boot/hvmloader</loader>
     <boot dev='hd'/>
   </os>
   <features>
@@ -26,6 +26,7 @@
     <disk type='block' device='disk'>
       <driver name='phy'/>
       <source dev='/dev/zvol/dsk/export/s10u4-root'/>
+      <backingStore/>
       <target dev='hda' bus='ide'/>
     </disk>
     <input type='mouse' bus='ps2'/>

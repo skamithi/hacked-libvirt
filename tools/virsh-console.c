@@ -1,7 +1,7 @@
 /*
  * virsh-console.c: A dumb serial console client
  *
- * Copyright (C) 2007-2008, 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2007-2008, 2010-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -46,6 +46,8 @@
 # include "virthread.h"
 # include "virerror.h"
 
+VIR_LOG_INIT("tools.virsh-console");
+
 /*
  * Convert given character to control character.
  * Basically, we assume ASCII, and take lower 6 bits.
@@ -79,11 +81,9 @@ struct virConsole {
 };
 
 
-static int got_signal = 0;
 static void
 virConsoleHandleSignal(int sig ATTRIBUTE_UNUSED)
 {
-    got_signal = 1;
 }
 
 
@@ -224,9 +224,8 @@ virConsoleEventOnStdin(int watch ATTRIBUTE_UNUSED,
                    con->terminalToStream.offset,
                    avail);
         if (got < 0) {
-            if (errno != EAGAIN) {
+            if (errno != EAGAIN)
                 virConsoleShutdown(con);
-            }
             return;
         }
         if (got == 0) {
@@ -268,9 +267,8 @@ virConsoleEventOnStdout(int watch ATTRIBUTE_UNUSED,
                      con->streamToTerminal.data,
                      con->streamToTerminal.offset);
         if (done < 0) {
-            if (errno != EAGAIN) {
+            if (errno != EAGAIN)
                 virConsoleShutdown(con);
-            }
             return;
         }
         memmove(con->streamToTerminal.data,
@@ -334,7 +332,6 @@ vshRunConsole(vshControl *ctl,
     /* Trap all common signals so that we can safely restore the original
      * terminal settings on STDIN before the process exits - people don't like
      * being left with a messed up terminal ! */
-    got_signal = 0;
     sigaction(SIGQUIT, &sighandler, &old_sigquit);
     sigaction(SIGTERM, &sighandler, &old_sigterm);
     sigaction(SIGINT,  &sighandler, &old_sigint);
@@ -356,6 +353,8 @@ vshRunConsole(vshControl *ctl,
     if (virCondInit(&con->cond) < 0 || virMutexInit(&con->lock) < 0)
         goto cleanup;
 
+    virMutexLock(&con->lock);
+
     con->stdinWatch = virEventAddHandle(STDIN_FILENO,
                                         VIR_EVENT_HANDLE_READABLE,
                                         virConsoleEventOnStdin,
@@ -375,14 +374,17 @@ vshRunConsole(vshControl *ctl,
 
     while (!con->quit) {
         if (virCondWait(&con->cond, &con->lock) < 0) {
+            virMutexUnlock(&con->lock);
             VIR_ERROR(_("unable to wait on console condition"));
             goto cleanup;
         }
     }
 
+    virMutexUnlock(&con->lock);
+
     ret = 0;
 
-cleanup:
+ cleanup:
     virConsoleFree(con);
 
     /* Restore original signal handlers */
@@ -392,7 +394,7 @@ cleanup:
     sigaction(SIGHUP,  &old_sighup,  NULL);
     sigaction(SIGPIPE, &old_sigpipe, NULL);
 
-resettty:
+ resettty:
     /* Put STDIN back into the (sane?) state we found
        it in before starting */
     vshTTYRestore(ctl);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Red Hat, Inc.
+ * Copyright (C) 2012, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -31,6 +31,8 @@
 #include "viruri.h"
 
 #define VIR_FROM_THIS VIR_FROM_RPC
+
+VIR_LOG_INIT("tests.uritest");
 
 struct URIParseData {
     const char *uri;
@@ -128,7 +130,7 @@ static int testURIParse(const void *args)
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     VIR_FREE(uristr);
     virURIFree(uri);
     return ret;
@@ -171,6 +173,7 @@ mymain(void)
     TEST_PARSE("test://127.0.0.1:123/system", "test", "127.0.0.1", 123, "/system", NULL, NULL, NULL, NULL);
     TEST_PARSE("test://[::1]:123/system", "test", "::1", 123, "/system", NULL, NULL, NULL, NULL);
     TEST_PARSE("test://[2001:41c8:1:4fd4::2]:123/system", "test", "2001:41c8:1:4fd4::2", 123, "/system", NULL, NULL, NULL, NULL);
+    TEST_PARSE("gluster+rdma://example.com:1234/gv0/vol.img", "gluster+rdma", "example.com", 1234, "/gv0/vol.img", NULL, NULL, NULL, NULL);
 
     virURIParam params1[] = {
         { (char*)"foo", (char*)"one", false },
@@ -220,7 +223,7 @@ mymain(void)
 #endif
     TEST_PARAMS("=bogus&foo=one", "foo=one", params6);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

@@ -11,6 +11,11 @@
       <li>Discuss any large changes on the mailing list first.  Post patches
         early and listen to feedback.</li>
 
+      <li>Official upstream repository is kept in git
+        (<code>git://libvirt.org/libvirt.git</code>) and is browsable
+        along with other libvirt-related repositories
+        (e.g. libvirt-python) <a href="http://libvirt.org/git/">online</a>.</li>
+
       <li><p>Post patches in unified diff format, with git rename
         detection enabled.  You need a one-time setup of:</p>
 <pre>
@@ -60,7 +65,7 @@
         review your patch set. One should avoid sending patches as attachments,
         but rather send them in email body along with commit message. If a
         developer is sending another version of the patch (e.g. to address
-        review comments), he is advised to note differences to previous
+        review comments), they are advised to note differences to previous
         versions after the <code>---</code> line in the patch so that it helps
         reviewers but doesn't become part of git history. Moreover, such patch
         needs to be prefixed correctly with
@@ -122,7 +127,7 @@
           Some tests are skipped by default in a development environment,
           based on the time they take in comparison to the likelihood
           that those tests will turn up problems during incremental builds.
-          These tests default to being run when when building from a
+          These tests default to being run when building from a
           tarball or with the configure option --enable-expensive-tests;
           you can also force a one-time toggle of these tests by
           setting VIR_TEST_EXPENSIVE to 0 or 1 at make time, as in:
@@ -159,6 +164,18 @@
 <pre>
   ./qemuxml2xmltest
 </pre>
+
+        <p>
+          If you are adding new test cases, or making changes that alter
+          existing test output, you can use the environment variable
+          VIR_TEST_REGENERATE_OUTPUT to quickly update the saved test data.
+          Of course you still need to review the changes VERY CAREFULLY to
+          ensure they are correct.
+        </p>
+<pre>
+  VIR_TEST_REGENERATE_OUTPUT=1 ./qemuxml2argvtest
+</pre>
+
         <p>There is also a <code>./run</code> script at the top level,
           to make it easier to run programs that have not yet been
           installed, as well as to wrap invocations of various tests
@@ -260,7 +277,7 @@
     <p>
       There is more on this subject, including lots of links to background
       reading on the subject, on
-      <a href="http://et.redhat.com/~rjones/how-to-supply-code-to-open-source-projects/">
+      <a href="http://people.redhat.com/rjones/how-to-supply-code-to-open-source-projects/">
         Richard Jones' guide to working with open source projects</a>.
     </p>
 
@@ -273,26 +290,11 @@
       In short, use spaces-not-TABs for indentation, use 4 spaces for each
       indentation level, and other than that, follow the K&amp;R style.
     </p>
-    <p>
-      If you use Emacs, add the following to one of one of your start-up files
-      (e.g., ~/.emacs), to help ensure that you get indentation right:
-    </p>
-<pre>
-  ;;; When editing C sources in libvirt, use this style.
-  (defun libvirt-c-mode ()
-    "C mode with adjusted defaults for use with libvirt."
-    (interactive)
-    (c-set-style "K&amp;R")
-    (setq indent-tabs-mode nil) ; indent using spaces, not TABs
-    (setq c-indent-level 4)
-    (setq c-basic-offset 4))
-  (add-hook 'c-mode-hook
-            '(lambda () (if (string-match "/libvirt" (buffer-file-name))
-                            (libvirt-c-mode))))
-</pre>
 
     <p>
-      If you use vim, append the following to your ~/.vimrc file:
+      If you use Emacs, the project includes a file .dir-locals.el
+      that sets up the preferred indentation. If you use vim,
+      append the following to your ~/.vimrc file:
     </p>
 <pre>
   set nocompatible
@@ -303,7 +305,7 @@
   set tabstop=8
   set shiftwidth=4
   set expandtab
-  set cinoptions=(0,:0,l1,t0
+  set cinoptions=(0,:0,l1,t0,L3
   filetype plugin indent on
   au FileType make setlocal noexpandtab
   au BufRead,BufNewFile *.am setlocal noexpandtab
@@ -472,18 +474,28 @@
 
     <p>
       Omit the curly braces around an <code>if</code>, <code>while</code>,
-      <code>for</code> etc. body only
-      when that body occupies a single line.  In every other case we require
+      <code>for</code> etc. body only when both that body and the condition
+      itself occupy a single line.  In every other case we require
       the braces.  This ensures that it is trivially easy to identify a
       single-<i>statement</i> loop: each has only one <i>line</i> in its body.
     </p>
-    <p>
-      Omitting braces with a single-line body is fine:
-    </p>
 
 <pre>
-  while (expr) // one-line body -> omitting curly braces is ok
+  while (expr)             // single line body; {} is forbidden
       single_line_stmt();
+</pre>
+
+<pre>
+  while (expr(arg1,
+              arg2))      // indentation makes it obvious it is single line,
+      single_line_stmt(); // {} is optional (not enforced either way)
+</pre>
+
+<pre>
+  while (expr1 &amp;&amp;
+         expr2) {         // multi-line, at same indentation, {} required
+      single_line_stmt();
+  }
 </pre>
 
     <p>
@@ -608,6 +620,37 @@
   }
 </pre>
 
+    <p>Use hanging braces for compound statements: the opening brace
+      of a compound statement should be on the same line as the
+      condition being tested.  Only top-level function bodies, nested
+      scopes, and compound structure declarations should ever have {
+      on a line by itself.
+    </p>
+
+<pre>
+  void
+  foo(int a, int b)
+  {                          // correct - function body
+      int 2d[][] = {
+        {                    // correct - complex initialization
+          1, 2,
+        },
+      };
+      if (a)
+      {                      // BAD: compound brace on its own line
+          do_stuff();
+      }
+      {                      // correct - nested scope
+          int tmp;
+          if (a &lt; b) {       // correct - hanging brace
+              tmp = b;
+              b = a;
+              a = tmp;
+          }
+      }
+  }
+</pre>
+
     <h2><a name="preprocessor">Preprocessor</a></h2>
 
     <p>Macros defined with an ALL_CAPS name should generally be
@@ -629,7 +672,7 @@
     </p>
 <pre>
   #if defined(HAVE_POSIX_FALLOCATE) &amp;&amp; !defined(HAVE_FALLOCATE)
-  # define fallocate(a,ignored,b,c) posix_fallocate(a,b,c)
+  # define fallocate(a, ignored, b, c) posix_fallocate(a, b, c)
   #endif
 </pre>
 
@@ -963,7 +1006,7 @@
     <p>
       If there is a need for complex string concatenations, avoid using
       the usual sequence of malloc/strcpy/strcat/snprintf functions and
-      make use of the virBuffer API described in buf.h
+      make use of the virBuffer API described in virbuffer.h
     </p>
 
     <p>Typical usage is as follows:</p>
@@ -983,11 +1026,8 @@
 
      ...
 
-     if (virBufferError(&amp;buf)) {
-         virBufferFreeAndReset(&amp;buf);
-         virReportOOMError();
+     if (virBufferCheckError(&amp;buf) &lt; 0)
          return NULL;
-     }
 
      return virBufferContentAndReset(&amp;buf);
   }
@@ -1137,6 +1177,20 @@
     cleanup: A path taken upon return with success code + optional error
   no_memory: A path only taken upon return with an OOM error code
       retry: If needing to jump upwards (e.g., retry on EINTR)
+</pre>
+
+    <p>
+    Top-level labels should be indented by one space (putting them on
+    the beginning of the line confuses function context detection in git):
+    </p>
+
+<pre>
+int foo()
+{
+    /* ... do stuff ... */
+ cleanup:
+    /* ... do other stuff ... */
+}
 </pre>
 
 

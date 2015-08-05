@@ -58,14 +58,12 @@ testFilterXML(char *xml)
         virBufferStrcat(&buf, *xmlLine, "\n", NULL);
     }
 
-    if (virBufferError(&buf)) {
-        virReportOOMError();
+    if (virBufferCheckError(&buf) < 0)
         goto cleanup;
-    }
 
     ret = virBufferContentAndReset(&buf);
 
-cleanup:
+ cleanup:
     virBufferFreeAndReset(&buf);
     virStringFreeList(xmlLines);
     return ret;
@@ -99,12 +97,11 @@ testCompareXMLToXMLFiles(const char *inxml,
 
     if (!(def = virDomainSnapshotDefParseString(inXmlData, driver.caps,
                                                 driver.xmlopt,
-                                                QEMU_EXPECTED_VIRT_TYPES,
                                                 flags)))
         goto cleanup;
 
     if (!(actual = virDomainSnapshotDefFormat(uuid, def,
-                                              VIR_DOMAIN_XML_SECURE,
+                                              VIR_DOMAIN_DEF_FORMAT_SECURE,
                                               internal)))
         goto cleanup;
 
@@ -123,7 +120,7 @@ testCompareXMLToXMLFiles(const char *inxml,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(inXmlData);
     VIR_FREE(outXmlData);
     VIR_FREE(actual);
@@ -226,14 +223,14 @@ mymain(void)
     DO_TEST_IN("description_only", NULL);
     DO_TEST_IN("name_only", NULL);
 
-cleanup:
+ cleanup:
     if (testSnapshotXMLVariableLineRegex)
         regfree(testSnapshotXMLVariableLineRegex);
     VIR_FREE(testSnapshotXMLVariableLineRegex);
     virObjectUnref(driver.caps);
     virObjectUnref(driver.xmlopt);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

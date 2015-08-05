@@ -1,6 +1,7 @@
 /*
  * domain_nwfilter.c:
  *
+ * Copyright (C) 2014 Red Hat, Inc.
  * Copyright (C) 2010 IBM Corporation
  *
  * This library is free software; you can redistribute it and/or
@@ -31,28 +32,31 @@
 static virDomainConfNWFilterDriverPtr nwfilterDriver;
 
 void
-virDomainConfNWFilterRegister(virDomainConfNWFilterDriverPtr driver) {
+virDomainConfNWFilterRegister(virDomainConfNWFilterDriverPtr driver)
+{
     nwfilterDriver = driver;
 }
 
 int
-virDomainConfNWFilterInstantiate(virConnectPtr conn,
-                                 const unsigned char *vmuuid,
-                                 virDomainNetDefPtr net) {
+virDomainConfNWFilterInstantiate(const unsigned char *vmuuid,
+                                 virDomainNetDefPtr net)
+{
     if (nwfilterDriver != NULL)
-        return nwfilterDriver->instantiateFilter(conn, vmuuid, net);
+        return nwfilterDriver->instantiateFilter(vmuuid, net);
     /* driver module not available -- don't indicate failure */
     return 0;
 }
 
 void
-virDomainConfNWFilterTeardown(virDomainNetDefPtr net) {
+virDomainConfNWFilterTeardown(virDomainNetDefPtr net)
+{
     if (nwfilterDriver != NULL)
         nwfilterDriver->teardownFilter(net);
 }
 
 void
-virDomainConfVMNWFilterTeardown(virDomainObjPtr vm) {
+virDomainConfVMNWFilterTeardown(virDomainObjPtr vm)
+{
     size_t i;
 
     if (nwfilterDriver != NULL) {

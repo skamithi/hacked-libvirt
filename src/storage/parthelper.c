@@ -48,7 +48,7 @@
 #include "virstring.h"
 
 /* we don't need to include the full internal.h just for this */
-#define STREQ(a,b) (strcmp(a,b) == 0)
+#define STREQ(a, b) (strcmp(a, b) == 0)
 
 /* Make the comparisons below fail if your parted headers
    are so old that they lack the definition.  */
@@ -91,9 +91,8 @@ int main(int argc, char **argv)
         if (VIR_STRDUP_QUIET(canonical_path, path) < 0)
             return 2;
     } else {
-        if (virFileResolveLink(path, &canonical_path) != 0) {
+        if (virFileResolveLink(path, &canonical_path) != 0)
             return 2;
-        }
 
         partsep = *canonical_path &&
             c_isdigit(canonical_path[strlen(canonical_path)-1]) ? "p" : "";

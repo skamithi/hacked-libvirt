@@ -1,8 +1,7 @@
-
 /*
  * esx_vi_types.c: client for the VMware VI API 2.5 to manage ESX hosts
  *
- * Copyright (C) 2010 Red Hat, Inc.
+ * Copyright (C) 2010, 2014 Red Hat, Inc.
  * Copyright (C) 2009-2011 Matthias Bolte <matthias.bolte@googlemail.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -37,7 +36,7 @@
 
 #define VIR_FROM_THIS VIR_FROM_ESX
 
-
+VIR_LOG_INIT("esx.esx_vi_types");
 
 #define ESX_VI__TEMPLATE__ALLOC(__type)                                       \
     int                                                                       \
@@ -740,7 +739,7 @@ esxVI_GetActualObjectType(xmlNodePtr node, esxVI_Type baseType,
 
     result = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(type);
 
     return result;
@@ -874,9 +873,7 @@ esxVI_Type_FromString(const char *type)
 
 #include "esx_vi_types.generated.typefromstring"
 
-    else {
-        return esxVI_Type_Other;
-    }
+    return esxVI_Type_Other;
 }
 
 
@@ -947,13 +944,11 @@ esxVI_AnyType_DeepCopy(esxVI_AnyType **dest, esxVI_AnyType *src)
         return -1;
     }
 
-    if (!src) {
+    if (!src)
         return 0;
-    }
 
-    if (esxVI_AnyType_Alloc(dest) < 0) {
+    if (esxVI_AnyType_Alloc(dest) < 0)
         goto failure;
-    }
 
     (*dest)->_type = src->_type;
     (*dest)->node = xmlCopyNode(src->node, 1);
@@ -1002,7 +997,7 @@ esxVI_AnyType_DeepCopy(esxVI_AnyType **dest, esxVI_AnyType *src)
 
     return 0;
 
-  failure:
+ failure:
     esxVI_AnyType_Free(dest);
 
     return -1;
@@ -1018,9 +1013,8 @@ esxVI_AnyType_Deserialize(xmlNodePtr node, esxVI_AnyType **anyType)
         return -1;
     }
 
-    if (esxVI_AnyType_Alloc(anyType) < 0) {
+    if (esxVI_AnyType_Alloc(anyType) < 0)
         return -1;
-    }
 
     (*anyType)->node = xmlCopyNode(node, 1);
 
@@ -1119,7 +1113,7 @@ esxVI_AnyType_Deserialize(xmlNodePtr node, esxVI_AnyType **anyType)
 
     return 0;
 
-  failure:
+ failure:
     esxVI_AnyType_Free(anyType);
 
     return -1;
@@ -1154,9 +1148,8 @@ esxVI_String_ListContainsValue(esxVI_String *stringList, const char *value)
     esxVI_String *string;
 
     for (string = stringList; string; string = string->_next) {
-        if (STREQ(string->value, value)) {
+        if (STREQ(string->value, value))
             return true;
-        }
     }
 
     return false;
@@ -1170,20 +1163,18 @@ esxVI_String_AppendValueToList(esxVI_String **stringList, const char *value)
 {
     esxVI_String *string = NULL;
 
-    if (esxVI_String_Alloc(&string) < 0) {
+    if (esxVI_String_Alloc(&string) < 0)
         return -1;
-    }
 
     if (VIR_STRDUP(string->value, value) < 0)
         goto failure;
 
-    if (esxVI_String_AppendToList(stringList, string) < 0) {
+    if (esxVI_String_AppendToList(stringList, string) < 0)
         goto failure;
-    }
 
     return 0;
 
-  failure:
+ failure:
     esxVI_String_Free(&string);
 
     return -1;
@@ -1197,20 +1188,18 @@ esxVI_String_AppendValueListToList(esxVI_String **stringList,
     const char *value = valueList;
 
     while (value && *value != '\0') {
-        if (esxVI_String_AppendValueToList(&stringListToAppend, value) < 0) {
+        if (esxVI_String_AppendValueToList(&stringListToAppend, value) < 0)
             goto failure;
-        }
 
         value += strlen(value) + 1;
     }
 
-    if (esxVI_String_AppendToList(stringList, stringListToAppend) < 0) {
+    if (esxVI_String_AppendToList(stringList, stringListToAppend) < 0)
         goto failure;
-    }
 
     return 0;
 
-  failure:
+ failure:
     esxVI_String_Free(&stringListToAppend);
 
     return -1;
@@ -1233,9 +1222,8 @@ esxVI_String_DeepCopyValue(char **dest, const char *src)
         return -1;
     }
 
-    if (!src) {
+    if (!src)
         return 0;
-    }
 
     return VIR_STRDUP(*dest, src);
 }
@@ -1266,9 +1254,8 @@ esxVI_String_SerializeValue(const char *value, const char *element,
         return -1;
     }
 
-    if (!value) {
+    if (!value)
         return 0;
-    }
 
     ESV_VI__XML_TAG__OPEN(output, element, "xsd:string");
 
@@ -1294,7 +1281,7 @@ esxVI_String_Deserialize(xmlNodePtr node, esxVI_String **string)
 
     return 0;
 
-  failure:
+ failure:
     esxVI_String_Free(string);
 
     return -1;
@@ -1388,6 +1375,9 @@ ESX_VI__TEMPLATE__DEEP_COPY(Int,
 {
     (*dest)->value = src->value;
 })
+
+/* esxVI_Int_CastFromAnyType */
+ESX_VI__TEMPLATE__CAST_FROM_ANY_TYPE(Int)
 
 /* esxVI_Int_Serialize */
 ESX_VI__TEMPLATE__SERIALIZE(Int,
@@ -1486,9 +1476,8 @@ esxVI_DateTime_Deserialize(xmlNodePtr node, esxVI_DateTime **dateTime)
         return -1;
     }
 
-    if (esxVI_DateTime_Alloc(dateTime) < 0) {
+    if (esxVI_DateTime_Alloc(dateTime) < 0)
         return -1;
-    }
 
     (*dateTime)->value =
       (char *)xmlNodeListGetString(node->doc, node->children, 1);
@@ -1502,7 +1491,7 @@ esxVI_DateTime_Deserialize(xmlNodePtr node, esxVI_DateTime **dateTime)
 
     return 0;
 
-  failure:
+ failure:
     esxVI_DateTime_Free(dateTime);
 
     return -1;
@@ -1580,9 +1569,8 @@ esxVI_DateTime_ConvertToCalendarTime(esxVI_DateTime *dateTime,
 
             tz_offset = tz_hours * 60 * 60 + tz_minutes * 60;
 
-            if (sign == '-') {
+            if (sign == '-')
                 tz_offset = -tz_offset;
-            }
         } else if (STREQ(tmp, "Z")) {
             /* Z refers to UTC. tz_offset is already initialized to zero */
         } else {
@@ -1660,9 +1648,8 @@ esxVI_MethodFault_Deserialize(xmlNodePtr node, esxVI_MethodFault **methodFault)
         return -1;
     }
 
-    if (esxVI_MethodFault_Alloc(methodFault) < 0) {
+    if (esxVI_MethodFault_Alloc(methodFault) < 0)
         return -1;
-    }
 
     (*methodFault)->_actualType =
       (char *)xmlGetNsProp(node, BAD_CAST "type",
@@ -1676,7 +1663,7 @@ esxVI_MethodFault_Deserialize(xmlNodePtr node, esxVI_MethodFault **methodFault)
 
     return 0;
 
-  failure:
+ failure:
     esxVI_MethodFault_Free(methodFault);
 
     return -1;
@@ -1726,9 +1713,8 @@ esxVI_ManagedObjectReference_Serialize
         return -1;
     }
 
-    if (!managedObjectReference) {
+    if (!managedObjectReference)
         return 0;
-    }
 
     virBufferAddLit(output, "<");
     virBufferAdd(output, element, -1);
@@ -1756,9 +1742,8 @@ esxVI_ManagedObjectReference_Deserialize
         return -1;
     }
 
-    if (esxVI_ManagedObjectReference_Alloc(managedObjectReference) < 0) {
+    if (esxVI_ManagedObjectReference_Alloc(managedObjectReference) < 0)
         return -1;
-    }
 
     (*managedObjectReference)->type =
       (char *)xmlGetNoNsProp(node, BAD_CAST "type");
@@ -1776,7 +1761,7 @@ esxVI_ManagedObjectReference_Deserialize
 
     return 0;
 
-  failure:
+ failure:
     esxVI_ManagedObjectReference_Free(managedObjectReference);
 
     return -1;

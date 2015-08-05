@@ -1,7 +1,7 @@
 /*
  * virerror.c: error handling and reporting code for libvirt
  *
- * Copyright (C) 2006, 2008-2014 Red Hat, Inc.
+ * Copyright (C) 2006, 2008-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -35,13 +35,16 @@
 #include "virutil.h"
 #include "virstring.h"
 
+VIR_LOG_INIT("util.error");
+
 virThreadLocal virLastErr;
 
 virErrorFunc virErrorHandler = NULL;     /* global error handler */
 void *virUserData = NULL;        /* associated data */
 virErrorLogPriorityFunc virErrorLogPriorityFilter = NULL;
 
-static virLogPriority virErrorLevelPriority(virErrorLevel level) {
+static virLogPriority virErrorLevelPriority(virErrorLevel level)
+{
     switch (level) {
         case VIR_ERR_NONE:
             return VIR_LOG_INFO;
@@ -125,6 +128,11 @@ VIR_ENUM_IMPL(virErrorDomain, VIR_ERR_DOMAIN_LAST,
               "Access Manager", /* 55 */
               "Systemd",
               "Bhyve",
+              "Crypto",
+              "Firewall",
+
+              "Polkit", /* 60 */
+              "Thread jobs",
     )
 
 
@@ -284,7 +292,7 @@ virSetError(virErrorPtr newerr)
 
     virResetError(err);
     ret = virCopyError(newerr, err);
-cleanup:
+ cleanup:
     errno = saved_errno;
     return ret;
 }
@@ -452,12 +460,12 @@ virConnCopyLastError(virConnectPtr conn, virErrorPtr to)
 
     if (conn == NULL)
         return -1;
-    virMutexLock(&conn->lock);
+    virObjectLock(conn);
     if (conn->err.code == VIR_ERR_OK)
         virResetError(to);
     else
         virCopyError(&conn->err, to);
-    virMutexUnlock(&conn->lock);
+    virObjectUnlock(conn);
     return to->code;
 }
 
@@ -475,9 +483,9 @@ virConnResetLastError(virConnectPtr conn)
 {
     if (conn == NULL)
         return;
-    virMutexLock(&conn->lock);
+    virObjectLock(conn);
     virResetError(&conn->err);
-    virMutexUnlock(&conn->lock);
+    virObjectUnlock(conn);
 }
 
 /**
@@ -512,10 +520,10 @@ virConnSetErrorFunc(virConnectPtr conn, void *userData,
 {
     if (conn == NULL)
         return;
-    virMutexLock(&conn->lock);
+    virObjectLock(conn);
     conn->handler = handler;
     conn->userData = userData;
-    virMutexUnlock(&conn->lock);
+    virObjectUnlock(conn);
 }
 
 /**
@@ -592,14 +600,14 @@ virDispatchError(virConnectPtr conn)
 
     /* Copy the global error to per-connection error if needed */
     if (conn) {
-        virMutexLock(&conn->lock);
+        virObjectLock(conn);
         virCopyError(err, &conn->err);
 
         if (conn->handler != NULL) {
             handler = conn->handler;
             userData = conn->userData;
         }
-        virMutexUnlock(&conn->lock);
+        virObjectUnlock(conn);
     }
 
     /* Invoke the error callback functions */
@@ -611,6 +619,39 @@ virDispatchError(virConnectPtr conn)
 }
 
 
+/*
+ * Reports an error through the logging subsystem
+ */
+static
+void virRaiseErrorLog(const char *filename,
+                      const char *funcname,
+                      size_t linenr,
+                      virErrorPtr err,
+                      virLogMetadata *meta)
+{
+    int priority;
+
+    /*
+     * Hook up the error or warning to the logging facility
+     */
+    priority = virErrorLevelPriority(err->level);
+    if (virErrorLogPriorityFilter)
+        priority = virErrorLogPriorityFilter(err, priority);
+
+    /* We don't want to pollute stderr if no logging outputs
+     * are explicitly requested by the user, since the default
+     * error function already pollutes stderr and most apps
+     * hate & thus disable that too. If the daemon has set
+     * a priority filter though, we should always forward
+     * all errors to the logging code.
+     */
+    if (virLogGetNbOutputs() > 0 ||
+        virErrorLogPriorityFilter)
+        virLogMessage(&virLogSelf,
+                      priority,
+                      filename, linenr, funcname,
+                      meta, "%s", err->message);
+}
 
 /**
  * virRaiseErrorFull:
@@ -632,7 +673,7 @@ virDispatchError(virConnectPtr conn)
  * immediately if a callback is found and store it for later handling.
  */
 void
-virRaiseErrorFull(const char *filename ATTRIBUTE_UNUSED,
+virRaiseErrorFull(const char *filename,
                   const char *funcname,
                   size_t linenr,
                   int domain,
@@ -648,7 +689,6 @@ virRaiseErrorFull(const char *filename ATTRIBUTE_UNUSED,
     int save_errno = errno;
     virErrorPtr to;
     char *str;
-    int priority;
     virLogMetadata meta[] = {
         { .key = "LIBVIRT_DOMAIN", .s = NULL, .iv = domain },
         { .key = "LIBVIRT_CODE", .s = NULL, .iv = code },
@@ -702,20 +742,57 @@ virRaiseErrorFull(const char *filename ATTRIBUTE_UNUSED,
     to->int1 = int1;
     to->int2 = int2;
 
-    /*
-     * Hook up the error or warning to the logging facility
-     */
-    priority = virErrorLevelPriority(level);
-    if (virErrorLogPriorityFilter)
-        priority = virErrorLogPriorityFilter(to, priority);
-
-    virLogMessage(virErrorLogPriorityFilter ? VIR_LOG_FROM_FILE : VIR_LOG_FROM_ERROR,
-                  priority,
-                  filename, linenr, funcname,
-                  meta, "%s", str);
+    virRaiseErrorLog(filename, funcname, linenr,
+                     to, meta);
 
     errno = save_errno;
 }
+
+
+/**
+ * virRaiseErrorObject:
+ * @filename: filename where error was raised
+ * @funcname: function name where error was raised
+ * @linenr: line number where error was raised
+ * @newerr: the error object to report
+ *
+ * Sets the thread local error object to be a copy of
+ * @newerr and logs the error
+ *
+ * This is like virRaiseErrorFull, except that it accepts the
+ * error information via a pre-filled virErrorPtr object
+ *
+ * This is like virSetError, except that it will trigger the
+ * logging callbacks.
+ *
+ * The caller must clear the @newerr instance afterwards, since
+ * it will be copied into the thread local error.
+ */
+void virRaiseErrorObject(const char *filename,
+                         const char *funcname,
+                         size_t linenr,
+                         virErrorPtr newerr)
+{
+    int saved_errno = errno;
+    virErrorPtr err;
+    virLogMetadata meta[] = {
+        { .key = "LIBVIRT_DOMAIN", .s = NULL, .iv = newerr->domain },
+        { .key = "LIBVIRT_CODE", .s = NULL, .iv = newerr->code },
+        { .key = NULL },
+    };
+
+    err = virLastErrorObject();
+    if (!err)
+        goto cleanup;
+
+    virResetError(err);
+    virCopyError(newerr, err);
+    virRaiseErrorLog(filename, funcname, linenr,
+                     err, meta);
+ cleanup:
+    errno = saved_errno;
+}
+
 
 /**
  * virErrorMsg:
@@ -1249,7 +1326,7 @@ virErrorMsg(virErrorNumber error, const char *info)
             if (info == NULL)
                 errmsg = _("resource busy");
             else
-                errmsg = _("resource busy %s");
+                errmsg = _("resource busy: %s");
             break;
         case VIR_ERR_ACCESS_DENIED:
             if (info == NULL)
@@ -1262,6 +1339,18 @@ virErrorMsg(virErrorNumber error, const char *info)
                 errmsg = _("error from service");
             else
                 errmsg = _("error from service: %s");
+            break;
+        case VIR_ERR_CPU_INCOMPATIBLE:
+            if (info == NULL)
+                errmsg = _("the CPU is incompatible with host CPU");
+            else
+                errmsg = _("the CPU is incompatible with host CPU: %s");
+            break;
+        case VIR_ERR_XML_INVALID_SCHEMA:
+            if (info == NULL)
+                errmsg = _("XML document failed to validate against schema");
+            else
+                errmsg = _("XML document failed to validate against schema: %s");
             break;
     }
     return errmsg;

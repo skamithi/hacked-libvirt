@@ -1,5 +1,5 @@
 /*
- * node_device.h: node device enumeration
+ * node_device_driver.h: node device enumeration
  *
  * Copyright (C) 2008 Virtual Iron Software, Inc.
  * Copyright (C) 2008 David F. Lively
@@ -37,12 +37,12 @@ int halNodeRegister(void);
 int udevNodeRegister(void);
 # endif
 
-void nodeDeviceLock(virNodeDeviceDriverStatePtr driver);
-void nodeDeviceUnlock(virNodeDeviceDriverStatePtr driver);
+void nodeDeviceLock(void);
+void nodeDeviceUnlock(void);
+
+extern virNodeDeviceDriverStatePtr driver;
 
 int nodedevRegister(void);
-
-int detect_scsi_host_caps(union _virNodeDevCapData *d);
 
 int nodeNumOfDevices(virConnectPtr conn, const char *cap, unsigned int flags);
 int nodeListDevices(virConnectPtr conn, const char *cap, char **const names,

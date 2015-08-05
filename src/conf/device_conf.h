@@ -32,13 +32,18 @@
 # include "virthread.h"
 # include "virbuffer.h"
 
-enum virDeviceAddressPciMulti {
-    VIR_DEVICE_ADDRESS_PCI_MULTI_DEFAULT = 0,
-    VIR_DEVICE_ADDRESS_PCI_MULTI_ON,
-    VIR_DEVICE_ADDRESS_PCI_MULTI_OFF,
+typedef enum {
+    VIR_INTERFACE_STATE_UNKNOWN = 1,
+    VIR_INTERFACE_STATE_NOT_PRESENT,
+    VIR_INTERFACE_STATE_DOWN,
+    VIR_INTERFACE_STATE_LOWER_LAYER_DOWN,
+    VIR_INTERFACE_STATE_TESTING,
+    VIR_INTERFACE_STATE_DORMANT,
+    VIR_INTERFACE_STATE_UP,
+    VIR_INTERFACE_STATE_LAST
+} virInterfaceState;
 
-    VIR_DEVICE_ADDRESS_PCI_MULTI_LAST
-};
+VIR_ENUM_DECL(virInterfaceState)
 
 typedef struct _virDevicePCIAddress virDevicePCIAddress;
 typedef virDevicePCIAddress *virDevicePCIAddressPtr;
@@ -47,8 +52,32 @@ struct _virDevicePCIAddress {
     unsigned int bus;
     unsigned int slot;
     unsigned int function;
-    int          multi;  /* enum virDomainDeviceAddressPciMulti */
+    int          multi;  /* virTristateSwitch */
 };
+
+typedef struct _virInterfaceLink virInterfaceLink;
+typedef virInterfaceLink *virInterfaceLinkPtr;
+struct _virInterfaceLink {
+    virInterfaceState state; /* link state */
+    unsigned int speed;      /* link speed in Mbits per second */
+};
+
+typedef enum {
+    VIR_NET_DEV_FEAT_GRXCSUM,
+    VIR_NET_DEV_FEAT_GTXCSUM,
+    VIR_NET_DEV_FEAT_GSG,
+    VIR_NET_DEV_FEAT_GTSO,
+    VIR_NET_DEV_FEAT_GGSO,
+    VIR_NET_DEV_FEAT_GGRO,
+    VIR_NET_DEV_FEAT_LRO,
+    VIR_NET_DEV_FEAT_RXVLAN,
+    VIR_NET_DEV_FEAT_TXVLAN,
+    VIR_NET_DEV_FEAT_NTUPLE,
+    VIR_NET_DEV_FEAT_RXHASH,
+    VIR_NET_DEV_FEAT_LAST
+} virNetDevFeature;
+
+VIR_ENUM_DECL(virNetDevFeature)
 
 int virDevicePCIAddressIsValid(virDevicePCIAddressPtr addr);
 
@@ -62,7 +91,10 @@ int virDevicePCIAddressFormat(virBufferPtr buf,
 bool virDevicePCIAddressEqual(virDevicePCIAddress *addr1,
                               virDevicePCIAddress *addr2);
 
+int virInterfaceLinkParseXML(xmlNodePtr node,
+                             virInterfaceLinkPtr lnk);
 
-VIR_ENUM_DECL(virDeviceAddressPciMulti)
+int virInterfaceLinkFormat(virBufferPtr buf,
+                           const virInterfaceLink *lnk);
 
 #endif /* __DEVICE_CONF_H__ */

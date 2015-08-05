@@ -57,17 +57,20 @@ genericHashFeatures(virCPUDefPtr cpu)
 
 static virCPUCompareResult
 genericCompare(virCPUDefPtr host,
-               virCPUDefPtr cpu)
+               virCPUDefPtr cpu,
+               bool failIncompatible)
 {
-    virHashTablePtr hash;
+    virHashTablePtr hash = NULL;
     virCPUCompareResult ret = VIR_CPU_COMPARE_ERROR;
     size_t i;
     unsigned int reqfeatures;
 
-    if (((cpu->arch != VIR_ARCH_NONE) &&
-         (host->arch != cpu->arch)) ||
-        STRNEQ(host->model, cpu->model))
-        return VIR_CPU_COMPARE_INCOMPATIBLE;
+    if ((cpu->arch != VIR_ARCH_NONE &&
+         host->arch != cpu->arch) ||
+        STRNEQ(host->model, cpu->model)) {
+        ret = VIR_CPU_COMPARE_INCOMPATIBLE;
+        goto cleanup;
+    }
 
     if ((hash = genericHashFeatures(host)) == NULL)
         goto cleanup;
@@ -83,13 +86,10 @@ genericCompare(virCPUDefPtr host,
                 goto cleanup;
             }
             reqfeatures++;
-        }
-        else {
-            if (cpu->type == VIR_CPU_TYPE_HOST ||
-                cpu->features[i].policy == VIR_CPU_FEATURE_REQUIRE) {
-                ret = VIR_CPU_COMPARE_INCOMPATIBLE;
-                goto cleanup;
-            }
+        } else if (cpu->type == VIR_CPU_TYPE_HOST ||
+                   cpu->features[i].policy == VIR_CPU_FEATURE_REQUIRE) {
+            ret = VIR_CPU_COMPARE_INCOMPATIBLE;
+            goto cleanup;
         }
     }
 
@@ -99,12 +99,16 @@ genericCompare(virCPUDefPtr host,
             ret = VIR_CPU_COMPARE_INCOMPATIBLE;
         else
             ret = VIR_CPU_COMPARE_SUPERSET;
-    }
-    else
+    } else {
         ret = VIR_CPU_COMPARE_IDENTICAL;
+    }
 
-cleanup:
+ cleanup:
     virHashFree(hash);
+    if (failIncompatible && ret == VIR_CPU_COMPARE_INCOMPATIBLE) {
+        ret = VIR_CPU_COMPARE_ERROR;
+        virReportError(VIR_ERR_CPU_INCOMPATIBLE, NULL);
+    }
     return ret;
 }
 
@@ -122,7 +126,8 @@ genericBaseline(virCPUDefPtr *cpus,
     unsigned int count;
     size_t i, j;
 
-    virCheckFlags(VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES, NULL);
+    virCheckFlags(VIR_CONNECT_BASELINE_CPU_EXPAND_FEATURES |
+                  VIR_CONNECT_BASELINE_CPU_MIGRATABLE, NULL);
 
     if (!cpuModelIsAllowed(cpus[0]->model, models, nmodels)) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
@@ -188,12 +193,12 @@ genericBaseline(virCPUDefPtr *cpus,
             goto error;
     }
 
-cleanup:
+ cleanup:
     VIR_FREE(features);
 
     return cpu;
 
-error:
+ error:
     virCPUDefFree(cpu);
     cpu = NULL;
     goto cleanup;

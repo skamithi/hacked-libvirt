@@ -1,7 +1,7 @@
 /*
  * virtime.c: Time handling functions
  *
- * Copyright (C) 2006-2012 Red Hat, Inc.
+ * Copyright (C) 2006-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -94,7 +94,9 @@ int virTimeFieldsNowRaw(struct tm *fields)
     if (virTimeMillisNowRaw(&now) < 0)
         return -1;
 
-    return virTimeFieldsThenRaw(now, fields);
+    virTimeFieldsThen(now, fields);
+
+    return 0;
 }
 
 
@@ -103,7 +105,7 @@ int virTimeFieldsNowRaw(struct tm *fields)
 #define DIV(a, b) ((a) / (b) - ((a) % (b) < 0))
 #define LEAPS_THRU_END_OF(y) (DIV (y, 4) - DIV (y, 100) + DIV (y, 400))
 
-const unsigned short int __mon_yday[2][13] = {
+static const unsigned short int mon_yday[2][13] = {
     /* Normal years.  */
     { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 },
     /* Leap years.  */
@@ -114,34 +116,27 @@ const unsigned short int __mon_yday[2][13] = {
     ((y) % 4 == 0 && ((y) % 100 != 0 || (y) % 400 == 0))
 
 /**
- * virTimeFieldsThenRaw:
+ * virTimeFieldsThen:
  * @when: the time to convert in milliseconds
  * @fields: filled with time @when fields
  *
  * Converts the timestamp @when into broken-down field format.
  * Time time is always in UTC
  *
- * Returns 0 on success, -1 on error with errno set
  */
-int virTimeFieldsThenRaw(unsigned long long when, struct tm *fields)
+void virTimeFieldsThen(unsigned long long when, struct tm *fields)
 {
     /* This code is taken from GLibC under terms of LGPLv2+ */
+    /* Remove the 'offset' or GMT manipulation since we don't care. See
+     * commit id '3ec12898' comments regarding localtime.
+     */
     long int days, rem, y;
     const unsigned short int *ip;
     unsigned long long whenSecs = when / 1000ull;
-    unsigned int offset = 0; /* We hardcoded GMT */
 
     days = whenSecs / SECS_PER_DAY;
     rem = whenSecs % SECS_PER_DAY;
-    rem += offset;
-    while (rem < 0) {
-        rem += SECS_PER_DAY;
-        --days;
-    }
-    while (rem >= SECS_PER_DAY) {
-        rem -= SECS_PER_DAY;
-        ++days;
-    }
+
     fields->tm_hour = rem / SECS_PER_HOUR;
     rem %= SECS_PER_HOUR;
     fields->tm_min = rem / 60;
@@ -165,13 +160,12 @@ int virTimeFieldsThenRaw(unsigned long long when, struct tm *fields)
     fields->tm_year = y - 1900;
 
     fields->tm_yday = days;
-    ip = __mon_yday[is_leap_year(y)];
+    ip = mon_yday[is_leap_year(y)];
     for (y = 11; days < (long int) ip[y]; --y)
         continue;
     days -= ip[y];
     fields->tm_mon = y;
     fields->tm_mday = days + 1;
-    return 0;
 }
 
 
@@ -209,8 +203,7 @@ int virTimeStringThenRaw(unsigned long long when, char *buf)
 {
     struct tm fields;
 
-    if (virTimeFieldsThenRaw(when, &fields) < 0)
-        return -1;
+    virTimeFieldsThen(when, &fields);
 
     fields.tm_year += 1900;
     fields.tm_mon += 1;
@@ -264,27 +257,7 @@ int virTimeFieldsNow(struct tm *fields)
     if (virTimeMillisNow(&now) < 0)
         return -1;
 
-    return virTimeFieldsThen(now, fields);
-}
-
-
-/**
- * virTimeFieldsThen:
- * @when: the time to convert in milliseconds
- * @fields: filled with time @when fields
- *
- * Converts the timestamp @when into broken-down field format.
- * Time time is always in UTC
- *
- * Returns 0 on success, -1 on error with error reported
- */
-int virTimeFieldsThen(unsigned long long when, struct tm *fields)
-{
-    if (virTimeFieldsThenRaw(when, fields) < 0) {
-        virReportSystemError(errno, "%s",
-                             _("Unable to break out time format"));
-        return -1;
-    }
+    virTimeFieldsThen(now, fields);
     return 0;
 }
 
@@ -343,4 +316,50 @@ char *virTimeStringThen(unsigned long long when)
     }
 
     return ret;
+}
+
+/**
+ * virTimeLocalOffsetFromUTC:
+ *
+ * This function is threadsafe, but is *not* async signal safe (due to
+ * gmtime_r() and mktime()).
+ *
+ * @offset: pointer to time_t that will be set to the difference
+ *          between localtime and UTC in seconds (east of UTC is a
+ *          positive number, and west of UTC is a negative number.
+ *
+ * Returns 0 on success, -1 on error with error reported
+ */
+int
+virTimeLocalOffsetFromUTC(long *offset)
+{
+    struct tm gmtimeinfo;
+    time_t current, utc;
+
+    /* time() gives seconds since Epoch in current timezone */
+    if ((current = time(NULL)) == (time_t)-1) {
+        virReportSystemError(errno, "%s",
+                             _("failed to get current system time"));
+        return -1;
+    }
+
+    /* treat current as if it were in UTC */
+    if (!gmtime_r(&current, &gmtimeinfo)) {
+        virReportSystemError(errno, "%s",
+                             _("gmtime_r failed"));
+        return -1;
+    }
+
+    /* tell mktime to figure out itself whether or not DST is in effect */
+    gmtimeinfo.tm_isdst = -1;
+
+    /* mktime() also obeys current timezone rules */
+    if ((utc = mktime(&gmtimeinfo)) == (time_t)-1) {
+        virReportSystemError(errno, "%s",
+                             _("mktime failed"));
+        return -1;
+    }
+
+    *offset = current - utc;
+    return 0;
 }

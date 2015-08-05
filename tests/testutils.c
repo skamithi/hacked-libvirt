@@ -1,7 +1,7 @@
 /*
  * testutils.c: basic test utils
  *
- * Copyright (C) 2005-2013 Red Hat, Inc.
+ * Copyright (C) 2005-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -60,10 +60,7 @@
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
-#define GETTIMEOFDAY(T) gettimeofday(T, NULL)
-#define DIFF_MSEC(T, U)                                 \
-    ((((int) ((T)->tv_sec - (U)->tv_sec)) * 1000000.0 + \
-      ((int) ((T)->tv_usec - (U)->tv_usec))) / 1000.0)
+VIR_LOG_INIT("tests.testutils");
 
 #include "virfile.h"
 
@@ -72,26 +69,41 @@ static unsigned int testVerbose = -1;
 static unsigned int testExpensive = -1;
 
 #ifdef TEST_OOM
-static unsigned int testOOM = 0;
+static unsigned int testOOM;
 static unsigned int testOOMStart = -1;
 static unsigned int testOOMEnd = -1;
-static unsigned int testOOMTrace = 0;
+static unsigned int testOOMTrace;
 # ifdef TEST_OOM_TRACE
 void *testAllocStack[30];
 int ntestAllocStack;
 # endif
 #endif
-static bool testOOMActive = false;
+static bool testOOMActive;
 
-static size_t testCounter = 0;
-static size_t testStart = 0;
-static size_t testEnd = 0;
+static size_t testCounter;
+static size_t testStart;
+static size_t testEnd;
 
 char *progname;
 
 bool virtTestOOMActive(void)
 {
     return testOOMActive;
+}
+
+static unsigned int
+virTestGetFlag(const char *name)
+{
+    char *flagStr;
+    unsigned int flag;
+
+    if ((flagStr = getenv(name)) == NULL)
+        return 0;
+
+    if (virStrToLong_ui(flagStr, NULL, 10, &flag) < 0)
+        return 0;
+
+    return flag;
 }
 
 #ifdef TEST_OOM_TRACE
@@ -113,9 +125,9 @@ void virtTestResult(const char *name, int ret, const char *msg, ...)
     testCounter++;
     if (virTestGetVerbose()) {
         fprintf(stderr, "%3zu) %-60s ", testCounter, name);
-        if (ret == 0)
+        if (ret == 0) {
             fprintf(stderr, "OK\n");
-        else {
+        } else {
             fprintf(stderr, "FAILED\n");
             if (msg) {
                 char *str;
@@ -360,7 +372,8 @@ virtTestLoadFile(const char *file, char **buf)
 #ifndef WIN32
 static
 void virtTestCaptureProgramExecChild(const char *const argv[],
-                                     int pipefd) {
+                                     int pipefd)
+{
     size_t i;
     int open_max;
     int stdinfd = -1;
@@ -427,7 +440,7 @@ virtTestCaptureProgramOutput(const char *const argv[], char **buf, int maxlen)
         VIR_FORCE_CLOSE(pipefd[1]);
         len = virFileReadLimFD(pipefd[0], maxlen, buf);
         VIR_FORCE_CLOSE(pipefd[0]);
-        if (virProcessWait(pid, NULL) < 0)
+        if (virProcessWait(pid, NULL, false) < 0)
             return -1;
 
         return len;
@@ -445,21 +458,36 @@ virtTestCaptureProgramOutput(const char *const argv[] ATTRIBUTE_UNUSED,
 
 
 /**
- * @param stream: output stream write to differences to
+ * @param stream: output stream to write differences to
  * @param expect: expected output text
+ * @param expectName: name designator of the expected text
  * @param actual: actual output text
+ * @param actualName: name designator of the actual text
  *
- * Display expected and actual output text, trimmed to
- * first and last characters at which differences occur
+ * Display expected and actual output text, trimmed to first and last
+ * characters at which differences occur. Displays names of the text strings if
+ * non-NULL.
  */
-int virtTestDifference(FILE *stream,
-                       const char *expect,
-                       const char *actual)
+int virtTestDifferenceFull(FILE *stream,
+                           const char *expect,
+                           const char *expectName,
+                           const char *actual,
+                           const char *actualName)
 {
-    const char *expectStart = expect;
-    const char *expectEnd = expect + (strlen(expect)-1);
-    const char *actualStart = actual;
-    const char *actualEnd = actual + (strlen(actual)-1);
+    const char *expectStart;
+    const char *expectEnd;
+    const char *actualStart;
+    const char *actualEnd;
+
+    if (!expect)
+        expect = "";
+    if (!actual)
+        actual = "";
+
+    expectStart = expect;
+    expectEnd = expect + (strlen(expect)-1);
+    actualStart = actual;
+    actualEnd = actual + (strlen(actual)-1);
 
     if (!virTestGetDebug())
         return 0;
@@ -482,11 +510,15 @@ int virtTestDifference(FILE *stream,
     }
 
     /* Show the trimmed differences */
+    if (expectName)
+        fprintf(stream, "\nIn '%s':", expectName);
     fprintf(stream, "\nOffset %d\nExpect [", (int) (expectStart - expect));
     if ((expectEnd - expectStart + 1) &&
         fwrite(expectStart, (expectEnd-expectStart+1), 1, stream) != 1)
         return -1;
     fprintf(stream, "]\n");
+    if (actualName)
+        fprintf(stream, "In '%s':\n", actualName);
     fprintf(stream, "Actual [");
     if ((actualEnd - actualStart + 1) &&
         fwrite(actualStart, (actualEnd-actualStart+1), 1, stream) != 1)
@@ -500,7 +532,23 @@ int virtTestDifference(FILE *stream,
 }
 
 /**
- * @param stream: output stream write to differences to
+ * @param stream: output stream to write differences to
+ * @param expect: expected output text
+ * @param actual: actual output text
+ *
+ * Display expected and actual output text, trimmed to
+ * first and last characters at which differences occur
+ */
+int virtTestDifference(FILE *stream,
+                       const char *expect,
+                       const char *actual)
+{
+    return virtTestDifferenceFull(stream, expect, NULL, actual, NULL);
+}
+
+
+/**
+ * @param stream: output stream to write differences to
  * @param expect: expected output text
  * @param actual: actual output text
  *
@@ -563,6 +611,48 @@ int virtTestDifferenceBin(FILE *stream,
     return 0;
 }
 
+/*
+ * @param strcontent: String input content
+ * @param filename: File to compare strcontent against
+ */
+int
+virtTestCompareToFile(const char *strcontent,
+                      const char *filename)
+{
+    int ret = -1;
+    char *filecontent = NULL;
+    char *fixedcontent = NULL;
+    bool regenerate = !!virTestGetFlag("VIR_TEST_REGENERATE_OUTPUT");
+
+    if (virtTestLoadFile(filename, &filecontent) < 0 && !regenerate)
+        goto failure;
+
+    if (filecontent &&
+        filecontent[strlen(filecontent) - 1] == '\n' &&
+        strcontent[strlen(strcontent) - 1] != '\n') {
+        if (virAsprintf(&fixedcontent, "%s\n", strcontent) < 0)
+            goto failure;
+    }
+
+    if (STRNEQ_NULLABLE(fixedcontent ? fixedcontent : strcontent,
+                        filecontent)) {
+        if (regenerate) {
+            if (virFileWriteStr(filename, strcontent, 0666) < 0)
+                goto failure;
+            goto out;
+        }
+        virtTestDifference(stderr, filecontent, strcontent);
+        goto failure;
+    }
+
+ out:
+    ret = 0;
+ failure:
+    VIR_FREE(fixedcontent);
+    VIR_FREE(filecontent);
+    return ret;
+}
+
 static void
 virtTestErrorFuncQuiet(void *data ATTRIBUTE_UNUSED,
                        virErrorPtr err ATTRIBUTE_UNUSED)
@@ -584,7 +674,7 @@ struct virtTestLogData {
 static struct virtTestLogData testLog = { VIR_BUFFER_INITIALIZER };
 
 static void
-virtTestLogOutput(virLogSource source ATTRIBUTE_UNUSED,
+virtTestLogOutput(virLogSourcePtr source ATTRIBUTE_UNUSED,
                   virLogPriority priority ATTRIBUTE_UNUSED,
                   const char *filename ATTRIBUTE_UNUSED,
                   int lineno ATTRIBUTE_UNUSED,
@@ -626,36 +716,25 @@ virtTestLogContentAndReset(void)
 }
 
 
-static unsigned int
-virTestGetFlag(const char *name) {
-    char *flagStr;
-    unsigned int flag;
-
-    if ((flagStr = getenv(name)) == NULL)
-        return 0;
-
-    if (virStrToLong_ui(flagStr, NULL, 10, &flag) < 0)
-        return 0;
-
-    return flag;
-}
-
 unsigned int
-virTestGetDebug(void) {
+virTestGetDebug(void)
+{
     if (testDebug == -1)
         testDebug = virTestGetFlag("VIR_TEST_DEBUG");
     return testDebug;
 }
 
 unsigned int
-virTestGetVerbose(void) {
+virTestGetVerbose(void)
+{
     if (testVerbose == -1)
         testVerbose = virTestGetFlag("VIR_TEST_VERBOSE");
     return testVerbose || virTestGetDebug();
 }
 
 unsigned int
-virTestGetExpensive(void) {
+virTestGetExpensive(void)
+{
     if (testExpensive == -1)
         testExpensive = virTestGetFlag("VIR_TEST_EXPENSIVE");
     return testExpensive;
@@ -670,6 +749,8 @@ int virtTestMain(int argc,
 #ifdef TEST_OOM
     char *oomstr;
 #endif
+
+    virFileActivateDirOverride(argv[0]);
 
     if (!virFileExists(abs_srcdir))
         return EXIT_AM_HARDFAIL;
@@ -836,30 +917,81 @@ int virtTestClearLineRegex(const char *pattern,
 }
 
 
+/*
+ * @cmdset contains a list of command line args, eg
+ *
+ * "/usr/sbin/iptables --table filter --insert INPUT --in-interface virbr0 --protocol tcp --destination-port 53 --jump ACCEPT
+ *  /usr/sbin/iptables --table filter --insert INPUT --in-interface virbr0 --protocol udp --destination-port 53 --jump ACCEPT
+ *  /usr/sbin/iptables --table filter --insert FORWARD --in-interface virbr0 --jump REJECT
+ *  /usr/sbin/iptables --table filter --insert FORWARD --out-interface virbr0 --jump REJECT
+ *  /usr/sbin/iptables --table filter --insert FORWARD --in-interface virbr0 --out-interface virbr0 --jump ACCEPT"
+ *
+ * And we're munging it in-place to strip the path component
+ * of the command line, to produce
+ *
+ * "iptables --table filter --insert INPUT --in-interface virbr0 --protocol tcp --destination-port 53 --jump ACCEPT
+ *  iptables --table filter --insert INPUT --in-interface virbr0 --protocol udp --destination-port 53 --jump ACCEPT
+ *  iptables --table filter --insert FORWARD --in-interface virbr0 --jump REJECT
+ *  iptables --table filter --insert FORWARD --out-interface virbr0 --jump REJECT
+ *  iptables --table filter --insert FORWARD --in-interface virbr0 --out-interface virbr0 --jump ACCEPT"
+ */
+void virtTestClearCommandPath(char *cmdset)
+{
+    size_t offset = 0;
+    char *lineStart = cmdset;
+    char *lineEnd = strchr(lineStart, '\n');
+
+    while (lineStart) {
+        char *dirsep;
+        char *movestart;
+        size_t movelen;
+        dirsep = strchr(lineStart, ' ');
+        if (dirsep) {
+            while (dirsep > lineStart && *dirsep != '/')
+                dirsep--;
+            if (*dirsep == '/')
+                dirsep++;
+            movestart = dirsep;
+        } else {
+            movestart = lineStart;
+        }
+        movelen = lineEnd ? lineEnd - movestart : strlen(movestart);
+
+        if (movelen) {
+            memmove(cmdset + offset, movestart, movelen + 1);
+            offset += movelen + 1;
+        }
+        lineStart = lineEnd ? lineEnd + 1 : NULL;
+        lineEnd = lineStart ? strchr(lineStart, '\n') : NULL;
+    }
+    cmdset[offset] = '\0';
+}
+
+
 virCapsPtr virTestGenericCapsInit(void)
 {
     virCapsPtr caps;
     virCapsGuestPtr guest;
 
     if ((caps = virCapabilitiesNew(VIR_ARCH_X86_64,
-                                   0, 0)) == NULL)
+                                   false, false)) == NULL)
         return NULL;
 
-    if ((guest = virCapabilitiesAddGuest(caps, "hvm", VIR_ARCH_I686,
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM, VIR_ARCH_I686,
                                          "/usr/bin/acme-virt", NULL,
                                          0, NULL)) == NULL)
         goto error;
 
-    if (!virCapabilitiesAddGuestDomain(guest, "test", NULL, NULL, 0, NULL))
+    if (!virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_TEST, NULL, NULL, 0, NULL))
         goto error;
 
 
-    if ((guest = virCapabilitiesAddGuest(caps, "hvm", VIR_ARCH_X86_64,
+    if ((guest = virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM, VIR_ARCH_X86_64,
                                          "/usr/bin/acme-virt", NULL,
                                          0, NULL)) == NULL)
         goto error;
 
-    if (!virCapabilitiesAddGuestDomain(guest, "test", NULL, NULL, 0, NULL))
+    if (!virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_TEST, NULL, NULL, 0, NULL))
         goto error;
 
 
@@ -870,14 +1002,14 @@ virCapsPtr virTestGenericCapsInit(void)
         if (!caps_str)
             goto error;
 
-        fprintf(stderr, "Generic driver capabilities:\n%s", caps_str);
+        VIR_TEST_DEBUG("Generic driver capabilities:\n%s", caps_str);
 
         VIR_FREE(caps_str);
     }
 
     return caps;
 
-error:
+ error:
     virObjectUnref(caps);
     return NULL;
 }
@@ -890,4 +1022,56 @@ virDomainXMLOptionPtr virTestGenericDomainXMLConfInit(void)
     return virDomainXMLOptionNew(&virTestGenericDomainDefParserConfig,
                                  &virTestGenericPrivateDataCallbacks,
                                  NULL);
+}
+
+
+static int virtTestCounter;
+static char virtTestCounterStr[128];
+static char *virtTestCounterPrefixEndOffset;
+
+
+/**
+ * virtTestCounterReset:
+ * @prefix: name of the test group
+ *
+ * Resets the counter and sets up the test group name to use with
+ * virtTestCounterNext(). This function is not thread safe.
+ *
+ * Note: The buffer for the assembled message is 128 bytes long. Longer test
+ * case names (including the number index) will be silently truncated.
+ */
+void
+virtTestCounterReset(const char *prefix)
+{
+    virtTestCounter = 0;
+
+    ignore_value(virStrcpyStatic(virtTestCounterStr, prefix));
+    virtTestCounterPrefixEndOffset = strchrnul(virtTestCounterStr, '\0');
+}
+
+
+/**
+ * virtTestCounterNext:
+ *
+ * This function is designed to ease test creation and reordering by adding
+ * a way to do automagic test case numbering.
+ *
+ * Returns string consisting of test name prefix configured via
+ * virtTestCounterReset() and a number that increments in every call of this
+ * function. This function is not thread safe.
+ *
+ * Note: The buffer for the assembled message is 128 bytes long. Longer test
+ * case names (including the number index) will be silently truncated.
+ */
+const char
+*virtTestCounterNext(void)
+{
+    size_t len = ARRAY_CARDINALITY(virtTestCounterStr);
+
+    /* calculate length of the rest of the string */
+    len -= (virtTestCounterPrefixEndOffset - virtTestCounterStr);
+
+    snprintf(virtTestCounterPrefixEndOffset, len, "%d", ++virtTestCounter);
+
+    return virtTestCounterStr;
 }

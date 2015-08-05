@@ -33,6 +33,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_RPC
 
+VIR_LOG_INIT("rpc.netmessage");
+
 virNetMessagePtr virNetMessageNew(bool tracked)
 {
     virNetMessagePtr msg;
@@ -150,7 +152,7 @@ int virNetMessageDecodeLength(virNetMessagePtr msg)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     xdr_destroy(&xdr);
     return ret;
 }
@@ -195,7 +197,7 @@ int virNetMessageDecodeHeader(virNetMessagePtr msg)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     xdr_destroy(&xdr);
     return ret;
 }
@@ -255,7 +257,7 @@ int virNetMessageEncodeHeader(virNetMessagePtr msg)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     xdr_destroy(&xdr);
     return ret;
 }
@@ -287,7 +289,7 @@ int virNetMessageEncodeNumFDs(virNetMessagePtr msg)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     xdr_destroy(&xdr);
     return ret;
 }
@@ -325,7 +327,7 @@ int virNetMessageDecodeNumFDs(virNetMessagePtr msg)
 
     ret = 0;
 
-cleanup:
+ cleanup:
     xdr_destroy(&xdr);
     return ret;
 }
@@ -384,7 +386,7 @@ int virNetMessageEncodePayload(virNetMessagePtr msg,
     msg->bufferOffset = 0;
     return 0;
 
-error:
+ error:
     xdr_destroy(&xdr);
     return -1;
 }
@@ -412,7 +414,7 @@ int virNetMessageDecodePayload(virNetMessagePtr msg,
     xdr_destroy(&xdr);
     return 0;
 
-error:
+ error:
     xdr_destroy(&xdr);
     return -1;
 }
@@ -464,7 +466,7 @@ int virNetMessageEncodePayloadRaw(virNetMessagePtr msg,
     msg->bufferOffset = 0;
     return 0;
 
-error:
+ error:
     xdr_destroy(&xdr);
     return -1;
 }
@@ -489,7 +491,7 @@ int virNetMessageEncodePayloadEmpty(virNetMessagePtr msg)
     msg->bufferOffset = 0;
     return 0;
 
-error:
+ error:
     xdr_destroy(&xdr);
     return -1;
 }
@@ -561,4 +563,30 @@ int virNetMessageDupFD(virNetMessagePtr msg,
         return -1;
     }
     return fd;
+}
+
+int virNetMessageAddFD(virNetMessagePtr msg,
+                       int fd)
+{
+    int newfd = -1;
+
+    if ((newfd = dup(fd)) < 0) {
+        virReportSystemError(errno,
+                             _("Unable to duplicate FD %d"),
+                             fd);
+        goto error;
+    }
+
+    if (virSetInherit(newfd, false) < 0) {
+        virReportSystemError(errno,
+                             _("Cannot set close-on-exec %d"),
+                             newfd);
+        goto error;
+    }
+    if (VIR_APPEND_ELEMENT(msg->fds, msg->nfds, newfd) < 0)
+        goto error;
+    return 0;
+ error:
+    VIR_FORCE_CLOSE(newfd);
+    return -1;
 }

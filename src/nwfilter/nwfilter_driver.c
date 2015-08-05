@@ -2,7 +2,7 @@
  * nwfilter_driver.c: core driver for network filter APIs
  *                    (based on storage_driver.c)
  *
- * Copyright (C) 2006-2011 Red Hat, Inc.
+ * Copyright (C) 2006-2011, 2014 Red Hat, Inc.
  * Copyright (C) 2006-2008 Daniel P. Berrange
  * Copyright (C) 2010 IBM Corporation
  * Copyright (C) 2010 Stefan Berger
@@ -50,6 +50,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_NWFILTER
 
+VIR_LOG_INIT("nwfilter.nwfilter_driver");
+
 #define DBUS_RULE_FWD_NAMEOWNERCHANGED \
     "type='signal'" \
     ",interface='"DBUS_INTERFACE_DBUS"'" \
@@ -62,17 +64,17 @@
     ",member='Reloaded'"
 
 
-static virNWFilterDriverStatePtr driverState;
+static virNWFilterDriverStatePtr driver;
 
 static int nwfilterStateCleanup(void);
 
 static int nwfilterStateReload(void);
 
-static void nwfilterDriverLock(virNWFilterDriverStatePtr driver)
+static void nwfilterDriverLock(void)
 {
     virMutexLock(&driver->lock);
 }
-static void nwfilterDriverUnlock(virNWFilterDriverStatePtr driver)
+static void nwfilterDriverUnlock(void)
 {
     virMutexUnlock(&driver->lock);
 }
@@ -174,24 +176,24 @@ nwfilterStateInitialize(bool privileged,
     char *base = NULL;
     DBusConnection *sysbus = NULL;
 
-    if (!privileged)
-        return 0;
-
     if (virDBusHasSystemBus() &&
         !(sysbus = virDBusGetSystemBus()))
         return -1;
 
-    if (VIR_ALLOC(driverState) < 0)
+    if (VIR_ALLOC(driver) < 0)
         return -1;
 
-    if (virMutexInit(&driverState->lock) < 0)
+    if (virMutexInit(&driver->lock) < 0)
         goto err_free_driverstate;
 
     /* remember that we are going to use firewalld */
-    driverState->watchingFirewallD = (sysbus != NULL);
-    driverState->privileged = privileged;
+    driver->watchingFirewallD = (sysbus != NULL);
+    driver->privileged = privileged;
 
-    nwfilterDriverLock(driverState);
+    if (!privileged)
+        return 0;
+
+    nwfilterDriverLock();
 
     if (virNWFilterIPAddrMapInit() < 0)
         goto err_free_driverstate;
@@ -200,10 +202,11 @@ nwfilterStateInitialize(bool privileged,
     if (virNWFilterDHCPSnoopInit() < 0)
         goto err_exit_learnshutdown;
 
-    virNWFilterTechDriversInit(privileged);
+    if (virNWFilterTechDriversInit(privileged) < 0)
+        goto err_dhcpsnoop_shutdown;
 
     if (virNWFilterConfLayerInit(virNWFilterDomainFWUpdateCB,
-                                 driverState) < 0)
+                                 driver) < 0)
         goto err_techdrivers_shutdown;
 
     /*
@@ -228,37 +231,38 @@ nwfilterStateInitialize(bool privileged,
     if (VIR_STRDUP(base, SYSCONFDIR "/libvirt") < 0)
         goto error;
 
-    if (virAsprintf(&driverState->configDir,
+    if (virAsprintf(&driver->configDir,
                     "%s/nwfilter", base) == -1)
         goto error;
 
     VIR_FREE(base);
 
-    if (virNWFilterLoadAllConfigs(&driverState->nwfilters,
-                                  driverState->configDir) < 0)
+    if (virNWFilterLoadAllConfigs(&driver->nwfilters,
+                                  driver->configDir) < 0)
         goto error;
 
-    nwfilterDriverUnlock(driverState);
+    nwfilterDriverUnlock();
 
     return 0;
 
-error:
+ error:
     VIR_FREE(base);
-    nwfilterDriverUnlock(driverState);
+    nwfilterDriverUnlock();
     nwfilterStateCleanup();
 
     return -1;
 
-err_techdrivers_shutdown:
+ err_techdrivers_shutdown:
     virNWFilterTechDriversShutdown();
+ err_dhcpsnoop_shutdown:
     virNWFilterDHCPSnoopShutdown();
-err_exit_learnshutdown:
+ err_exit_learnshutdown:
     virNWFilterLearnShutdown();
-err_exit_ipaddrmapshutdown:
+ err_exit_ipaddrmapshutdown:
     virNWFilterIPAddrMapShutdown();
 
-err_free_driverstate:
-    VIR_FREE(driverState);
+ err_free_driverstate:
+    VIR_FREE(driver);
 
     return -1;
 }
@@ -272,26 +276,26 @@ err_free_driverstate:
 static int
 nwfilterStateReload(void)
 {
-    if (!driverState)
+    if (!driver)
         return -1;
 
-    if (!driverState->privileged)
+    if (!driver->privileged)
         return 0;
 
     virNWFilterDHCPSnoopEnd(NULL);
     /* shut down all threads -- they will be restarted if necessary */
     virNWFilterLearnThreadsTerminate(true);
 
-    nwfilterDriverLock(driverState);
+    nwfilterDriverLock();
     virNWFilterWriteLockFilterUpdates();
     virNWFilterCallbackDriversLock();
 
-    virNWFilterLoadAllConfigs(&driverState->nwfilters,
-                              driverState->configDir);
+    virNWFilterLoadAllConfigs(&driver->nwfilters,
+                              driver->configDir);
 
     virNWFilterCallbackDriversUnlock();
     virNWFilterUnlockFilterUpdates();
-    nwfilterDriverUnlock(driverState);
+    nwfilterDriverUnlock();
 
     virNWFilterInstFiltersOnAllVMs();
 
@@ -309,10 +313,10 @@ nwfilterStateReload(void)
 bool
 virNWFilterDriverIsWatchingFirewallD(void)
 {
-    if (!driverState)
+    if (!driver)
         return false;
 
-    return driverState->watchingFirewallD;
+    return driver->watchingFirewallD;
 }
 
 /**
@@ -321,30 +325,31 @@ virNWFilterDriverIsWatchingFirewallD(void)
  * Shutdown the nwfilter driver, it will stop all active nwfilters
  */
 static int
-nwfilterStateCleanup(void) {
-    if (!driverState)
+nwfilterStateCleanup(void)
+{
+    if (!driver)
         return -1;
 
-    if (driverState->privileged) {
+    if (driver->privileged) {
         virNWFilterConfLayerShutdown();
-        virNWFilterTechDriversShutdown();
         virNWFilterDHCPSnoopShutdown();
         virNWFilterLearnShutdown();
         virNWFilterIPAddrMapShutdown();
+        virNWFilterTechDriversShutdown();
 
-        nwfilterDriverLock(driverState);
+        nwfilterDriverLock();
 
         nwfilterDriverRemoveDBusMatches();
 
         /* free inactive nwfilters */
-        virNWFilterObjListFree(&driverState->nwfilters);
+        virNWFilterObjListFree(&driver->nwfilters);
 
-        VIR_FREE(driverState->configDir);
-        nwfilterDriverUnlock(driverState);
+        VIR_FREE(driver->configDir);
+        nwfilterDriverUnlock();
     }
 
-    virMutexDestroy(&driverState->lock);
-    VIR_FREE(driverState);
+    virMutexDestroy(&driver->lock);
+    VIR_FREE(driver);
 
     return 0;
 }
@@ -352,14 +357,14 @@ nwfilterStateCleanup(void) {
 
 static virNWFilterPtr
 nwfilterLookupByUUID(virConnectPtr conn,
-                     const unsigned char *uuid) {
-    virNWFilterDriverStatePtr driver = conn->nwfilterPrivateData;
+                     const unsigned char *uuid)
+{
     virNWFilterObjPtr nwfilter;
     virNWFilterPtr ret = NULL;
 
-    nwfilterDriverLock(driver);
+    nwfilterDriverLock();
     nwfilter = virNWFilterObjFindByUUID(&driver->nwfilters, uuid);
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
 
     if (!nwfilter) {
         virReportError(VIR_ERR_NO_NWFILTER,
@@ -372,7 +377,7 @@ nwfilterLookupByUUID(virConnectPtr conn,
 
     ret = virGetNWFilter(conn, nwfilter->def->name, nwfilter->def->uuid);
 
-cleanup:
+ cleanup:
     if (nwfilter)
         virNWFilterObjUnlock(nwfilter);
     return ret;
@@ -381,14 +386,14 @@ cleanup:
 
 static virNWFilterPtr
 nwfilterLookupByName(virConnectPtr conn,
-                     const char *name) {
-    virNWFilterDriverStatePtr driver = conn->nwfilterPrivateData;
+                     const char *name)
+{
     virNWFilterObjPtr nwfilter;
     virNWFilterPtr ret = NULL;
 
-    nwfilterDriverLock(driver);
+    nwfilterDriverLock();
     nwfilter = virNWFilterObjFindByName(&driver->nwfilters, name);
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
 
     if (!nwfilter) {
         virReportError(VIR_ERR_NO_NWFILTER,
@@ -401,38 +406,16 @@ nwfilterLookupByName(virConnectPtr conn,
 
     ret = virGetNWFilter(conn, nwfilter->def->name, nwfilter->def->uuid);
 
-cleanup:
+ cleanup:
     if (nwfilter)
         virNWFilterObjUnlock(nwfilter);
     return ret;
 }
 
 
-static virDrvOpenStatus
-nwfilterOpen(virConnectPtr conn,
-             virConnectAuthPtr auth ATTRIBUTE_UNUSED,
-             unsigned int flags)
+static int
+nwfilterConnectNumOfNWFilters(virConnectPtr conn)
 {
-    virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
-
-    if (!driverState)
-        return VIR_DRV_OPEN_DECLINED;
-
-    conn->nwfilterPrivateData = driverState;
-    return VIR_DRV_OPEN_SUCCESS;
-}
-
-
-static int
-nwfilterClose(virConnectPtr conn) {
-    conn->nwfilterPrivateData = NULL;
-    return 0;
-}
-
-
-static int
-nwfilterConnectNumOfNWFilters(virConnectPtr conn) {
-    virNWFilterDriverStatePtr driver = conn->nwfilterPrivateData;
     size_t i;
     int n;
 
@@ -455,15 +438,15 @@ nwfilterConnectNumOfNWFilters(virConnectPtr conn) {
 static int
 nwfilterConnectListNWFilters(virConnectPtr conn,
                              char **const names,
-                             int nnames) {
-    virNWFilterDriverStatePtr driver = conn->nwfilterPrivateData;
+                             int nnames)
+{
     int got = 0;
     size_t i;
 
     if (virConnectListNWFiltersEnsureACL(conn) < 0)
         return -1;
 
-    nwfilterDriverLock(driver);
+    nwfilterDriverLock();
     for (i = 0; i < driver->nwfilters.count && got < nnames; i++) {
         virNWFilterObjPtr obj = driver->nwfilters.objs[i];
         virNWFilterObjLock(obj);
@@ -476,11 +459,11 @@ nwfilterConnectListNWFilters(virConnectPtr conn,
         }
         virNWFilterObjUnlock(obj);
     }
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
     return got;
 
  cleanup:
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
     for (i = 0; i < got; i++)
         VIR_FREE(names[i]);
     memset(names, 0, nnames * sizeof(*names));
@@ -491,8 +474,8 @@ nwfilterConnectListNWFilters(virConnectPtr conn,
 static int
 nwfilterConnectListAllNWFilters(virConnectPtr conn,
                                 virNWFilterPtr **filters,
-                                unsigned int flags) {
-    virNWFilterDriverStatePtr driver = conn->nwfilterPrivateData;
+                                unsigned int flags)
+{
     virNWFilterPtr *tmp_filters = NULL;
     int nfilters = 0;
     virNWFilterPtr filter = NULL;
@@ -505,7 +488,7 @@ nwfilterConnectListAllNWFilters(virConnectPtr conn,
     if (virConnectListAllNWFiltersEnsureACL(conn) < 0)
         return -1;
 
-    nwfilterDriverLock(driver);
+    nwfilterDriverLock();
 
     if (!filters) {
         ret = driver->nwfilters.count;
@@ -534,12 +517,10 @@ nwfilterConnectListAllNWFilters(virConnectPtr conn,
     ret = nfilters;
 
  cleanup:
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
     if (tmp_filters) {
-        for (i = 0; i < nfilters; i ++) {
-            if (tmp_filters[i])
-                virNWFilterFree(tmp_filters[i]);
-        }
+        for (i = 0; i < nfilters; i ++)
+            virObjectUnref(tmp_filters[i]);
     }
     VIR_FREE(tmp_filters);
 
@@ -550,12 +531,17 @@ static virNWFilterPtr
 nwfilterDefineXML(virConnectPtr conn,
                   const char *xml)
 {
-    virNWFilterDriverStatePtr driver = conn->nwfilterPrivateData;
     virNWFilterDefPtr def;
     virNWFilterObjPtr nwfilter = NULL;
     virNWFilterPtr ret = NULL;
 
-    nwfilterDriverLock(driver);
+    if (!driver->privileged) {
+        virReportError(VIR_ERR_OPERATION_INVALID, "%s",
+                       _("Can't define NWFilters in session mode"));
+        return NULL;
+    }
+
+    nwfilterDriverLock();
     virNWFilterWriteLockFilterUpdates();
     virNWFilterCallbackDriversLock();
 
@@ -577,25 +563,25 @@ nwfilterDefineXML(virConnectPtr conn,
 
     ret = virGetNWFilter(conn, nwfilter->def->name, nwfilter->def->uuid);
 
-cleanup:
+ cleanup:
     virNWFilterDefFree(def);
     if (nwfilter)
         virNWFilterObjUnlock(nwfilter);
 
     virNWFilterCallbackDriversUnlock();
     virNWFilterUnlockFilterUpdates();
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
     return ret;
 }
 
 
 static int
-nwfilterUndefine(virNWFilterPtr obj) {
-    virNWFilterDriverStatePtr driver = obj->conn->nwfilterPrivateData;
+nwfilterUndefine(virNWFilterPtr obj)
+{
     virNWFilterObjPtr nwfilter;
     int ret = -1;
 
-    nwfilterDriverLock(driver);
+    nwfilterDriverLock();
     virNWFilterWriteLockFilterUpdates();
     virNWFilterCallbackDriversLock();
 
@@ -625,13 +611,13 @@ nwfilterUndefine(virNWFilterPtr obj) {
     nwfilter = NULL;
     ret = 0;
 
-cleanup:
+ cleanup:
     if (nwfilter)
         virNWFilterObjUnlock(nwfilter);
 
     virNWFilterCallbackDriversUnlock();
     virNWFilterUnlockFilterUpdates();
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
     return ret;
 }
 
@@ -640,15 +626,14 @@ static char *
 nwfilterGetXMLDesc(virNWFilterPtr obj,
                    unsigned int flags)
 {
-    virNWFilterDriverStatePtr driver = obj->conn->nwfilterPrivateData;
     virNWFilterObjPtr nwfilter;
     char *ret = NULL;
 
     virCheckFlags(0, NULL);
 
-    nwfilterDriverLock(driver);
+    nwfilterDriverLock();
     nwfilter = virNWFilterObjFindByUUID(&driver->nwfilters, obj->uuid);
-    nwfilterDriverUnlock(driver);
+    nwfilterDriverUnlock();
 
     if (!nwfilter) {
         virReportError(VIR_ERR_NO_NWFILTER,
@@ -661,7 +646,7 @@ nwfilterGetXMLDesc(virNWFilterPtr obj,
 
     ret = virNWFilterDefFormat(nwfilter->def);
 
-cleanup:
+ cleanup:
     if (nwfilter)
         virNWFilterObjUnlock(nwfilter);
     return ret;
@@ -669,16 +654,16 @@ cleanup:
 
 
 static int
-nwfilterInstantiateFilter(virConnectPtr conn,
-                          const unsigned char *vmuuid,
+nwfilterInstantiateFilter(const unsigned char *vmuuid,
                           virDomainNetDefPtr net)
 {
-    return virNWFilterInstantiateFilter(conn->nwfilterPrivateData, vmuuid, net);
+    return virNWFilterInstantiateFilter(driver, vmuuid, net);
 }
 
 
 static void
-nwfilterTeardownFilter(virDomainNetDefPtr net) {
+nwfilterTeardownFilter(virDomainNetDefPtr net)
+{
     if ((net->ifname) && (net->filter))
         virNWFilterTeardownFilter(net);
 }
@@ -686,8 +671,6 @@ nwfilterTeardownFilter(virDomainNetDefPtr net) {
 
 static virNWFilterDriver nwfilterDriver = {
     .name = "nwfilter",
-    .nwfilterOpen = nwfilterOpen, /* 0.8.0 */
-    .nwfilterClose = nwfilterClose, /* 0.8.0 */
     .connectNumOfNWFilters = nwfilterConnectNumOfNWFilters, /* 0.8.0 */
     .connectListNWFilters = nwfilterConnectListNWFilters, /* 0.8.0 */
     .connectListAllNWFilters = nwfilterConnectListAllNWFilters, /* 0.10.2 */
@@ -713,9 +696,12 @@ static virDomainConfNWFilterDriver domainNWFilterDriver = {
 };
 
 
-int nwfilterRegister(void) {
-    virRegisterNWFilterDriver(&nwfilterDriver);
-    virRegisterStateDriver(&stateDriver);
+int nwfilterRegister(void)
+{
+    if (virSetSharedNWFilterDriver(&nwfilterDriver) < 0)
+        return -1;
+    if (virRegisterStateDriver(&stateDriver) < 0)
+        return -1;
     virDomainConfNWFilterRegister(&domainNWFilterDriver);
     return 0;
 }

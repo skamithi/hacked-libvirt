@@ -1,7 +1,7 @@
 /*
  * virsh-interface.c: Commands to manage host interface
  *
- * Copyright (C) 2005, 2007-2013 Red Hat, Inc.
+ * Copyright (C) 2005, 2007-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -53,8 +53,6 @@ vshCommandOptInterfaceBy(vshControl *ctl, const vshCmd *cmd,
 
     if (!optname)
        optname = "interface";
-    if (!vshCmdHasOption(ctl, cmd, optname))
-        return NULL;
 
     if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
         return NULL;
@@ -122,15 +120,15 @@ cmdInterfaceEdit(vshControl *ctl, const vshCmd *cmd)
         goto cleanup;
 
 #define EDIT_GET_XML virInterfaceGetXMLDesc(iface, flags)
-#define EDIT_NOT_CHANGED \
-    vshPrint(ctl, _("Interface %s XML configuration not changed.\n"),   \
-             virInterfaceGetName(iface));                               \
-    ret = true; goto edit_cleanup;
+#define EDIT_NOT_CHANGED                                                \
+    do {                                                                \
+        vshPrint(ctl, _("Interface %s XML configuration not changed.\n"), \
+                 virInterfaceGetName(iface));                           \
+        ret = true;                                                     \
+        goto edit_cleanup;                                              \
+    } while (0)
 #define EDIT_DEFINE \
     (iface_edited = virInterfaceDefineXML(ctl->conn, doc_edited, 0))
-#define EDIT_FREE \
-    if (iface_edited)   \
-        virInterfaceFree(iface_edited);
 #include "virsh-edit.c"
 
     vshPrint(ctl, _("Interface %s XML configuration edited.\n"),
@@ -138,7 +136,7 @@ cmdInterfaceEdit(vshControl *ctl, const vshCmd *cmd)
 
     ret = true;
 
-cleanup:
+ cleanup:
     if (iface)
         virInterfaceFree(iface);
     if (iface_edited)
@@ -217,7 +215,7 @@ vshInterfaceListCollect(vshControl *ctl,
     goto cleanup;
 
 
-fallback:
+ fallback:
     /* fall back to old method (0.10.1 and older) */
     vshResetLibvirtError();
 
@@ -287,7 +285,7 @@ fallback:
     /* truncate interfaces that weren't found */
     deleted = nAllIfaces - list->nifaces;
 
-finished:
+ finished:
     /* sort the list */
     if (list->ifaces && list->nifaces)
         qsort(list->ifaces, list->nifaces,
@@ -299,7 +297,7 @@ finished:
 
     success = true;
 
-cleanup:
+ cleanup:
     for (i = 0; nActiveIfaces != -1 && i < nActiveIfaces; i++)
         VIR_FREE(activeNames[i]);
 
@@ -507,10 +505,11 @@ cmdInterfaceDumpXML(vshControl *ctl, const vshCmd *cmd)
  */
 static const vshCmdInfo info_interface_define[] = {
     {.name = "help",
-     .data = N_("define (but don't start) a physical host interface from an XML file")
+     .data = N_("define an inactive persistent physical host interface or "
+                "modify an existing persistent one from an XML file")
     },
     {.name = "desc",
-     .data = N_("Define a physical host interface.")
+     .data = N_("Define or modify a persistent physical host interface.")
     },
     {.name = NULL}
 };
@@ -845,7 +844,9 @@ cmdInterfaceBridge(vshControl *ctl, const vshCmd *cmd)
     stp = !vshCommandOptBool(cmd, "no-stp");
 
     if (vshCommandOptUInt(cmd, "delay", &delay) < 0) {
-        vshError(ctl, "%s", _("Unable to parse delay parameter"));
+        vshError(ctl,
+                 _("Numeric value for <%s> option is malformed or out of range"),
+                 "delay");
         goto cleanup;
     }
 

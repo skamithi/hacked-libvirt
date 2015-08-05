@@ -1,7 +1,7 @@
 /*
  * virbuffer.h: buffers for libvirt
  *
- * Copyright (C) 2005-2008, 2011-2013 Red Hat, Inc.
+ * Copyright (C) 2005-2008, 2011-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -53,8 +53,26 @@ const char *virBufferCurrentContent(virBufferPtr buf);
 char *virBufferContentAndReset(virBufferPtr buf);
 void virBufferFreeAndReset(virBufferPtr buf);
 int virBufferError(const virBuffer *buf);
+int virBufferCheckErrorInternal(const virBuffer *buf,
+                                int domcode,
+                                const char *filename,
+                                const char *funcname,
+                                size_t linenr)
+    ATTRIBUTE_RETURN_CHECK ATTRIBUTE_NONNULL(1);
+/**
+ * virBufferCheckError
+ *
+ * Checks if the buffer is in error state and reports an error.
+ *
+ * Returns 0 if no error has occurred, otherwise an error is reported
+ * and -1 is returned.
+ */
+# define virBufferCheckError(buf) \
+    virBufferCheckErrorInternal(buf, VIR_FROM_THIS, __FILE__, __FUNCTION__, \
+    __LINE__)
 unsigned int virBufferUse(const virBuffer *buf);
 void virBufferAdd(virBufferPtr buf, const char *str, int len);
+void virBufferAddBuffer(virBufferPtr buf, virBufferPtr toadd);
 void virBufferAddChar(virBufferPtr buf, char c);
 void virBufferAsprintf(virBufferPtr buf, const char *format, ...)
   ATTRIBUTE_FMT_PRINTF(2, 3);
@@ -78,5 +96,6 @@ void virBufferAdjustIndent(virBufferPtr buf, int indent);
 int virBufferGetIndent(const virBuffer *buf, bool dynamic);
 
 void virBufferTrim(virBufferPtr buf, const char *trim, int len);
+void virBufferAddStr(virBufferPtr buf, const char *str);
 
 #endif /* __VIR_BUFFER_H__ */

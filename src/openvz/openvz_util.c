@@ -1,7 +1,7 @@
 /*
- * openvz_driver.c: core driver methods for managing OpenVZ VEs
+ * openvz_util.c: core driver methods for managing OpenVZ VEs
  *
- * Copyright (C) 2013 Red Hat, Inc.
+ * Copyright (C) 2013-2014 Red Hat, Inc.
  * Copyright (C) 2012 Guido Günther
  *
  * This library is free software; you can redistribute it and/or
@@ -39,13 +39,10 @@
 long
 openvzKBPerPages(void)
 {
-    static long kb_per_pages = 0;
+    static long kb_per_pages;
 
     if (kb_per_pages == 0) {
-        kb_per_pages = sysconf(_SC_PAGESIZE);
-        if (kb_per_pages > 0) {
-            kb_per_pages /= 1024;
-        } else {
+        if ((kb_per_pages = virGetSystemPageSizeKB()) < 0) {
             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                            _("Can't determine page size"));
             kb_per_pages = 0;
@@ -79,7 +76,7 @@ openvzVEGetStringParam(virDomainPtr domain, const char* param)
     if (len && output[len - 1] == '\n')
         output[len - 1] = '\0';
 
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     return output;
 }

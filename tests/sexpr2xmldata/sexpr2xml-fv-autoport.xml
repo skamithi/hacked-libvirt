@@ -6,7 +6,7 @@
   <vcpu placement='static'>1</vcpu>
   <os>
     <type>hvm</type>
-    <loader>/usr/lib/xen/boot/hvmloader</loader>
+    <loader type='rom'>/usr/lib/xen/boot/hvmloader</loader>
     <boot dev='cdrom'/>
   </os>
   <features>
@@ -21,11 +21,13 @@
     <disk type='block' device='disk'>
       <driver name='phy'/>
       <source dev='/iscsi/winxp'/>
+      <backingStore/>
       <target dev='hda' bus='ide'/>
     </disk>
     <disk type='file' device='cdrom'>
       <driver name='file'/>
       <source file='/net/heaped/export/netimage/windows/xp-sp2-vol.iso'/>
+      <backingStore/>
       <target dev='hdc' bus='ide'/>
       <readonly/>
     </disk>

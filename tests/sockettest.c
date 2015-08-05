@@ -1,7 +1,7 @@
 /*
  * sockettest.c: Testing for src/util/network.c APIs
  *
- * Copyright (C) 2010-2011 Red Hat, Inc.
+ * Copyright (C) 2010-2011, 2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,6 +29,8 @@
 #include "testutils.h"
 #include "virlog.h"
 #include "viralloc.h"
+
+VIR_LOG_INIT("tests.sockettest");
 
 static int testParse(virSocketAddr *addr, const char *addrstr, int family, bool pass)
 {
@@ -151,6 +153,49 @@ static int testNetmaskHelper(const void *opaque)
     return testNetmask(data->addr1, data->addr2, data->netmask, data->pass);
 }
 
+
+
+static int testMaskNetwork(const char *addrstr,
+                           int prefix,
+                           const char *networkstr)
+{
+    virSocketAddr addr;
+    virSocketAddr network;
+    char *gotnet = NULL;
+
+    /* Intentionally fill with garbage */
+    memset(&network, 1, sizeof(network));
+
+    if (virSocketAddrParse(&addr, addrstr, AF_UNSPEC) < 0)
+        return -1;
+
+    if (virSocketAddrMaskByPrefix(&addr, prefix, &network) < 0)
+        return -1;
+
+    if (!(gotnet = virSocketAddrFormat(&network)))
+        return -1;
+
+    if (STRNEQ(networkstr, gotnet)) {
+        VIR_FREE(gotnet);
+        fprintf(stderr, "Expected %s, got %s\n", networkstr, gotnet);
+        return -1;
+    }
+    VIR_FREE(gotnet);
+    return 0;
+}
+
+struct testMaskNetworkData {
+    const char *addr1;
+    int prefix;
+    const char *network;
+};
+static int testMaskNetworkHelper(const void *opaque)
+{
+    const struct testMaskNetworkData *data = opaque;
+    return testMaskNetwork(data->addr1, data->prefix, data->network);
+}
+
+
 static int testWildcard(const char *addrstr,
                         bool pass)
 {
@@ -174,19 +219,34 @@ static int testWildcardHelper(const void *opaque)
     return testWildcard(data->addr, data->pass);
 }
 
-struct testIsNumericData {
+struct testNumericData {
     const char *addr;
-    bool pass;
+    int expected;
 };
 
 static int
-testIsNumericHelper(const void *opaque)
+testNumericHelper(const void *opaque)
 {
-    const struct testIsNumericData *data = opaque;
+    const struct testNumericData *data = opaque;
 
-    if (virSocketAddrIsNumeric(data->addr))
-        return data->pass ? 0 : -1;
-    return data->pass ? -1 : 0;
+    if (virSocketAddrNumericFamily(data->addr) != data->expected)
+        return -1;
+    return 0;
+}
+
+struct testIsLocalhostData {
+    const char *addr;
+    bool result;
+};
+
+static int
+testIsLocalhostHelper(const void *opaque)
+{
+    const struct testIsLocalhostData *data = opaque;
+
+    if (virSocketAddrIsNumericLocalhost(data->addr) != data->result)
+        return -1;
+    return 0;
 }
 
 static int
@@ -198,16 +258,6 @@ mymain(void)
      * up display
      */
     virtTestQuiesceLibvirtErrors(false);
-
-#define DO_TEST_PARSE(addrstr, family, pass)                            \
-    do {                                                                \
-        virSocketAddr addr;                                             \
-        struct testParseData data = { &addr, addrstr, family, pass };   \
-        memset(&addr, 0, sizeof(addr));                                 \
-        if (virtTestRun("Test parse " addrstr,                          \
-                        testParseHelper, &data) < 0)                    \
-            ret = -1;                                                   \
-    } while (0)
 
 #define DO_TEST_PARSE_AND_FORMAT(addrstr, family, pass)                 \
     do {                                                                \
@@ -253,6 +303,14 @@ mymain(void)
             ret = -1;                                                   \
     } while (0)
 
+#define DO_TEST_MASK_NETWORK(addr1, prefix, network)                    \
+    do {                                                                \
+        struct testMaskNetworkData data = { addr1, prefix, network };   \
+        if (virtTestRun("Test mask network " addr1 " / " #prefix " == " network, \
+                        testMaskNetworkHelper, &data) < 0)              \
+            ret = -1;                                                   \
+    } while (0)
+
 #define DO_TEST_WILDCARD(addr, pass)                                    \
     do {                                                                \
         struct testWildcardData data = { addr, pass};                   \
@@ -261,14 +319,21 @@ mymain(void)
             ret = -1;                                                   \
     } while (0)
 
-#define DO_TEST_IS_NUMERIC(addr, pass)                                  \
+#define DO_TEST_NUMERIC_FAMILY(addr, pass)                              \
     do {                                                                \
-        struct testIsNumericData data = { addr, pass};                  \
-        if (virtTestRun("Test isNumeric " addr,                         \
-                       testIsNumericHelper, &data) < 0)                 \
+        struct testNumericData data = { addr, pass };                   \
+        if (virtTestRun("Test Numeric Family" addr,                     \
+                       testNumericHelper, &data) < 0)                   \
             ret = -1;                                                   \
     } while (0)
 
+#define DO_TEST_LOCALHOST(addr, pass)                                   \
+    do {                                                                \
+        struct testIsLocalhostData data = { addr, pass };               \
+        if (virtTestRun("Test localhost " addr,                         \
+                       testIsLocalhostHelper, &data) < 0)               \
+            ret = -1;                                                   \
+    } while (0)
 
     DO_TEST_PARSE_AND_FORMAT("127.0.0.1", AF_UNSPEC, true);
     DO_TEST_PARSE_AND_FORMAT("127.0.0.1", AF_INET, true);
@@ -322,6 +387,8 @@ mymain(void)
     DO_TEST_NETMASK("2000::1:1", "9000::1:1",
                     "ffff:ffff:ffff:ffff:ffff:ffff:ffff:0", false);
 
+    DO_TEST_MASK_NETWORK("2001:db8:ca2:2::1", 64, "2001:db8:ca2:2::");
+
     DO_TEST_WILDCARD("0.0.0.0", true);
     DO_TEST_WILDCARD("::", true);
     DO_TEST_WILDCARD("0", true);
@@ -330,13 +397,26 @@ mymain(void)
     DO_TEST_WILDCARD("1", false);
     DO_TEST_WILDCARD("0.1", false);
 
-    DO_TEST_IS_NUMERIC("0.0.0.0", true);
-    DO_TEST_IS_NUMERIC("::", true);
-    DO_TEST_IS_NUMERIC("1", true);
-    DO_TEST_IS_NUMERIC("::ffff", true);
-    DO_TEST_IS_NUMERIC("examplehost", false);
+    DO_TEST_NUMERIC_FAMILY("0.0.0.0", AF_INET);
+    DO_TEST_NUMERIC_FAMILY("::", AF_INET6);
+    DO_TEST_NUMERIC_FAMILY("1", AF_INET);
+    DO_TEST_NUMERIC_FAMILY("::ffff", AF_INET6);
+    DO_TEST_NUMERIC_FAMILY("examplehost", -1);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    DO_TEST_LOCALHOST("127.0.0.1", true);
+    DO_TEST_LOCALHOST("2130706433", true);
+    DO_TEST_LOCALHOST("0177.0.0.01", true);
+    DO_TEST_LOCALHOST("::1", true);
+    DO_TEST_LOCALHOST("0::1", true);
+    DO_TEST_LOCALHOST("0:0:0::1", true);
+    DO_TEST_LOCALHOST("[00:0::1]", false);
+    DO_TEST_LOCALHOST("[::1]", false);
+    DO_TEST_LOCALHOST("128.0.0.1", false);
+    DO_TEST_LOCALHOST("0.0.0.1", false);
+    DO_TEST_LOCALHOST("hello", false);
+    DO_TEST_LOCALHOST("fe80::1:1", false);
+
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

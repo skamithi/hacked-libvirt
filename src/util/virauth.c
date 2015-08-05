@@ -36,6 +36,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_AUTH
 
+VIR_LOG_INIT("util.auth");
+
 int
 virAuthGetConfigFilePathURI(virURIPtr uri,
                             char **path)
@@ -89,11 +91,11 @@ virAuthGetConfigFilePathURI(virURIPtr uri,
 
     VIR_FREE(*path);
 
-done:
+ done:
     ret = 0;
 
     VIR_DEBUG("Using auth file '%s'", NULLSTR(*path));
-cleanup:
+ cleanup:
     VIR_FREE(userdir);
 
     return ret;
@@ -139,7 +141,7 @@ virAuthGetCredential(const char *servicename,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virAuthConfigFree(config);
     return ret;
 }
@@ -170,15 +172,13 @@ virAuthGetUsernamePath(const char *path,
             return NULL;
         }
     } else {
-        if (virAsprintf(&prompt, _("Enter username for %s"), hostname) < 0) {
+        if (virAsprintf(&prompt, _("Enter username for %s"), hostname) < 0)
             return NULL;
-        }
     }
 
     for (ncred = 0; ncred < auth->ncredtype; ncred++) {
-        if (auth->credtype[ncred] != VIR_CRED_AUTHNAME) {
+        if (auth->credtype[ncred] != VIR_CRED_AUTHNAME)
             continue;
-        }
 
         cred.type = VIR_CRED_AUTHNAME;
         cred.prompt = prompt;
@@ -187,9 +187,8 @@ virAuthGetUsernamePath(const char *path,
         cred.result = NULL;
         cred.resultlen = 0;
 
-        if ((*(auth->cb))(&cred, 1, auth->cbdata) < 0) {
+        if ((*(auth->cb))(&cred, 1, auth->cbdata) < 0)
             VIR_FREE(cred.result);
-        }
 
         break;
     }
@@ -259,9 +258,8 @@ virAuthGetPasswordPath(const char *path,
         cred.result = NULL;
         cred.resultlen = 0;
 
-        if ((*(auth->cb))(&cred, 1, auth->cbdata) < 0) {
+        if ((*(auth->cb))(&cred, 1, auth->cbdata) < 0)
             VIR_FREE(cred.result);
-        }
 
         break;
     }

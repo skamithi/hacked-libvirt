@@ -1,7 +1,7 @@
 /*
  * virsh-secret.c: Commands to manage secret
  *
- * Copyright (C) 2005, 2007-2013 Red Hat, Inc.
+ * Copyright (C) 2005, 2007-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -26,18 +26,12 @@
 #include <config.h>
 #include "virsh-secret.h"
 
-#include <libxml/parser.h>
-#include <libxml/tree.h>
-#include <libxml/xpath.h>
-#include <libxml/xmlsave.h>
-
 #include "internal.h"
 #include "base64.h"
 #include "virbuffer.h"
 #include "viralloc.h"
 #include "virfile.h"
 #include "virutil.h"
-#include "virxml.h"
 #include "conf/secret_conf.h"
 
 static virSecretPtr
@@ -46,9 +40,6 @@ vshCommandOptSecret(vshControl *ctl, const vshCmd *cmd, const char **name)
     virSecretPtr secret = NULL;
     const char *n = NULL;
     const char *optname = "secret";
-
-    if (!vshCmdHasOption(ctl, cmd, optname))
-        return NULL;
 
     if (vshCommandOptStringReq(ctl, cmd, optname, &n) < 0)
         return NULL;
@@ -117,7 +108,7 @@ cmdSecretDefine(vshControl *ctl, const vshCmd *cmd)
     vshPrint(ctl, _("Secret %s created\n"), uuid);
     ret = true;
 
-cleanup:
+ cleanup:
     VIR_FREE(buffer);
     if (res)
         virSecretFree(res);
@@ -164,7 +155,7 @@ cmdSecretDumpXML(vshControl *ctl, const vshCmd *cmd)
     VIR_FREE(xml);
     ret = true;
 
-cleanup:
+ cleanup:
     virSecretFree(secret);
     return ret;
 }
@@ -232,7 +223,7 @@ cmdSecretSetValue(vshControl *ctl, const vshCmd *cmd)
     vshPrint(ctl, "%s", _("Secret value set\n"));
     ret = true;
 
-cleanup:
+ cleanup:
     virSecretFree(secret);
     return ret;
 }
@@ -289,7 +280,7 @@ cmdSecretGetValue(vshControl *ctl, const vshCmd *cmd)
     VIR_FREE(base64);
     ret = true;
 
-cleanup:
+ cleanup:
     virSecretFree(secret);
     return ret;
 }
@@ -334,7 +325,7 @@ cmdSecretUndefine(vshControl *ctl, const vshCmd *cmd)
     vshPrint(ctl, _("Secret %s deleted\n"), uuid);
     ret = true;
 
-cleanup:
+ cleanup:
     virSecretFree(secret);
     return ret;
 }
@@ -410,7 +401,7 @@ vshSecretListCollect(vshControl *ctl,
     goto cleanup;
 
 
-fallback:
+ fallback:
     /* fall back to old method (0.10.1 and older) */
     vshResetLibvirtError();
 
@@ -449,7 +440,7 @@ fallback:
     /* truncate secrets that weren't found */
     deleted = nsecrets - list->nsecrets;
 
-finished:
+ finished:
     /* sort the list */
     if (list->secrets && list->nsecrets)
         qsort(list->secrets, list->nsecrets,
@@ -461,7 +452,7 @@ finished:
 
     success = true;
 
-cleanup:
+ cleanup:
     if (nsecrets > 0) {
         for (i = 0; i < nsecrets; i++)
             VIR_FREE(uuids[i]);
@@ -539,10 +530,10 @@ cmdSecretList(vshControl *ctl, const vshCmd *cmd ATTRIBUTE_UNUSED)
     for (i = 0; i < list->nsecrets; i++) {
         virSecretPtr sec = list->secrets[i];
         int usageType = virSecretGetUsageType(sec);
-        const char *usageStr = virSecretUsageTypeTypeToString(usageType);
+        const char *usageStr = virSecretUsageTypeToString(usageType);
         char uuid[VIR_UUID_STRING_BUFLEN];
 
-        if (virSecretGetUUIDString(list->secrets[i], uuid) < 0) {
+        if (virSecretGetUUIDString(sec, uuid) < 0) {
             vshError(ctl, "%s", _("Failed to get uuid of secret"));
             goto cleanup;
         }
@@ -559,7 +550,7 @@ cmdSecretList(vshControl *ctl, const vshCmd *cmd ATTRIBUTE_UNUSED)
 
     ret = true;
 
-cleanup:
+ cleanup:
     vshSecretListFree(list);
     return ret;
 }

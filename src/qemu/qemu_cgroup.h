@@ -1,7 +1,7 @@
 /*
  * qemu_cgroup.h: QEMU cgroup management
  *
- * Copyright (C) 2006-2007, 2009-2013 Red Hat, Inc.
+ * Copyright (C) 2006-2007, 2009-2014 Red Hat, Inc.
  * Copyright (C) 2006 Daniel P. Berrange
  *
  * This library is free software; you can redistribute it and/or
@@ -29,6 +29,9 @@
 # include "domain_conf.h"
 # include "qemu_conf.h"
 
+int qemuSetImageCgroup(virDomainObjPtr vm,
+                       virStorageSourcePtr src,
+                       bool deny);
 int qemuSetupDiskCgroup(virDomainObjPtr vm,
                         virDomainDiskDefPtr disk);
 int qemuTeardownDiskCgroup(virDomainObjPtr vm,
@@ -43,20 +46,17 @@ int qemuConnectCgroup(virQEMUDriverPtr driver,
                       virDomainObjPtr vm);
 int qemuSetupCgroup(virQEMUDriverPtr driver,
                     virDomainObjPtr vm,
-                    virBitmapPtr nodemask);
+                    size_t nnicindexes,
+                    int *nicindexes);
+int qemuSetupCpusetMems(virDomainObjPtr vm);
 int qemuSetupCgroupVcpuBW(virCgroupPtr cgroup,
                           unsigned long long period,
                           long long quota);
-int qemuSetupCgroupVcpuPin(virCgroupPtr cgroup,
-                           virDomainVcpuPinDefPtr *vcpupin,
-                           int nvcpupin,
-                           int vcpuid);
-int qemuSetupCgroupEmulatorPin(virCgroupPtr cgroup, virBitmapPtr cpumask);
+int qemuSetupCgroupCpusetCpus(virCgroupPtr cgroup, virBitmapPtr cpumask);
 int qemuSetupCgroupForVcpu(virDomainObjPtr vm);
-int qemuSetupCgroupForEmulator(virQEMUDriverPtr driver,
-                               virDomainObjPtr vm,
-                               virBitmapPtr nodemask);
-int qemuRemoveCgroup(virDomainObjPtr vm);
+int qemuSetupCgroupForIOThreads(virDomainObjPtr vm);
+int qemuSetupCgroupForEmulator(virDomainObjPtr vm);
+int qemuRemoveCgroup(virQEMUDriverPtr driver, virDomainObjPtr vm);
 int qemuAddToCgroup(virDomainObjPtr vm);
 
 #endif /* __QEMU_CGROUP_H__ */

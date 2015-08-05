@@ -1,4 +1,3 @@
-
 /*
  * vbox_MSCOMGlue.c: glue to the MSCOM based VirtualBox API
  *
@@ -39,6 +38,8 @@
 #include "vbox_MSCOMGlue.h"
 
 #define VIR_FROM_THIS VIR_FROM_VBOX
+
+VIR_LOG_INIT("vbox.vbox_MSCOMGlue");
 
 #define VBOX_REGKEY_ORACLE "Software\\Oracle\\VirtualBox"
 #define VBOX_REGKEY_SUN "Software\\Sun\\xVM VirtualBox"
@@ -384,11 +385,10 @@ vboxLookupRegistryValue(HKEY key, const char *keyName, const char *valueName)
         goto cleanup;
     }
 
-    if (value[length - 1] != '\0') {
+    if (value[length - 1] != '\0')
         value[length] = '\0';
-    }
 
-  cleanup:
+ cleanup:
     return value;
 }
 
@@ -420,17 +420,15 @@ vboxLookupVersionInRegistry(void)
      * the actual version number is in the VersionExt key then. */
     value = vboxLookupRegistryValue(key, keyName, "Version");
 
-    if (value == NULL) {
+    if (value == NULL)
         goto cleanup;
-    }
 
     if (STREQ(value, "%VER%")) {
         VIR_FREE(value);
         value = vboxLookupRegistryValue(key, keyName, "VersionExt");
 
-        if (value == NULL) {
+        if (value == NULL)
             goto cleanup;
-        }
     }
 
     if (virParseVersionString(value, &vboxVersion, false) < 0) {
@@ -440,7 +438,7 @@ vboxLookupVersionInRegistry(void)
 
     result = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(value);
     RegCloseKey(key);
 
@@ -477,13 +475,11 @@ vboxUtf16ToUtf8(const PRUnichar *pwszString, char **ppszString)
     int length = WideCharToMultiByte(CP_UTF8, 0, pwszString, -1, NULL, 0,
                                      NULL, NULL);
 
-    if (length < 1) {
+    if (length < 1)
         return -1;
-    }
 
-    if (VIR_ALLOC_N(*ppszString, length) < 0) {
+    if (VIR_ALLOC_N(*ppszString, length) < 0)
         return -1;
-    }
 
     return WideCharToMultiByte(CP_UTF8, 0, pwszString, -1, *ppszString,
                                length, NULL, NULL);
@@ -494,15 +490,13 @@ vboxUtf8ToUtf16(const char *pszString, PRUnichar **ppwszString)
 {
     int length = MultiByteToWideChar(CP_UTF8, 0, pszString, -1, NULL, 0);
 
-    if (length < 1) {
+    if (length < 1)
         return -1;
-    }
 
     *ppwszString = SysAllocStringLen(NULL, length);
 
-    if (*ppwszString == NULL) {
+    if (*ppwszString == NULL)
         return -1;
-    }
 
     return MultiByteToWideChar(CP_UTF8, 0, pszString, -1, *ppwszString, length);
 }
@@ -579,7 +573,7 @@ vboxComInitialize_v2(const char *pszVirtualBoxIID, IVirtualBox **ppVirtualBox,
 
     result = 0;
 
-  cleanup:
+ cleanup:
     if (result < 0) {
         if (vboxVirtualBox != NULL) {
             vboxVirtualBox->vtbl->nsisupports.Release((nsISupports *)vboxVirtualBox);
@@ -667,9 +661,8 @@ vboxGetFunctions(unsigned int version)
 int
 VBoxCGlueInit(unsigned int *version)
 {
-    if (vboxLookupVersionInRegistry() < 0) {
+    if (vboxLookupVersionInRegistry() < 0)
         return -1;
-    }
 
     *version = vboxGetVersion();
     g_pfnGetFunctions = vboxGetFunctions;
@@ -707,9 +700,8 @@ vboxArrayGetHelper(vboxArray *array, HRESULT hrc, SAFEARRAY *safeArray)
     array->count = 0;
     array->handle = NULL;
 
-    if (FAILED(hrc)) {
+    if (FAILED(hrc))
         return hrc;
-    }
 
     hrc = SafeArrayAccessData(safeArray, (void **)&items);
 
@@ -780,9 +772,8 @@ vboxArrayGetWithUintArg(vboxArray *array, void *self, void *getter, PRUint32 arg
 void
 vboxArrayRelease(vboxArray *array)
 {
-    if (array->handle == NULL) {
+    if (array->handle == NULL)
         return;
-    }
 
     SafeArrayUnaccessData(array->handle);
     SafeArrayDestroy(array->handle);

@@ -5,7 +5,7 @@
 #include <string.h>
 #include <sys/utsname.h>
 
-#include "virstatslinux.h"
+#include "virstats.h"
 #include "internal.h"
 #include "xen/block_stats.h"
 #include "testutils.h"
@@ -18,8 +18,7 @@ static int testDevice(const char *path, int expect)
     if (actual == expect) {
         return 0;
     } else {
-        if (virTestGetDebug())
-            fprintf(stderr, "Expect %-6d Actual %-6d\n", expect, actual);
+        VIR_TEST_DEBUG("Expect %-6d Actual %-6d\n", expect, actual);
         return -1;
     }
 }
@@ -40,7 +39,6 @@ static int
 mymain(void)
 {
     int ret = 0;
-    int status;
     virCommandPtr cmd;
     struct utsname ut;
 
@@ -51,7 +49,7 @@ mymain(void)
     if (strstr(ut.release, "xen") == NULL)
         return EXIT_AM_SKIP;
     cmd = virCommandNewArgList("/usr/sbin/xend", "status", NULL);
-    if (virCommandRun(cmd, &status) != 0 || status != 0) {
+    if (virCommandRun(cmd, NULL) < 0) {
         virCommandFree(cmd);
         return EXIT_AM_SKIP;
     }
@@ -206,7 +204,7 @@ mymain(void)
     DO_TEST("/dev/xvda1", 51713);
     DO_TEST("/dev/xvda15", 51727);
 
-    return ret==0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    return ret == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 VIRT_TEST_MAIN(mymain)

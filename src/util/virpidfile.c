@@ -1,7 +1,7 @@
 /*
  * virpidfile.c: manipulation of pidfiles
  *
- * Copyright (C) 2010-2012 Red Hat, Inc.
+ * Copyright (C) 2010-2012, 2014 Red Hat, Inc.
  * Copyright (C) 2006, 2007 Binary Karma
  * Copyright (C) 2006 Shuveb Hussain
  *
@@ -37,8 +37,11 @@
 #include "c-ctype.h"
 #include "areadlink.h"
 #include "virstring.h"
+#include "virprocess.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
+
+VIR_LOG_INIT("util.pidfile");
 
 char *virPidFileBuildPath(const char *dir, const char* name)
 {
@@ -75,7 +78,7 @@ int virPidFileWritePath(const char *pidfile,
 
     rc = 0;
 
-cleanup:
+ cleanup:
     if (VIR_CLOSE(fd) < 0)
         rc = -errno;
 
@@ -107,7 +110,7 @@ int virPidFileWrite(const char *dir,
 
     rc = virPidFileWritePath(pidfile, pid);
 
-cleanup:
+ cleanup:
     VIR_FREE(pidfile);
     return rc;
 }
@@ -148,7 +151,7 @@ int virPidFileReadPath(const char *path,
     *pid = pid_value;
     rc = 0;
 
-cleanup:
+ cleanup:
     if (VIR_CLOSE(fd) < 0)
         rc = -errno;
 
@@ -280,7 +283,7 @@ int virPidFileReadPathIfAlive(const char *path,
 
     ret = STREQ(resolvedBinPath, resolvedProcLink) ? 0 : -1;
 
-cleanup:
+ cleanup:
     VIR_FREE(procPath);
     VIR_FREE(procLink);
     VIR_FREE(resolvedProcLink);
@@ -331,7 +334,7 @@ int virPidFileReadIfAlive(const char *dir,
 
     rc = virPidFileReadPathIfAlive(pidfile, pid, binpath);
 
-cleanup:
+ cleanup:
     VIR_FREE(pidfile);
     return rc;
 }
@@ -366,12 +369,13 @@ int virPidFileDelete(const char *dir,
 
     rc = virPidFileDeletePath(pidfile);
 
-cleanup:
+ cleanup:
     VIR_FREE(pidfile);
     return rc;
 }
 
 int virPidFileAcquirePath(const char *path,
+                          bool waitForLock,
                           pid_t pid)
 {
     int fd = -1;
@@ -405,7 +409,7 @@ int virPidFileAcquirePath(const char *path,
             return -1;
         }
 
-        if (virFileLock(fd, false, 0, 1) < 0) {
+        if (virFileLock(fd, false, 0, 1, waitForLock) < 0) {
             virReportSystemError(errno,
                                  _("Failed to acquire pid file '%s'"),
                                  path);
@@ -448,6 +452,7 @@ int virPidFileAcquirePath(const char *path,
 
 int virPidFileAcquire(const char *dir,
                       const char *name,
+                      bool waitForLock,
                       pid_t pid)
 {
     int rc = 0;
@@ -463,9 +468,9 @@ int virPidFileAcquire(const char *dir,
         goto cleanup;
     }
 
-    rc = virPidFileAcquirePath(pidfile, pid);
+    rc = virPidFileAcquirePath(pidfile, waitForLock, pid);
 
-cleanup:
+ cleanup:
     VIR_FREE(pidfile);
     return rc;
 }
@@ -513,7 +518,93 @@ int virPidFileRelease(const char *dir,
 
     rc = virPidFileReleasePath(pidfile, fd);
 
-cleanup:
+ cleanup:
     VIR_FREE(pidfile);
     return rc;
+}
+
+
+int
+virPidFileConstructPath(bool privileged,
+                        const char *statedir,
+                        const char *progname,
+                        char **pidfile)
+{
+    int ret = -1;
+    char *rundir = NULL;
+
+    if (privileged) {
+        /*
+         * This is here just to allow calling this function with
+         * statedir == NULL; of course only when !privileged.
+         */
+        if (!statedir) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           "%s", _("No statedir specified"));
+            goto cleanup;
+        }
+        if (virAsprintf(pidfile, "%s/run/%s.pid", statedir, progname) < 0)
+            goto cleanup;
+    } else {
+        if (!(rundir = virGetUserRuntimeDirectory()))
+            goto cleanup;
+
+        if (virFileMakePathWithMode(rundir, 0700) < 0) {
+            virReportSystemError(errno,
+                                 _("Cannot create user runtime directory '%s'"),
+                                 rundir);
+            goto cleanup;
+        }
+
+        if (virAsprintf(pidfile, "%s/%s.pid", rundir, progname) < 0)
+            goto cleanup;
+    }
+
+    ret = 0;
+ cleanup:
+    VIR_FREE(rundir);
+    return ret;
+}
+
+
+/**
+ * virPidFileForceCleanupPath:
+ *
+ * Check if the pidfile is left around and clean it up whatever it
+ * takes.  This doesn't raise an error.  This function must not be
+ * called multiple times with the same path, be it in threads or
+ * processes.  This function does not raise any errors.
+ *
+ * Returns 0 if the pidfile was successfully cleaned up, -1 otherwise.
+ */
+int
+virPidFileForceCleanupPath(const char *path)
+{
+    pid_t pid = 0;
+    int fd = -1;
+
+    if (!virFileExists(path))
+        return 0;
+
+    if (virPidFileReadPath(path, &pid) < 0)
+        return -1;
+
+    fd = virPidFileAcquirePath(path, false, 0);
+    if (fd < 0) {
+        virResetLastError();
+
+        /* Only kill the process if the pid is valid one.  0 means
+         * there is somebody else doing the same pidfile cleanup
+         * machinery. */
+        if (pid)
+            virProcessKillPainfully(pid, true);
+
+        if (virPidFileDeletePath(path) < 0)
+            return -1;
+    }
+
+    if (fd)
+        virPidFileReleasePath(path, fd);
+
+    return 0;
 }

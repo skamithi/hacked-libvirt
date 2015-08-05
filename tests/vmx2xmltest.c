@@ -25,47 +25,44 @@ testCapsInit(void)
 {
     virCapsGuestPtr guest = NULL;
 
-    caps = virCapabilitiesNew(VIR_ARCH_I686, 1, 1);
+    caps = virCapabilitiesNew(VIR_ARCH_I686, true, true);
 
-    if (caps == NULL) {
+    if (caps == NULL)
         return;
-    }
 
     virCapabilitiesAddHostMigrateTransport(caps, "esx");
 
     /* i686 guest */
     guest =
-      virCapabilitiesAddGuest(caps, "hvm",
+      virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM,
                               VIR_ARCH_I686,
                               NULL, NULL, 0, NULL);
 
-    if (guest == NULL) {
+    if (guest == NULL)
         goto failure;
-    }
 
-    if (virCapabilitiesAddGuestDomain(guest, "vmware", NULL, NULL, 0,
+    if (virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_VMWARE, NULL, NULL, 0,
                                       NULL) == NULL) {
         goto failure;
     }
 
     /* x86_64 guest */
     guest =
-      virCapabilitiesAddGuest(caps, "hvm",
+      virCapabilitiesAddGuest(caps, VIR_DOMAIN_OSTYPE_HVM,
                               VIR_ARCH_X86_64,
                               NULL, NULL, 0, NULL);
 
-    if (guest == NULL) {
+    if (guest == NULL)
         goto failure;
-    }
 
-    if (virCapabilitiesAddGuestDomain(guest, "vmware", NULL, NULL, 0,
+    if (virCapabilitiesAddGuestDomain(guest, VIR_DOMAIN_VIRT_VMWARE, NULL, NULL, 0,
                                       NULL) == NULL) {
         goto failure;
     }
 
     return;
 
-  failure:
+ failure:
     virObjectUnref(caps);
     caps = NULL;
 }
@@ -75,14 +72,10 @@ testCompareFiles(const char *vmx, const char *xml)
 {
     int ret = -1;
     char *vmxData = NULL;
-    char *xmlData = NULL;
     char *formatted = NULL;
     virDomainDefPtr def = NULL;
 
     if (virtTestLoadFile(vmx, &vmxData) < 0)
-        goto cleanup;
-
-    if (virtTestLoadFile(xml, &xmlData) < 0)
         goto cleanup;
 
     if (!(def = virVMXParseConfig(&ctx, xmlopt, vmxData)))
@@ -93,19 +86,16 @@ testCompareFiles(const char *vmx, const char *xml)
         goto cleanup;
     }
 
-    if (!(formatted = virDomainDefFormat(def, VIR_DOMAIN_XML_SECURE)))
+    if (!(formatted = virDomainDefFormat(def, VIR_DOMAIN_DEF_FORMAT_SECURE)))
         goto cleanup;
 
-    if (STRNEQ(xmlData, formatted)) {
-        virtTestDifference(stderr, xmlData, formatted);
+    if (virtTestCompareToFile(formatted, xml) < 0)
         goto cleanup;
-    }
 
     ret = 0;
 
-  cleanup:
+ cleanup:
     VIR_FREE(vmxData);
-    VIR_FREE(xmlData);
     VIR_FREE(formatted);
     virDomainDefFree(def);
 
@@ -134,7 +124,7 @@ testCompareHelper(const void *data)
 
     ret = testCompareFiles(vmx, xml);
 
-  cleanup:
+ cleanup:
     VIR_FREE(vmx);
     VIR_FREE(xml);
 
@@ -178,7 +168,7 @@ testParseVMXFileName(const char *fileName, void *opaque ATTRIBUTE_UNUSED)
             goto cleanup;
     }
 
-  cleanup:
+ cleanup:
     VIR_FREE(copyOfFileName);
 
     return src;
@@ -201,9 +191,8 @@ mymain(void)
 
     testCapsInit();
 
-    if (caps == NULL) {
+    if (caps == NULL)
         return EXIT_FAILURE;
-    }
 
     if (!(xmlopt = virVMXDomainXMLConfInit()))
         return EXIT_FAILURE;

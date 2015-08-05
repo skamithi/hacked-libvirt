@@ -1,7 +1,7 @@
 /*
  * virobject.c: libvirt reference counted object
  *
- * Copyright (C) 2012-2013 Red Hat, Inc.
+ * Copyright (C) 2012-2014 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,9 +28,12 @@
 #include "viratomic.h"
 #include "virerror.h"
 #include "virlog.h"
+#include "virprobe.h"
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NONE
+
+VIR_LOG_INIT("util.object");
 
 static unsigned int magicCounter = 0xCAFE0000;
 
@@ -144,7 +147,7 @@ virClassPtr virClassNew(virClassPtr parent,
 
     return klass;
 
-error:
+ error:
     VIR_FREE(klass);
     return NULL;
 }
@@ -217,8 +220,8 @@ void *virObjectLockableNew(virClassPtr klass)
         return NULL;
 
     if (virMutexInit(&obj->lock) < 0) {
-        virReportSystemError(VIR_ERR_INTERNAL_ERROR, "%s",
-                             _("Unable to initialize mutex"));
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("Unable to initialize mutex"));
         virObjectUnref(obj);
         return NULL;
     }
@@ -386,4 +389,60 @@ const char *virClassName(virClassPtr klass)
 void virObjectFreeCallback(void *opaque)
 {
     virObjectUnref(opaque);
+}
+
+
+/**
+ * virObjectFreeHashData:
+ * @opaque: a pointer to a virObject instance
+ * @name: ignored, name of the hash key being deleted
+ *
+ * Provides identical functionality to virObjectUnref,
+ * but with the signature matching the virHashDataFree
+ * typedef.
+ */
+void virObjectFreeHashData(void *opaque, const void *name ATTRIBUTE_UNUSED)
+{
+    virObjectUnref(opaque);
+}
+
+
+/**
+ * virObjectListFree:
+ * @list: A pointer to a NULL-terminated list of object pointers to free
+ *
+ * Unrefs all members of @list and frees the list itself.
+ */
+void virObjectListFree(void *list)
+{
+    void **next;
+
+    if (!list)
+        return;
+
+    for (next = (void **) list; *next; next++)
+        virObjectUnref(*next);
+
+    VIR_FREE(list);
+}
+
+
+/**
+ * virObjectListFreeCount:
+ * @list: A pointer to a list of object pointers to freea
+ * @count: Number of elements in the list.
+ *
+ * Unrefs all members of @list and frees the list itself.
+ */
+void virObjectListFreeCount(void *list, size_t count)
+{
+    size_t i;
+
+    if (!list)
+        return;
+
+    for (i = 0; i < count; i++)
+        virObjectUnref(((void **)list)[i]);
+
+    VIR_FREE(list);
 }

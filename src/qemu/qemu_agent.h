@@ -49,6 +49,8 @@ qemuAgentPtr qemuAgentOpen(virDomainObjPtr vm,
 
 void qemuAgentClose(qemuAgentPtr mon);
 
+void qemuAgentNotifyClose(qemuAgentPtr mon);
+
 typedef enum {
     QEMU_AGENT_EVENT_NONE = 0,
     QEMU_AGENT_EVENT_SHUTDOWN,
@@ -70,8 +72,11 @@ typedef enum {
 int qemuAgentShutdown(qemuAgentPtr mon,
                       qemuAgentShutdownMode mode);
 
-int qemuAgentFSFreeze(qemuAgentPtr mon);
+int qemuAgentFSFreeze(qemuAgentPtr mon,
+                      const char **mountpoints, unsigned int nmountpoints);
 int qemuAgentFSThaw(qemuAgentPtr mon);
+int qemuAgentGetFSInfo(qemuAgentPtr mon, virDomainFSInfoPtr **info,
+                       virDomainDefPtr vmdef);
 
 int qemuAgentSuspend(qemuAgentPtr mon,
                      unsigned int target);
@@ -97,4 +102,20 @@ int qemuAgentSetVCPUs(qemuAgentPtr mon, qemuAgentCPUInfoPtr cpus, size_t ncpus);
 int qemuAgentUpdateCPUInfo(unsigned int nvcpus,
                            qemuAgentCPUInfoPtr cpuinfo,
                            int ncpuinfo);
+
+int qemuAgentGetTime(qemuAgentPtr mon,
+                     long long *seconds,
+                     unsigned int *nseconds);
+int qemuAgentSetTime(qemuAgentPtr mon,
+                     long long seconds,
+                     unsigned int nseconds,
+                     bool sync);
+
+int qemuAgentGetInterfaces(qemuAgentPtr mon,
+                           virDomainInterfacePtr **ifaces);
+
+int qemuAgentSetUserPassword(qemuAgentPtr mon,
+                             const char *user,
+                             const char *password,
+                             bool crypted);
 #endif /* __QEMU_AGENT_H__ */

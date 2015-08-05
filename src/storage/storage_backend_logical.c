@@ -1,7 +1,7 @@
 /*
  * storage_backend_logical.c: storage backend for logical volume handling
  *
- * Copyright (C) 2007-2009, 2011, 2013 Red Hat, Inc.
+ * Copyright (C) 2007-2014 Red Hat, Inc.
  * Copyright (C) 2007-2008 Daniel P. Berrange
  *
  * This library is free software; you can redistribute it and/or
@@ -42,6 +42,8 @@
 
 #define VIR_FROM_THIS VIR_FROM_STORAGE
 
+VIR_LOG_INIT("storage.storage_backend_logical");
+
 #define PV_BLANK_SECTOR_SIZE 512
 
 
@@ -64,11 +66,17 @@ virStorageBackendLogicalSetActive(virStoragePoolObjPtr pool,
 
 #define VIR_STORAGE_VOL_LOGICAL_SEGTYPE_STRIPED "striped"
 
+struct virStorageBackendLogicalPoolVolData {
+    virStoragePoolObjPtr pool;
+    virStorageVolDefPtr vol;
+};
+
 static int
-virStorageBackendLogicalMakeVol(virStoragePoolObjPtr pool,
-                                char **const groups,
-                                void *data)
+virStorageBackendLogicalMakeVol(char **const groups,
+                                void *opaque)
 {
+    struct virStorageBackendLogicalPoolVolData *data = opaque;
+    virStoragePoolObjPtr pool = data->pool;
     virStorageVolDefPtr vol = NULL;
     bool is_new_vol = false;
     unsigned long long offset, size, length;
@@ -94,8 +102,8 @@ virStorageBackendLogicalMakeVol(virStoragePoolObjPtr pool,
         return 0;
 
     /* See if we're only looking for a specific volume */
-    if (data != NULL) {
-        vol = data;
+    if (data->vol != NULL) {
+        vol = data->vol;
         if (STRNEQ(vol->name, groups[0]))
             return 0;
     }
@@ -115,9 +123,6 @@ virStorageBackendLogicalMakeVol(virStoragePoolObjPtr pool,
         if (VIR_STRDUP(vol->name, groups[0]) < 0)
             goto cleanup;
 
-        if (VIR_REALLOC_N(pool->volumes.objs,
-                          pool->volumes.count + 1))
-            goto cleanup;
     }
 
     if (vol->target.path == NULL) {
@@ -125,6 +130,15 @@ virStorageBackendLogicalMakeVol(virStoragePoolObjPtr pool,
                         pool->def->target.path, vol->name) < 0)
             goto cleanup;
     }
+
+    /* Mark the (s) sparse/snapshot lv, e.g. the lv created using
+     * the --virtualsize/-V option. We've already ignored the (t)hin
+     * pool definition. In the manner libvirt defines these, the
+     * thin pool is hidden to the lvs output, except as the name
+     * in brackets [] described for the groups[1] (backingStore).
+     */
+    if (attrs[0] == 's')
+        vol->target.sparse = true;
 
     /* Skips the backingStore of lv created with "--virtualsize",
      * its original device "/dev/$vgname/$lvname_vorigin" is
@@ -134,17 +148,21 @@ virStorageBackendLogicalMakeVol(virStoragePoolObjPtr pool,
      *  lv is created with "--virtualsize").
      */
     if (groups[1] && !STREQ(groups[1], "") && (groups[1][0] != '[')) {
-        if (virAsprintf(&vol->backingStore.path, "%s/%s",
+        if (VIR_ALLOC(vol->target.backingStore) < 0)
+            goto cleanup;
+
+        if (virAsprintf(&vol->target.backingStore->path, "%s/%s",
                         pool->def->target.path, groups[1]) < 0)
             goto cleanup;
 
-        vol->backingStore.format = VIR_STORAGE_POOL_LOGICAL_LVM2;
+        vol->target.backingStore->format = VIR_STORAGE_POOL_LOGICAL_LVM2;
     }
 
     if (!vol->key && VIR_STRDUP(vol->key, groups[2]) < 0)
         goto cleanup;
 
-    if (virStorageBackendUpdateVolInfo(vol, 1) < 0)
+    if (virStorageBackendUpdateVolInfo(vol, false,
+                                       VIR_STORAGE_VOL_OPEN_DEFAULT) < 0)
         goto cleanup;
 
     nextents = 1;
@@ -171,7 +189,7 @@ virStorageBackendLogicalMakeVol(virStoragePoolObjPtr pool,
                        "%s", _("malformed volume extent size value"));
         goto cleanup;
     }
-    if (virStrToLong_ull(groups[8], NULL, 10, &vol->allocation) < 0) {
+    if (virStrToLong_ull(groups[8], NULL, 10, &vol->target.allocation) < 0) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        "%s", _("malformed volume allocation value"));
         goto cleanup;
@@ -251,12 +269,13 @@ virStorageBackendLogicalMakeVol(virStoragePoolObjPtr pool,
         vol->source.nextent++;
     }
 
-    if (is_new_vol)
-        pool->volumes.objs[pool->volumes.count++] = vol;
+    if (is_new_vol &&
+        VIR_APPEND_ELEMENT(pool->volumes.objs, pool->volumes.count, vol) < 0)
+        goto cleanup;
 
     ret = 0;
 
-cleanup:
+ cleanup:
     VIR_FREE(regex);
     VIR_FREE(reg);
     VIR_FREE(vars);
@@ -299,6 +318,10 @@ virStorageBackendLogicalFindLVs(virStoragePoolObjPtr pool,
     };
     int ret = -1;
     virCommandPtr cmd;
+    struct virStorageBackendLogicalPoolVolData cbdata = {
+        .pool = pool,
+        .vol = vol,
+    };
 
     cmd = virCommandNewArgList(LVS,
                                "--separator", "#",
@@ -310,26 +333,26 @@ virStorageBackendLogicalFindLVs(virStoragePoolObjPtr pool,
                                "lv_name,origin,uuid,devices,segtype,stripes,seg_size,vg_extent_size,size,lv_attr",
                                pool->def->source.name,
                                NULL);
-    if (virStorageBackendRunProgRegex(pool,
-                                      cmd,
-                                      1,
-                                      regexes,
-                                      vars,
-                                      virStorageBackendLogicalMakeVol,
-                                      vol, "lvs") < 0)
+    if (virCommandRunRegex(cmd,
+                           1,
+                           regexes,
+                           vars,
+                           virStorageBackendLogicalMakeVol,
+                           &cbdata,
+                           "lvs") < 0)
         goto cleanup;
 
     ret = 0;
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     return ret;
 }
 
 static int
-virStorageBackendLogicalRefreshPoolFunc(virStoragePoolObjPtr pool ATTRIBUTE_UNUSED,
-                                        char **const groups,
-                                        void *data ATTRIBUTE_UNUSED)
+virStorageBackendLogicalRefreshPoolFunc(char **const groups,
+                                        void *data)
 {
+    virStoragePoolObjPtr pool = data;
     if (virStrToLong_ull(groups[0], NULL, 10, &pool->def->capacity) < 0)
         return -1;
     if (virStrToLong_ull(groups[1], NULL, 10, &pool->def->available) < 0)
@@ -341,8 +364,7 @@ virStorageBackendLogicalRefreshPoolFunc(virStoragePoolObjPtr pool ATTRIBUTE_UNUS
 
 
 static int
-virStorageBackendLogicalFindPoolSourcesFunc(virStoragePoolObjPtr pool ATTRIBUTE_UNUSED,
-                                            char **const groups,
+virStorageBackendLogicalFindPoolSourcesFunc(char **const groups,
                                             void *data)
 {
     virStoragePoolSourceListPtr sourceList = data;
@@ -385,7 +407,7 @@ virStorageBackendLogicalFindPoolSourcesFunc(virStoragePoolObjPtr pool ATTRIBUTE_
 
     return 0;
 
-error:
+ error:
     VIR_FREE(pvname);
     VIR_FREE(vgname);
 
@@ -432,9 +454,9 @@ virStorageBackendLogicalFindPoolSources(virConnectPtr conn ATTRIBUTE_UNUSED,
                                "--noheadings",
                                "-o", "pv_name,vg_name",
                                NULL);
-    if (virStorageBackendRunProgRegex(NULL, cmd, 1, regexes, vars,
-                                      virStorageBackendLogicalFindPoolSourcesFunc,
-                                      &sourceList, "pvs") < 0) {
+    if (virCommandRunRegex(cmd, 1, regexes, vars,
+                           virStorageBackendLogicalFindPoolSourcesFunc,
+                           &sourceList, "pvs") < 0) {
         virCommandFree(cmd);
         return NULL;
     }
@@ -457,8 +479,7 @@ virStorageBackendLogicalFindPoolSources(virConnectPtr conn ATTRIBUTE_UNUSED,
 
 
 static int
-virStorageBackendLogicalCheckPool(virConnectPtr conn ATTRIBUTE_UNUSED,
-                                  virStoragePoolObjPtr pool,
+virStorageBackendLogicalCheckPool(virStoragePoolObjPtr pool,
                                   bool *isActive)
 {
     *isActive = virFileExists(pool->def->target.path);
@@ -549,7 +570,7 @@ virStorageBackendLogicalBuildPool(virConnectPtr conn ATTRIBUTE_UNUSED,
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virCommandFree(vgcmd);
     return ret;
 }
@@ -593,18 +614,18 @@ virStorageBackendLogicalRefreshPool(virConnectPtr conn ATTRIBUTE_UNUSED,
                                NULL);
 
     /* Now get basic volgrp metadata */
-    if (virStorageBackendRunProgRegex(pool,
-                                      cmd,
-                                      1,
-                                      regexes,
-                                      vars,
-                                      virStorageBackendLogicalRefreshPoolFunc,
-                                      NULL, "vgs") < 0)
+    if (virCommandRunRegex(cmd,
+                           1,
+                           regexes,
+                           vars,
+                           virStorageBackendLogicalRefreshPoolFunc,
+                           pool,
+                           "vgs") < 0)
         goto cleanup;
 
     ret = 0;
 
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     if (ret < 0)
         virStoragePoolObjClearVols(pool);
@@ -660,7 +681,7 @@ virStorageBackendLogicalDeletePool(virConnectPtr conn ATTRIBUTE_UNUSED,
         cmd = NULL;
     }
 
-cleanup:
+ cleanup:
     virCommandFree(cmd);
     return ret;
 }
@@ -694,7 +715,7 @@ virStorageBackendLogicalDeleteVol(virConnectPtr conn ATTRIBUTE_UNUSED,
     }
 
     ret = 0;
-cleanup:
+ cleanup:
     virCommandFree(lvchange_cmd);
     virCommandFree(lvremove_cmd);
     return ret;
@@ -709,6 +730,7 @@ virStorageBackendLogicalCreateVol(virConnectPtr conn,
     int fd = -1;
     virCommandPtr cmd = NULL;
     virErrorPtr err;
+    struct stat sb;
 
     if (vol->target.encryption != NULL) {
         virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
@@ -719,10 +741,8 @@ virStorageBackendLogicalCreateVol(virConnectPtr conn,
 
     vol->type = VIR_STORAGE_VOL_BLOCK;
 
-    if (vol->target.path != NULL) {
-        /* A target path passed to CreateVol has no meaning */
-        VIR_FREE(vol->target.path);
-    }
+    /* A target path passed to CreateVol has no meaning */
+    VIR_FREE(vol->target.path);
 
     if (virAsprintf(&vol->target.path, "%s/%s",
                     pool->def->target.path,
@@ -733,14 +753,18 @@ virStorageBackendLogicalCreateVol(virConnectPtr conn,
                                "--name", vol->name,
                                NULL);
     virCommandAddArg(cmd, "-L");
-    if (vol->capacity != vol->allocation) {
+    if (vol->target.capacity != vol->target.allocation) {
         virCommandAddArgFormat(cmd, "%lluK",
-                VIR_DIV_UP(vol->allocation ? vol->allocation : 1, 1024));
+                               VIR_DIV_UP(vol->target.allocation
+                                          ? vol->target.allocation : 1, 1024));
+        virCommandAddArgList(cmd, "--type", "snapshot", NULL);
         virCommandAddArg(cmd, "--virtualsize");
+        vol->target.sparse = true;
     }
-    virCommandAddArgFormat(cmd, "%lluK", VIR_DIV_UP(vol->capacity, 1024));
-    if (vol->backingStore.path)
-        virCommandAddArgList(cmd, "-s", vol->backingStore.path, NULL);
+    virCommandAddArgFormat(cmd, "%lluK", VIR_DIV_UP(vol->target.capacity,
+                                                    1024));
+    if (vol->target.backingStore)
+        virCommandAddArgList(cmd, "-s", vol->target.backingStore->path, NULL);
     else
         virCommandAddArg(cmd, pool->def->source.name);
 
@@ -750,19 +774,22 @@ virStorageBackendLogicalCreateVol(virConnectPtr conn,
     virCommandFree(cmd);
     cmd = NULL;
 
-    if ((fd = virStorageBackendVolOpen(vol->target.path)) < 0)
+    if ((fd = virStorageBackendVolOpen(vol->target.path, &sb,
+                                       VIR_STORAGE_VOL_OPEN_DEFAULT)) < 0)
         goto error;
 
     /* We can only chown/grp if root */
     if (geteuid() == 0) {
-        if (fchown(fd, vol->target.perms.uid, vol->target.perms.gid) < 0) {
+        if (fchown(fd, vol->target.perms->uid, vol->target.perms->gid) < 0) {
             virReportSystemError(errno,
                                  _("cannot set file owner '%s'"),
                                  vol->target.path);
             goto error;
         }
     }
-    if (fchmod(fd, vol->target.perms.mode) < 0) {
+    if (fchmod(fd, (vol->target.perms->mode == (mode_t) -1 ?
+                    VIR_STORAGE_DEFAULT_VOL_PERM_MODE :
+                    vol->target.perms->mode)) < 0) {
         virReportSystemError(errno,
                              _("cannot set file mode '%s'"),
                              vol->target.path);
@@ -812,6 +839,33 @@ virStorageBackendLogicalBuildVolFrom(virConnectPtr conn,
     return build_func(conn, pool, vol, inputvol, flags);
 }
 
+static int
+virStorageBackendLogicalVolWipe(virConnectPtr conn,
+                                virStoragePoolObjPtr pool,
+                                virStorageVolDefPtr vol,
+                                unsigned int algorithm,
+                                unsigned int flags)
+{
+    if (!vol->target.sparse)
+        return virStorageBackendVolWipeLocal(conn, pool, vol, algorithm, flags);
+
+    /* The wiping algorithms will write something to the logical volume.
+     * Writing to a sparse logical volume causes it to be filled resulting
+     * in the volume becoming INACTIVE because there is some amount of
+     * metadata contained within the sparse lv. Choosing to only write
+     * a wipe pattern to the already written portion lv based on what
+     * 'lvs' shows in the "Data%" column/field for the sparse lv was
+     * considered. However, there is no guarantee that sparse lv could
+     * grow or shrink outside of libvirt's knowledge and thus still render
+     * the volume INACTIVE. Until there is some sort of wipe function
+     * implemented by lvm for one of these sparse lv, we'll just return
+     * unsupported.
+     */
+    virReportError(VIR_ERR_NO_SUPPORT,
+                   _("logical volue '%s' is sparse, volume wipe not supported"),
+                   vol->target.path);
+    return -1;
+}
 
 virStorageBackend virStorageBackendLogical = {
     .type = VIR_STORAGE_POOL_LOGICAL,
@@ -827,4 +881,7 @@ virStorageBackend virStorageBackendLogical = {
     .buildVolFrom = virStorageBackendLogicalBuildVolFrom,
     .createVol = virStorageBackendLogicalCreateVol,
     .deleteVol = virStorageBackendLogicalDeleteVol,
+    .uploadVol = virStorageBackendVolUploadLocal,
+    .downloadVol = virStorageBackendVolDownloadLocal,
+    .wipeVol = virStorageBackendLogicalVolWipe,
 };

@@ -1,5 +1,5 @@
 /*
- * virerror.c: error handling and reporting code for libvirt
+ * virerror.h: error handling and reporting code for libvirt
  *
  * Copyright (C) 2006-2014 Red Hat, Inc.
  *
@@ -46,6 +46,11 @@ void virRaiseErrorFull(const char *filename,
                        int int2,
                        const char *fmt, ...)
     ATTRIBUTE_FMT_PRINTF(12, 13);
+
+void virRaiseErrorObject(const char *filename,
+                         const char *funcname,
+                         size_t linenr,
+                         virErrorPtr err);
 
 void virReportErrorHelper(int domcode, int errcode,
                           const char *filename,
@@ -99,7 +104,7 @@ void virReportSystemErrorFull(int domcode,
                       #argname,                                      \
                       NULL,                                          \
                       0, 0,                                          \
-                      _("%s in %s must greater than zero"),          \
+                      _("%s in %s must be greater than zero"),       \
                       #argname, __FUNCTION__)
 # define virReportInvalidNonZeroArg(argname)                         \
     virRaiseErrorFull(__FILE__, __FUNCTION__, __LINE__,              \
@@ -145,17 +150,6 @@ void virReportSystemErrorFull(int domcode,
                       0, 0,                                          \
                       (fmt), __VA_ARGS__)
 
-# define virReportDBusServiceError(message, name)                    \
-    virRaiseErrorFull(__FILE__, __FUNCTION__, __LINE__,              \
-                      VIR_FROM_THIS,                                 \
-                      VIR_ERR_DBUS_SERVICE,                          \
-                      VIR_ERR_ERROR,                                 \
-                      __FUNCTION__,                                  \
-                      name,                                          \
-                      NULL,                                          \
-                      0, 0,                                          \
-                      "%s", message);
-
 # define virReportUnsupportedError()                                    \
     virReportErrorHelper(VIR_FROM_THIS, VIR_ERR_NO_SUPPORT,             \
                          __FILE__, __FUNCTION__, __LINE__, __FUNCTION__)
@@ -175,6 +169,9 @@ void virReportOOMErrorFull(int domcode,
 # define virReportError(code, ...)                                   \
     virReportErrorHelper(VIR_FROM_THIS, code, __FILE__,              \
                          __FUNCTION__, __LINE__, __VA_ARGS__)
+
+# define virReportErrorObject(obj)                                   \
+    virRaiseErrorObject(__FILE__, __FUNCTION__, __LINE__, obj)
 
 int virSetError(virErrorPtr newerr);
 void virDispatchError(virConnectPtr conn);

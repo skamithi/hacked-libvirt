@@ -1,7 +1,7 @@
 /*
  * viralloc.c: safer memory allocation
  *
- * Copyright (C) 2010-2013 Red Hat, Inc.
+ * Copyright (C) 2010-2014 Red Hat, Inc.
  * Copyright (C) 2008 Daniel P. Berrange
  *
  * This library is free software; you can redistribute it and/or
@@ -29,12 +29,14 @@
 
 #define VIR_FROM_THIS VIR_FROM_NONE
 
+VIR_LOG_INIT("util.alloc");
+
 #if TEST_OOM
-static int testMallocNext = 0;
-static int testMallocFailFirst = 0;
-static int testMallocFailLast = 0;
-static void (*testMallocHook)(int, void*) = NULL;
-static void *testMallocHookData = NULL;
+static int testMallocNext;
+static int testMallocFailFirst;
+static int testMallocFailLast;
+static void (*testMallocHook)(int, void*);
+static void *testMallocHookData;
 
 void virAllocTestInit(void)
 {
@@ -366,10 +368,10 @@ int virResizeN(void *ptrptr,
  */
 void virShrinkN(void *ptrptr, size_t size, size_t *countptr, size_t toremove)
 {
-    if (toremove < *countptr)
+    if (toremove < *countptr) {
         ignore_value(virReallocN(ptrptr, size, *countptr -= toremove,
                                  false, 0, NULL, NULL, 0));
-    else {
+    } else {
         virFree(ptrptr);
         *countptr = 0;
     }

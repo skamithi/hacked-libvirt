@@ -1,7 +1,7 @@
 /*
  * virsh.h: a shell to exercise the libvirt API
  *
- * Copyright (C) 2005, 2007-2014 Red Hat, Inc.
+ * Copyright (C) 2005, 2007-2015 Red Hat, Inc.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -31,14 +31,11 @@
 # include <stdarg.h>
 # include <unistd.h>
 # include <sys/stat.h>
-# include <inttypes.h>
 # include <termios.h>
 
 # include "internal.h"
 # include "virerror.h"
 # include "virthread.h"
-# include "virnetdevbandwidth.h"
-# include "virstring.h"
 
 # define VSH_MAX_XML_FILE (10*1024*1024)
 
@@ -154,7 +151,7 @@ typedef char **(*vshCompleter)(unsigned int flags);
  * vshCmdInfo -- name/value pair for information about command
  *
  * Commands should have at least the following names:
- * "name" - command name
+ * "help" - short description of command
  * "desc" - description of command, or empty string
  */
 struct _vshCmdInfo {
@@ -238,6 +235,8 @@ struct _vshControl {
                                    virDomainGetState is not supported */
     bool useSnapshotOld;        /* cannot use virDomainSnapshotGetParent or
                                    virDomainSnapshotNumChildren */
+    bool blockJobNoBytes;       /* true if _BANDWIDTH_BYTE blockjob flags
+                                   are missing */
     virThread eventLoop;
     virMutex lock;
     bool eventLoopStarted;
@@ -248,6 +247,9 @@ struct _vshControl {
 
     const char *escapeChar;     /* String representation of
                                    console escape character */
+
+    int keepalive_interval;     /* Client keepalive interval */
+    int keepalive_count;        /* Client keepalive count */
 
 # ifndef WIN32
     struct termios termattr;    /* settings of the tty terminal */
@@ -269,6 +271,8 @@ void vshOutputLogFile(vshControl *ctl, int log_level, const char *format,
     ATTRIBUTE_FMT_PRINTF(3, 0);
 void vshCloseLogFile(vshControl *ctl);
 
+virConnectPtr vshConnect(vshControl *ctl, const char *uri, bool readonly);
+
 const char *vshCmddefGetInfo(const vshCmdDef *cmd, const char *info);
 const vshCmdDef *vshCmddefSearch(const char *cmdname);
 bool vshCmddefHelp(vshControl *ctl, const char *name);
@@ -280,8 +284,14 @@ int vshCommandOptInt(const vshCmd *cmd, const char *name, int *value)
 int vshCommandOptUInt(const vshCmd *cmd, const char *name,
                       unsigned int *value)
     ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
+int vshCommandOptUIntWrap(const vshCmd *cmd, const char *name,
+                          unsigned int *value)
+    ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
 int vshCommandOptUL(const vshCmd *cmd, const char *name,
                     unsigned long *value)
+    ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
+int vshCommandOptULWrap(const vshCmd *cmd, const char *name,
+                        unsigned long *value)
     ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
 int vshCommandOptString(const vshCmd *cmd, const char *name,
                         const char **value)
@@ -296,6 +306,9 @@ int vshCommandOptLongLong(const vshCmd *cmd, const char *name,
 int vshCommandOptULongLong(const vshCmd *cmd, const char *name,
                            unsigned long long *value)
     ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
+int vshCommandOptULongLongWrap(const vshCmd *cmd, const char *name,
+                               unsigned long long *value)
+    ATTRIBUTE_NONNULL(3) ATTRIBUTE_RETURN_CHECK;
 int vshCommandOptScaledInt(const vshCmd *cmd, const char *name,
                            unsigned long long *value, int scale,
                            unsigned long long max)
@@ -303,8 +316,6 @@ int vshCommandOptScaledInt(const vshCmd *cmd, const char *name,
 bool vshCommandOptBool(const vshCmd *cmd, const char *name);
 const vshCmdOpt *vshCommandOptArgv(const vshCmd *cmd,
                                    const vshCmdOpt *opt);
-bool vshCmdHasOption(vshControl *ctl, const vshCmd *cmd, const char *optname);
-
 int vshCommandOptTimeoutToMs(vshControl *ctl, const vshCmd *cmd, int *timeout);
 
 /* Filter flags for various vshCommandOpt*By() functions */
@@ -343,7 +354,7 @@ char *vshGetTypedParamValue(vshControl *ctl, virTypedParameterPtr item)
 char *vshEditWriteToTempFile(vshControl *ctl, const char *doc);
 int vshEditFile(vshControl *ctl, const char *filename);
 char *vshEditReadBackFile(vshControl *ctl, const char *filename);
-int vshAskReedit(vshControl *ctl, const char *msg);
+int vshAskReedit(vshControl *ctl, const char *msg, bool relax_avail);
 int vshStreamSink(virStreamPtr st, const char *bytes, size_t nbytes,
                   void *opaque);
 double vshPrettyCapacity(unsigned long long val, const char **unit);
@@ -357,6 +368,7 @@ struct _vshCtrlData {
     vshControl *ctl;
     const vshCmd *cmd;
     int writefd;
+    virConnectPtr dconn;
 };
 
 /* error handling */
@@ -456,5 +468,59 @@ char *_vshStrdup(vshControl *ctl, const char *s, const char *filename,
  */
 # define VSH_EXCLUSIVE_OPTIONS_VAR(VARNAME1, VARNAME2)                      \
     VSH_EXCLUSIVE_OPTIONS_EXPR(#VARNAME1, VARNAME1, #VARNAME2, VARNAME2)
+
+/* Macros to help dealing with required options. */
+
+/* VSH_REQUIRE_OPTION_EXPR:
+ *
+ * @NAME1: String containing the name of the option.
+ * @EXPR1: Expression to validate the variable (boolean variable).
+ * @NAME2: String containing the name of required option.
+ * @EXPR2: Expression to validate the variable (boolean variable).
+ *
+ * Check if required command options in virsh was set.  Use the
+ * provided expression to check the variables.
+ *
+ * This helper does an early return and therefore it has to be called
+ * before anything that would require cleanup.
+ */
+# define VSH_REQUIRE_OPTION_EXPR(NAME1, EXPR1, NAME2, EXPR2)                \
+    do {                                                                    \
+        if ((EXPR1) && !(EXPR2)) {                                          \
+            vshError(ctl, _("Option --%s is required by option --%s"),      \
+                     NAME2, NAME1);                                         \
+            return false;                                                   \
+        }                                                                   \
+    } while (0)
+
+/* VSH_REQUIRE_OPTION:
+ *
+ * @NAME1: String containing the name of the option.
+ * @NAME2: String containing the name of required option.
+ *
+ * Check if required command options in virsh was set.  Use the
+ * vshCommandOptBool call to request them.
+ *
+ * This helper does an early return and therefore it has to be called
+ * before anything that would require cleanup.
+ */
+# define VSH_REQUIRE_OPTION(NAME1, NAME2)                                   \
+    VSH_REQUIRE_OPTION_EXPR(NAME1, vshCommandOptBool(cmd, NAME1),           \
+                            NAME2, vshCommandOptBool(cmd, NAME2))
+
+/* VSH_REQUIRE_OPTION_VAR:
+ *
+ * @VARNAME1: Boolean variable containing the value of the option of same name.
+ * @VARNAME2: Boolean variable containing the value of required option of
+ *            same name.
+ *
+ * Check if required command options in virsh was set.  Check in variables
+ * that contain the value and have same name as the option.
+ *
+ * This helper does an early return and therefore it has to be called
+ * before anything that would require cleanup.
+ */
+# define VSH_REQUIRE_OPTION_VAR(VARNAME1, VARNAME2)                         \
+    VSH_REQUIRE_OPTION_EXPR(#VARNAME1, VARNAME1, #VARNAME2, VARNAME2)
 
 #endif /* VIRSH_H */

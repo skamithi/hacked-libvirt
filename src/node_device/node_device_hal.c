@@ -1,7 +1,7 @@
 /*
  * node_device_hal.c: node device enumeration - HAL-based implementation
  *
- * Copyright (C) 2011, 2013 Red Hat, Inc.
+ * Copyright (C) 2011-2015 Red Hat, Inc.
  * Copyright (C) 2008 Virtual Iron Software, Inc.
  * Copyright (C) 2008 David F. Lively
  *
@@ -29,7 +29,9 @@
 #include <libhal.h>
 
 #include "node_device_conf.h"
+#include "node_device_driver.h"
 #include "node_device_hal.h"
+#include "node_device_linux_sysfs.h"
 #include "virerror.h"
 #include "driver.h"
 #include "datatypes.h"
@@ -37,22 +39,18 @@
 #include "viruuid.h"
 #include "virpci.h"
 #include "virlog.h"
-#include "node_device_driver.h"
 #include "virdbus.h"
 #include "virstring.h"
 
 #define VIR_FROM_THIS VIR_FROM_NODEDEV
 
+VIR_LOG_INIT("node_device.node_device_hal");
+
 /*
  * Host device enumeration (HAL implementation)
  */
 
-static virNodeDeviceDriverStatePtr driverState;
-
-#define CONN_DRV_STATE(conn) \
-        ((virNodeDeviceDriverStatePtr)((conn)->nodeDevicePrivateData))
 #define DRV_STATE_HAL_CTX(ds) ((LibHalContext *)((ds)->privateData))
-#define CONN_HAL_CTX(conn) DRV_STATE_HAL_CTX(CONN_DRV_STATE(conn))
 
 #define NODE_DEV_UDI(obj) ((const char *)((obj)->privateData)
 
@@ -142,33 +140,23 @@ get_uint64_prop(LibHalContext *ctxt, const char *udi,
 
 static int
 gather_pci_cap(LibHalContext *ctx, const char *udi,
-               union _virNodeDevCapData *d)
+               virNodeDevCapDataPtr d)
 {
     char *sysfs_path;
 
     if (get_str_prop(ctx, udi, "pci.linux.sysfs_path", &sysfs_path) == 0) {
         char *p = strrchr(sysfs_path, '/');
         if (p) {
-            (void)virStrToLong_ui(p+1, &p, 16, &d->pci_dev.domain);
-            (void)virStrToLong_ui(p+1, &p, 16, &d->pci_dev.bus);
-            (void)virStrToLong_ui(p+1, &p, 16, &d->pci_dev.slot);
-            (void)virStrToLong_ui(p+1, &p, 16, &d->pci_dev.function);
+            ignore_value(virStrToLong_ui(p+1, &p, 16, &d->pci_dev.domain));
+            ignore_value(virStrToLong_ui(p+1, &p, 16, &d->pci_dev.bus));
+            ignore_value(virStrToLong_ui(p+1, &p, 16, &d->pci_dev.slot));
+            ignore_value(virStrToLong_ui(p+1, &p, 16, &d->pci_dev.function));
         }
 
-        if (!virPCIGetPhysicalFunction(sysfs_path,
-                                       &d->pci_dev.physical_function))
-            d->pci_dev.flags |= VIR_NODE_DEV_CAP_FLAG_PCI_PHYSICAL_FUNCTION;
-
-        int ret = virPCIGetVirtualFunctions(sysfs_path,
-                                            &d->pci_dev.virtual_functions,
-                                            &d->pci_dev.num_virtual_functions);
-        if (ret < 0) {
+        if (nodeDeviceSysfsGetPCIRelatedDevCaps(sysfs_path, d) < 0) {
             VIR_FREE(sysfs_path);
             return -1;
         }
-
-        if (d->pci_dev.num_virtual_functions > 0)
-            d->pci_dev.flags |= VIR_NODE_DEV_CAP_FLAG_PCI_VIRTUAL_FUNCTION;
         VIR_FREE(sysfs_path);
     }
 
@@ -185,7 +173,7 @@ gather_pci_cap(LibHalContext *ctx, const char *udi,
 
 static int
 gather_usb_cap(LibHalContext *ctx, const char *udi,
-               union _virNodeDevCapData *d)
+               virNodeDevCapDataPtr d)
 {
     (void)get_int_prop(ctx, udi, "usb.interface.number",
                        (int *)&d->usb_if.number);
@@ -203,7 +191,7 @@ gather_usb_cap(LibHalContext *ctx, const char *udi,
 
 static int
 gather_usb_device_cap(LibHalContext *ctx, const char *udi,
-                      union _virNodeDevCapData *d)
+                      virNodeDevCapDataPtr d)
 {
     (void)get_int_prop(ctx, udi, "usb_device.bus_number",
                        (int *)&d->usb_dev.bus);
@@ -225,7 +213,7 @@ gather_usb_device_cap(LibHalContext *ctx, const char *udi,
 
 static int
 gather_net_cap(LibHalContext *ctx, const char *udi,
-               union _virNodeDevCapData *d)
+               virNodeDevCapDataPtr d)
 {
     unsigned long long dummy;
     (void)get_str_prop(ctx, udi, "net.interface", &d->net.ifname);
@@ -245,26 +233,25 @@ gather_net_cap(LibHalContext *ctx, const char *udi,
 
 static int
 gather_scsi_host_cap(LibHalContext *ctx, const char *udi,
-                     union _virNodeDevCapData *d)
+                     virNodeDevCapDataPtr d)
 {
     int retval = 0;
 
     (void)get_int_prop(ctx, udi, "scsi_host.host", (int *)&d->scsi_host.host);
 
-    retval = detect_scsi_host_caps(d);
+    retval = nodeDeviceSysfsGetSCSIHostCaps(d);
 
-    if (retval == -1) {
+    if (retval == -1)
         goto out;
-    }
 
-out:
+ out:
     return retval;
 }
 
 
 static int
 gather_scsi_cap(LibHalContext *ctx, const char *udi,
-                union _virNodeDevCapData *d)
+                virNodeDevCapDataPtr d)
 {
     (void)get_int_prop(ctx, udi, "scsi.host", (int *)&d->scsi.host);
     (void)get_int_prop(ctx, udi, "scsi.bus", (int *)&d->scsi.bus);
@@ -277,7 +264,7 @@ gather_scsi_cap(LibHalContext *ctx, const char *udi,
 
 static int
 gather_storage_cap(LibHalContext *ctx, const char *udi,
-                   union _virNodeDevCapData *d)
+                   virNodeDevCapDataPtr d)
 {
     int val;
     (void)get_str_prop(ctx, udi, "block.device", &d->storage.block);
@@ -305,7 +292,7 @@ gather_storage_cap(LibHalContext *ctx, const char *udi,
 
 static int
 gather_scsi_generic_cap(LibHalContext *ctx, const char *udi,
-                        union _virNodeDevCapData *d)
+                        virNodeDevCapDataPtr d)
 {
     (void)get_str_prop(ctx, udi, "scsi_generic.device", &d->sg.path);
     return 0;
@@ -314,7 +301,7 @@ gather_scsi_generic_cap(LibHalContext *ctx, const char *udi,
 
 static int
 gather_system_cap(LibHalContext *ctx, const char *udi,
-                  union _virNodeDevCapData *d)
+                  virNodeDevCapDataPtr d)
 {
     char *uuidstr;
 
@@ -341,10 +328,10 @@ gather_system_cap(LibHalContext *ctx, const char *udi,
 
 struct _caps_tbl_entry {
     const char *cap_name;
-    enum virNodeDevCapType type;
+    virNodeDevCapType type;
     int (*gather_fn)(LibHalContext *ctx,
                      const char *udi,
-                     union _virNodeDevCapData *data);
+                     virNodeDevCapDataPtr data);
 };
 
 typedef struct _caps_tbl_entry caps_tbl_entry;
@@ -385,7 +372,7 @@ gather_capability(LibHalContext *ctx, const char *udi,
         virNodeDevCapsDefPtr caps;
         if (VIR_ALLOC(caps) < 0)
             return ENOMEM;
-        caps->type = entry->type;
+        caps->data.type = entry->type;
         if (entry->gather_fn) {
             int rv = (*entry->gather_fn)(ctx, udi, &caps->data);
             if (rv != 0) {
@@ -480,8 +467,8 @@ dev_create(const char *udi)
     if (VIR_STRDUP(privData, udi) < 0)
         return;
 
-    nodeDeviceLock(driverState);
-    ctx = DRV_STATE_HAL_CTX(driverState);
+    nodeDeviceLock();
+    ctx = DRV_STATE_HAL_CTX(driver);
 
     if (VIR_ALLOC(def) < 0)
         goto failure;
@@ -506,7 +493,7 @@ dev_create(const char *udi)
     /* Some devices don't have a path in sysfs, so ignore failure */
     (void)get_str_prop(ctx, udi, "linux.sysfs_path", &devicePath);
 
-    dev = virNodeDeviceAssignDef(&driverState->devs,
+    dev = virNodeDeviceAssignDef(&driver->devs,
                                  def);
 
     if (!dev) {
@@ -520,15 +507,15 @@ dev_create(const char *udi)
 
     virNodeDeviceObjUnlock(dev);
 
-    nodeDeviceUnlock(driverState);
+    nodeDeviceUnlock();
     return;
 
  failure:
     VIR_DEBUG("FAILED TO ADD dev %s", name);
-cleanup:
+ cleanup:
     VIR_FREE(privData);
     virNodeDeviceDefFree(def);
-    nodeDeviceUnlock(driverState);
+    nodeDeviceUnlock();
 }
 
 static void
@@ -537,20 +524,20 @@ dev_refresh(const char *udi)
     const char *name = hal_name(udi);
     virNodeDeviceObjPtr dev;
 
-    nodeDeviceLock(driverState);
-    dev = virNodeDeviceFindByName(&driverState->devs, name);
+    nodeDeviceLock();
+    dev = virNodeDeviceFindByName(&driver->devs, name);
     if (dev) {
         /* Simply "rediscover" device -- incrementally handling changes
          * to sub-capabilities (like net.80203) is nasty ... so avoid it.
          */
-        virNodeDeviceObjRemove(&driverState->devs, dev);
-    } else
+        virNodeDeviceObjRemove(&driver->devs, dev);
+    } else {
         VIR_DEBUG("no device named %s", name);
-    nodeDeviceUnlock(driverState);
-
-    if (dev) {
-        dev_create(udi);
     }
+    nodeDeviceUnlock();
+
+    if (dev)
+        dev_create(udi);
 }
 
 static void
@@ -569,14 +556,14 @@ device_removed(LibHalContext *ctx ATTRIBUTE_UNUSED,
     const char *name = hal_name(udi);
     virNodeDeviceObjPtr dev;
 
-    nodeDeviceLock(driverState);
-    dev = virNodeDeviceFindByName(&driverState->devs, name);
+    nodeDeviceLock();
+    dev = virNodeDeviceFindByName(&driver->devs, name);
     VIR_DEBUG("%s", name);
     if (dev)
-        virNodeDeviceObjRemove(&driverState->devs, dev);
+        virNodeDeviceObjRemove(&driver->devs, dev);
     else
         VIR_DEBUG("no device named %s", name);
-    nodeDeviceUnlock(driverState);
+    nodeDeviceUnlock();
 }
 
 
@@ -587,9 +574,9 @@ device_cap_added(LibHalContext *ctx,
     const char *name = hal_name(udi);
     virNodeDeviceObjPtr dev;
 
-    nodeDeviceLock(driverState);
-    dev = virNodeDeviceFindByName(&driverState->devs, name);
-    nodeDeviceUnlock(driverState);
+    nodeDeviceLock();
+    dev = virNodeDeviceFindByName(&driver->devs, name);
+    nodeDeviceUnlock();
     VIR_DEBUG("%s %s", cap, name);
     if (dev) {
         (void)gather_capability(ctx, udi, cap, &dev->def->caps);
@@ -643,14 +630,14 @@ nodeStateInitialize(bool privileged ATTRIBUTE_UNUSED,
     qsort(caps_tbl, ARRAY_CARDINALITY(caps_tbl), sizeof(caps_tbl[0]),
           cmpstringp);
 
-    if (VIR_ALLOC(driverState) < 0)
+    if (VIR_ALLOC(driver) < 0)
         return -1;
 
-    if (virMutexInit(&driverState->lock) < 0) {
-        VIR_FREE(driverState);
+    if (virMutexInit(&driver->lock) < 0) {
+        VIR_FREE(driver);
         return -1;
     }
-    nodeDeviceLock(driverState);
+    nodeDeviceLock();
 
     dbus_error_init(&err);
     if (!(sysbus = virDBusGetSystemBus())) {
@@ -681,14 +668,14 @@ nodeStateInitialize(bool privileged ATTRIBUTE_UNUSED,
     }
 
     /* Populate with known devices */
-    driverState->privateData = hal_ctx;
+    driver->privateData = hal_ctx;
 
     /* We need to unlock state now, since setting these callbacks cause
      * a dbus RPC call, and while this call is waiting for the reply,
      * a signal may already arrive, triggering the callback and thus
      * requiring the lock !
      */
-    nodeDeviceUnlock(driverState);
+    nodeDeviceUnlock();
 
     /* Register HAL event callbacks */
     if (!libhal_ctx_set_device_added(hal_ctx, device_added) ||
@@ -719,11 +706,11 @@ nodeStateInitialize(bool privileged ATTRIBUTE_UNUSED,
         VIR_ERROR(_("%s: %s"), err.name, err.message);
         dbus_error_free(&err);
     }
-    virNodeDeviceObjListFree(&driverState->devs);
+    virNodeDeviceObjListFree(&driver->devs);
     if (hal_ctx)
         (void)libhal_ctx_free(hal_ctx);
-    nodeDeviceUnlock(driverState);
-    VIR_FREE(driverState);
+    nodeDeviceUnlock();
+    VIR_FREE(driver);
 
     return ret;
 }
@@ -732,15 +719,15 @@ nodeStateInitialize(bool privileged ATTRIBUTE_UNUSED,
 static int
 nodeStateCleanup(void)
 {
-    if (driverState) {
-        nodeDeviceLock(driverState);
-        LibHalContext *hal_ctx = DRV_STATE_HAL_CTX(driverState);
-        virNodeDeviceObjListFree(&driverState->devs);
+    if (driver) {
+        nodeDeviceLock();
+        LibHalContext *hal_ctx = DRV_STATE_HAL_CTX(driver);
+        virNodeDeviceObjListFree(&driver->devs);
         (void)libhal_ctx_shutdown(hal_ctx, NULL);
         (void)libhal_ctx_free(hal_ctx);
-        nodeDeviceUnlock(driverState);
-        virMutexDestroy(&driverState->lock);
-        VIR_FREE(driverState);
+        nodeDeviceUnlock();
+        virMutexDestroy(&driver->lock);
+        VIR_FREE(driver);
         return 0;
     }
     return -1;
@@ -757,12 +744,12 @@ nodeStateReload(void)
     LibHalContext *hal_ctx;
 
     VIR_INFO("Reloading HAL device state");
-    nodeDeviceLock(driverState);
+    nodeDeviceLock();
     VIR_INFO("Removing existing objects");
-    virNodeDeviceObjListFree(&driverState->devs);
-    nodeDeviceUnlock(driverState);
+    virNodeDeviceObjListFree(&driver->devs);
+    nodeDeviceUnlock();
 
-    hal_ctx = DRV_STATE_HAL_CTX(driverState);
+    hal_ctx = DRV_STATE_HAL_CTX(driver);
     VIR_INFO("Creating new objects");
     dbus_error_init(&err);
     udi = libhal_get_all_devices(hal_ctx, &num_devs, &err);
@@ -781,33 +768,8 @@ nodeStateReload(void)
 }
 
 
-static virDrvOpenStatus
-nodeDeviceOpen(virConnectPtr conn,
-               virConnectAuthPtr auth ATTRIBUTE_UNUSED,
-               unsigned int flags)
-{
-    virCheckFlags(VIR_CONNECT_RO, VIR_DRV_OPEN_ERROR);
-
-    if (driverState == NULL)
-        return VIR_DRV_OPEN_DECLINED;
-
-    conn->nodeDevicePrivateData = driverState;
-
-    return VIR_DRV_OPEN_SUCCESS;
-}
-
-static int
-nodeDeviceClose(virConnectPtr conn ATTRIBUTE_UNUSED)
-{
-    conn->nodeDevicePrivateData = NULL;
-    return 0;
-}
-
-
 static virNodeDeviceDriver halNodeDeviceDriver = {
-    .name = "halNodeDeviceDriver",
-    .nodeDeviceOpen = nodeDeviceOpen, /* 0.5.0 */
-    .nodeDeviceClose = nodeDeviceClose, /* 0.5.0 */
+    .name = "HAL",
     .nodeNumOfDevices = nodeNumOfDevices, /* 0.5.0 */
     .nodeListDevices = nodeListDevices, /* 0.5.0 */
     .connectListAllNodeDevices = nodeConnectListAllNodeDevices, /* 0.10.2 */
@@ -832,7 +794,7 @@ static virStateDriver halStateDriver = {
 int
 halNodeRegister(void)
 {
-    if (virRegisterNodeDeviceDriver(&halNodeDeviceDriver) < 0)
+    if (virSetSharedNodeDeviceDriver(&halNodeDeviceDriver) < 0)
         return -1;
     return virRegisterStateDriver(&halStateDriver);
 }
