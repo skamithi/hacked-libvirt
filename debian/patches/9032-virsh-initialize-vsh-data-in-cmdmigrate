@@ -1,0 +1,24 @@
+commit c285ffc4c2f042941acc44406bdd442252d1b0aa
+Author: Ján Tomko <jtomko@redhat.com>
+Date:   Tue Aug 26 13:18:43 2014 +0200
+
+    virsh: Initialize vshData in cmdMigrate
+    
+    If the virConnect did not succeeed, we called
+    virConnectClose on uninitialized data.
+    
+    Introduced by commit 7eabd55.
+
+Index: libvirt-1.2.2/tools/virsh-domain.c
+===================================================================
+--- libvirt-1.2.2.orig/tools/virsh-domain.c
++++ libvirt-1.2.2/tools/virsh-domain.c
+@@ -8817,7 +8817,7 @@ cmdMigrate(vshControl *ctl, const vshCmd
+     bool functionReturn = false;
+     int timeout = 0;
+     bool live_flag = false;
+-    vshCtrlData data;
++    vshCtrlData data = { .dconn = NULL };
+ 
+     if (!(dom = vshCommandOptDomain(ctl, cmd, NULL)))
+         return false;

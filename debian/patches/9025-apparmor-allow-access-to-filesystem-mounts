@@ -1,0 +1,137 @@
+From felix@fobos.de Sun Jan 26 16:48:24 2014
+Received: from int-mx12.intmail.prod.int.phx2.redhat.com
+	(int-mx12.intmail.prod.int.phx2.redhat.com [10.5.11.25])
+	by lists01.pubmisc.prod.ext.phx2.redhat.com (8.13.8/8.13.8) with ESMTP
+	id s0QLmOgW032081 for <libvir-list@listman.util.phx.redhat.com>;
+	Sun, 26 Jan 2014 16:48:24 -0500
+Received: from mx1.redhat.com (ext-mx11.extmail.prod.ext.phx2.redhat.com
+	[10.5.110.16])
+	by int-mx12.intmail.prod.int.phx2.redhat.com (8.14.4/8.14.4) with ESMTP
+	id s0QLmOmM005016
+	for <libvir-list@redhat.com>; Sun, 26 Jan 2014 16:48:24 -0500
+Received: from fobos.de (fobos.de [188.165.199.226])
+	by mx1.redhat.com (8.14.4/8.14.4) with ESMTP id s0QLmN0D014002
+	for <libvir-list@redhat.com>; Sun, 26 Jan 2014 16:48:23 -0500
+DKIM-Signature: v=1; a=rsa-sha256; q=dns/txt; c=relaxed/relaxed; d=fobos.de;
+	s=201209; 
+	h=References:In-Reply-To:Message-Id:Date:Subject:Cc:To:From;
+	bh=0et3pbGn1kIAVJ0IpAKA4vk4CQMlDgoC18jM86yb9dU=; 
+	b=aPHbVN6zRgXf2xuK96/6M+/Lu7iYiy7v5ZMDEPkprzZB4fSOzBJNC9Uui8u+RmxeBlgOe8EgRKykmusQnFcbNiSD5WG0A3HTO9z1ha7ejeru4vmkmAV/GrTbgBrfIJn7f3P3+nrqvA7oGX+hJFKvVp7H1MvVg1DfOBtBWdrTLYU=;
+Received: from ip-176-198-94-236.unitymediagroup.de ([176.198.94.236]
+	helo=callisto)
+	by fobos.de with esmtpsa (TLS1.0:DHE_RSA_AES_128_CBC_SHA1:16)
+	(Exim 4.76) (envelope-from <felix@fobos.de>)
+	id 1W7XZ0-0004P4-Ig; Sun, 26 Jan 2014 22:48:22 +0100
+Received: from felix by callisto with local (Exim 4.82)
+	(envelope-from <felix@callisto>)
+	id 1W7XZ0-0000Fw-51; Sun, 26 Jan 2014 22:48:22 +0100
+From: Felix Geyer <debfx@fobos.de>
+To: libvir-list@redhat.com
+Date: Sun, 26 Jan 2014 22:47:34 +0100
+Message-Id: <1390772855-840-2-git-send-email-debfx@fobos.de>
+In-Reply-To: <1390772855-840-1-git-send-email-debfx@fobos.de>
+References: <1390772855-840-1-git-send-email-debfx@fobos.de>
+X-RedHat-Spam-Score: -2.475  (BAYES_00, DKIM_SIGNED, DKIM_VALID, DKIM_VALID_AU,
+	RP_MATCHES_RCVD, SPF_HELO_PASS, SPF_PASS)
+X-Scanned-By: MIMEDefang 2.68 on 10.5.11.25
+X-Scanned-By: MIMEDefang 2.68 on 10.5.110.16
+X-loop: libvir-list@redhat.com
+X-Mailman-Approved-At: Mon, 27 Jan 2014 08:04:28 -0500
+Cc: Felix Geyer <debfx@fobos.de>
+Subject: [libvirt] [PATCH 1/2] apparmor: Allow access to filesystem mounts
+X-BeenThere: libvir-list@redhat.com
+X-Mailman-Version: 2.1.12
+Precedence: junk
+List-Id: Development discussions about the libvirt library & tools
+	<libvir-list.redhat.com>
+List-Unsubscribe: <https://www.redhat.com/mailman/options/libvir-list>,
+	<mailto:libvir-list-request@redhat.com?subject=unsubscribe>
+List-Archive: <https://www.redhat.com/archives/libvir-list>
+List-Post: <mailto:libvir-list@redhat.com>
+List-Help: <mailto:libvir-list-request@redhat.com?subject=help>
+List-Subscribe: <https://www.redhat.com/mailman/listinfo/libvir-list>,
+	<mailto:libvir-list-request@redhat.com?subject=subscribe>
+X-List-Received-Date: Sun, 26 Jan 2014 21:48:24 -0000
+Status: O
+Content-Length: 2425
+Lines: 75
+
+Make virt-aa-helper create rules to allow VMs access to filesystem
+mounts from the host.
+---
+ src/security/virt-aa-helper.c | 26 ++++++++++++++++++++------
+ 1 file changed, 20 insertions(+), 6 deletions(-)
+
+Index: libvirt-1.2.1/src/security/virt-aa-helper.c
+===================================================================
+--- libvirt-1.2.1.orig/src/security/virt-aa-helper.c	2014-02-28 09:35:59.327687028 -0600
++++ libvirt-1.2.1/src/security/virt-aa-helper.c	2014-02-28 14:15:38.739129185 -0600
+@@ -578,9 +578,6 @@ valid_path(const char *path, const bool
+             return -1;
+ 
+         switch (sb.st_mode & S_IFMT) {
+-            case S_IFDIR:
+-                return 1;
+-                break;
+             case S_IFSOCK:
+                 return 1;
+                 break;
+@@ -747,7 +744,7 @@ get_definition(vahControl * ctl, const c
+ }
+ 
+ static int
+-vah_add_file(virBufferPtr buf, const char *path, const char *perms)
++vah_add_path(virBufferPtr buf, const char *path, const char *perms, bool recursive)
+ {
+     char *tmp = NULL;
+     int rc = -1;
+@@ -788,10 +785,14 @@ vah_add_file(virBufferPtr buf, const cha
+         goto cleanup;
+     }
+ 
+-    virBufferAsprintf(buf, "  \"%s\" %s,\n", tmp, perms);
++    virBufferAsprintf(buf, "  \"%s%s\" %s,\n", tmp, recursive ? "/**" : "", perms);
+     if (readonly) {
+         virBufferAddLit(buf, "  # don't audit writes to readonly files\n");
+-        virBufferAsprintf(buf, "  deny \"%s\" w,\n", tmp);
++        virBufferAsprintf(buf, "  deny \"%s%s\" w,\n", tmp, recursive ? "/**" : "");
++    }
++    if (recursive) {
++        // allow reading (but not creating) the dir
++        virBufferAsprintf(buf, "  \"%s/\" r,\n", tmp);
+     }
+ 
+   cleanup:
+@@ -801,6 +802,12 @@ vah_add_file(virBufferPtr buf, const cha
+ }
+ 
+ static int
++vah_add_file(virBufferPtr buf, const char *path, const char *perms)
++{
++    return vah_add_path(buf, path, perms, false);
++}
++
++static int
+ vah_add_file_chardev(virBufferPtr buf,
+                      const char *path,
+                      const char *perms,
+@@ -1049,6 +1056,19 @@ get_files(vahControl * ctl)
+             } /* switch */
+         }
+ 
++    for (i = 0; i < ctl->def->nfss; i++) {
++        if (ctl->def->fss[i] &&
++                ctl->def->fss[i]->type == VIR_DOMAIN_FS_TYPE_MOUNT &&
++                (ctl->def->fss[i]->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_PATH ||
++                 ctl->def->fss[i]->fsdriver == VIR_DOMAIN_FS_DRIVER_TYPE_DEFAULT) &&
++                ctl->def->fss[i]->src){
++            virDomainFSDefPtr fs = ctl->def->fss[i];
++
++            if (vah_add_path(&buf, fs->src, fs->readonly ? "r" : "rw", true) != 0)
++                goto cleanup;
++        }
++    }
++
+     if (ctl->newfile)
+         if (vah_add_file(&buf, ctl->newfile, "rw") != 0)
+             goto cleanup;

@@ -1,0 +1,94 @@
+From: Stefan Bader <stefan.bader@canonical.com>
+Date: Wed, 24 Jul 2013 15:26:45 +0200
+Subject: Use alternate method to check for running Xen legacy toolstack
+
+Upstream runs "/usr/sbin/xend status" but we have (at least for some
+time) shipped xend only in the private binary path (/usr/lib/xen-*/bin).
+And that path depends on the Xen version. Instead modify the check to
+call "/usr/lib/xen-common/xen-toolstack" which does not change between
+Xen versions and returns the path to xm or xl. Then decide on the base-
+name (xm) whether the legacy toolstack is active.
+
+This unlikely will be accepted by upstream libvirt as obviously they
+expect a different packaging.
+
+For Ubuntu I also had to add "/usr/lib/xen-common/xen-toolstack" to
+the allowed callouts of apparmor.
+
+Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+
+Index: libvirt-1.2.0/src/libxl/libxl_driver.c
+===================================================================
+--- libvirt-1.2.0.orig/src/libxl/libxl_driver.c	2013-12-11 17:04:59.596600161 +0100
++++ libvirt-1.2.0/src/libxl/libxl_driver.c	2013-12-11 17:05:25.648727525 +0100
+@@ -792,6 +792,7 @@ libxlDriverShouldLoad(bool privileged)
+ {
+     bool ret = false;
+     virCommandPtr cmd;
++    char *output;
+     int status;
+ 
+     /* Don't load if non-root */
+@@ -809,14 +810,26 @@ libxlDriverShouldLoad(bool privileged)
+     }
+ 
+     /* Don't load if legacy xen toolstack (xend) is in use */
+-    cmd = virCommandNewArgList("/usr/sbin/xend", "status", NULL);
++    cmd = virCommandNewArgList("/usr/lib/xen-common/bin/xen-toolstack", NULL);
++    virCommandSetOutputBuffer(cmd, &output);
+     if (virCommandRun(cmd, &status) == 0 && status == 0) {
+-        VIR_INFO("Legacy xen tool stack seems to be in use, disabling "
+-                  "libxenlight driver.");
+-    } else {
+-        ret = true;
++        int i, j;
++
++        for (i = 0, j = 0; output[i] != '\0'; i++)
++            if (output[i] == '/')
++                j = i + 1;
++
++        if (output[j] == 'x' && output[j+1] == 'm') {
++            VIR_INFO("Legacy xen tool stack seems to be in use, disabling "
++                     "libxenlight driver.");
++            VIR_FREE(output);
++            virCommandFree(cmd);
++            return ret;
++        }
+     }
++    VIR_FREE(output);
+     virCommandFree(cmd);
++    ret = true;
+ 
+     return ret;
+ }
+Index: libvirt-1.2.0/src/xen/xen_driver.c
+===================================================================
+--- libvirt-1.2.0.orig/src/xen/xen_driver.c	2013-12-11 17:04:59.576600064 +0100
++++ libvirt-1.2.0/src/xen/xen_driver.c	2013-12-16 14:09:25.946210255 +0100
+@@ -315,12 +315,23 @@ static int
+ xenUnifiedXendProbe(void)
+ {
+     virCommandPtr cmd;
++    char *output;
+     int status;
+     int ret = 0;
+ 
+-    cmd = virCommandNewArgList("/usr/sbin/xend", "status", NULL);
+-    if (virCommandRun(cmd, &status) == 0 && status == 0)
+-        ret = 1;
++    cmd = virCommandNewArgList("/usr/lib/xen-common/bin/xen-toolstack", NULL);
++    virCommandSetOutputBuffer(cmd, &output);
++    if (virCommandRun(cmd, &status) == 0 && status == 0) {
++        int i, j;
++
++        for (i = 0, j = 0; output[i] != '\0'; i++)
++            if (output[i] == '/')
++                j = i + 1;
++
++        if (output[j] == 'x' && output[j+1] == 'm')
++            ret = 1;
++    }
++    VIR_FREE(output);
+     virCommandFree(cmd);
+ 
+     return ret;

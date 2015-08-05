@@ -1,0 +1,29 @@
+From: Stefan Bader <stefan.bader@canonical.com>
+Date: Wed, 26 Mar 2014 17:03:49 +0100
+Subject: libxl: Set disk format for empty cdrom device
+
+The XML config for a CDROM device can be without a source path,
+indicating that there is no media present. Without this change
+the libxl driver fails to start a guest in that case because
+the libxl library checks for the LIBXL_DISK_FORMAT_EMPTY format
+type and tries to stat the NULL pointer that gets passed on.
+
+> libxl: error: libxl_device.c:265:libxl__device_disk_set_backend:
+> Disk vdev=hdc failed to stat: (null): Bad address
+
+Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+
+Index: libvirt-1.2.2/src/libxl/libxl_conf.c
+===================================================================
+--- libvirt-1.2.2.orig/src/libxl/libxl_conf.c	2014-03-26 16:24:26.079097852 +0100
++++ libvirt-1.2.2/src/libxl/libxl_conf.c	2014-03-26 16:24:45.711193823 +0100
+@@ -818,6 +818,9 @@ libxlMakeDisk(virDomainDiskDefPtr l_disk
+     x_disk->removable = 1;
+     x_disk->readwrite = !l_disk->readonly;
+     x_disk->is_cdrom = l_disk->device == VIR_DOMAIN_DISK_DEVICE_CDROM ? 1 : 0;
++    /* An empty CDROM must have the empty format, otherwise libxl fails. */
++    if (x_disk->is_cdrom && !x_disk->pdev_path)
++        x_disk->format = LIBXL_DISK_FORMAT_EMPTY;
+     if (l_disk->transient) {
+         virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                        _("libxenlight does not support transient disks"));

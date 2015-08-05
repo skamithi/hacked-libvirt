@@ -1,0 +1,131 @@
+commit aa668fccf078bf9833047776549a5a06435cf470
+Author: Martin Kletzander <mkletzan@redhat.com>
+Date:   Tue Jul 8 09:53:06 2014 +0200
+
+    qemu: split out cpuset.mems setting
+    
+    Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+commit 7e72ac787848b7434c9359a57c1e2789d92350f8
+Author: Martin Kletzander <mkletzan@redhat.com>
+Date:   Tue Jul 8 09:59:49 2014 +0200
+
+    qemu: leave restricting cpuset.mems after initialization
+    
+    When domain is started with numatune memory mode strict and the
+    nodeset does not include host NUMA node with DMA and DMA32 zones, KVM
+    initialization fails.  This is because cgroup restrict even kernel
+    allocations.  We are already doing numa_set_membind() which does the
+    same thing, only it does not restrict kernel allocations.
+    
+    This patch leaves the userspace numa_set_membind() in place and moves
+    the cpuset.mems setting after the point where monitor comes up, but
+    before vcpu and emulator sub-groups are created.
+    
+    Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+Index: libvirt-1.2.2/src/qemu/qemu_cgroup.c
+===================================================================
+--- libvirt-1.2.2.orig/src/qemu/qemu_cgroup.c	2015-01-06 06:47:37.434342510 -0600
++++ libvirt-1.2.2/src/qemu/qemu_cgroup.c	2015-01-06 06:49:01.738018370 -0600
+@@ -574,13 +574,11 @@
+ 
+ 
+ static int
+-qemuSetupCpusetCgroup(virDomainObjPtr vm,
+-                      virBitmapPtr nodemask,
+-                      virCapsPtr caps)
++qemuSetupCpusetMems(virDomainObjPtr vm,
++                    virBitmapPtr nodemask)
+ {
+     qemuDomainObjPrivatePtr priv = vm->privateData;
+     char *mem_mask = NULL;
+-    char *cpu_mask = NULL;
+     int ret = -1;
+ 
+     if (!virCgroupHasController(priv->cgroup, VIR_CGROUP_CONTROLLER_CPUSET))
+@@ -607,6 +605,25 @@
+             goto cleanup;
+     }
+ 
++    ret = 0;
++ cleanup:
++    VIR_FREE(mem_mask);
++    return ret;
++}
++
++
++static int
++qemuSetupCpusetCgroup(virDomainObjPtr vm,
++                      virBitmapPtr nodemask,
++                      virCapsPtr caps)
++{
++    qemuDomainObjPrivatePtr priv = vm->privateData;
++    char *cpu_mask = NULL;
++    int ret = -1;
++
++    if (!virCgroupHasController(priv->cgroup, VIR_CGROUP_CONTROLLER_CPUSET))
++        return 0;
++
+     if (vm->def->cpumask ||
+         (vm->def->placement_mode == VIR_DOMAIN_CPU_PLACEMENT_MODE_AUTO)) {
+ 
+@@ -632,7 +649,6 @@
+ 
+     ret = 0;
+ cleanup:
+-    VIR_FREE(mem_mask);
+     VIR_FREE(cpu_mask);
+     return ret;
+ }
+@@ -801,6 +817,13 @@
+ }
+ 
+ int
++qemuSetupCgroupPostInit(virDomainObjPtr vm,
++                        virBitmapPtr nodemask)
++{
++    return qemuSetupCpusetMems(vm, nodemask);
++}
++
++int
+ qemuSetupCgroupVcpuBW(virCgroupPtr cgroup,
+                       unsigned long long period,
+                       long long quota)
+Index: libvirt-1.2.2/src/qemu/qemu_cgroup.h
+===================================================================
+--- libvirt-1.2.2.orig/src/qemu/qemu_cgroup.h	2015-01-06 06:47:37.434342510 -0600
++++ libvirt-1.2.2/src/qemu/qemu_cgroup.h	2015-01-06 06:47:37.434342510 -0600
+@@ -1,7 +1,7 @@
+ /*
+  * qemu_cgroup.h: QEMU cgroup management
+  *
+- * Copyright (C) 2006-2007, 2009-2013 Red Hat, Inc.
++ * Copyright (C) 2006-2007, 2009-2014 Red Hat, Inc.
+  * Copyright (C) 2006 Daniel P. Berrange
+  *
+  * This library is free software; you can redistribute it and/or
+@@ -44,6 +44,8 @@
+ int qemuSetupCgroup(virQEMUDriverPtr driver,
+                     virDomainObjPtr vm,
+                     virBitmapPtr nodemask);
++int qemuSetupCgroupPostInit(virDomainObjPtr vm,
++                            virBitmapPtr nodemask);
+ int qemuSetupCgroupVcpuBW(virCgroupPtr cgroup,
+                           unsigned long long period,
+                           long long quota);
+Index: libvirt-1.2.2/src/qemu/qemu_process.c
+===================================================================
+--- libvirt-1.2.2.orig/src/qemu/qemu_process.c	2015-01-06 06:47:37.434342510 -0600
++++ libvirt-1.2.2/src/qemu/qemu_process.c	2015-01-06 06:47:37.434342510 -0600
+@@ -4039,6 +4039,10 @@
+     if (!qemuProcessVerifyGuestCPU(driver, vm))
+         goto cleanup;
+ 
++    VIR_DEBUG("Setting up post-init cgroup restrictions");
++    if (qemuSetupCgroupPostInit(vm, nodemask) < 0)
++        goto cleanup;
++
+     VIR_DEBUG("Detecting VCPU PIDs");
+     if (qemuProcessDetectVcpuPIDs(driver, vm) < 0)
+         goto cleanup;

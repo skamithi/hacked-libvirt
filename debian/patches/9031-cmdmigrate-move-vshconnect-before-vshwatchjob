@@ -1,0 +1,107 @@
+commit 7eabd5503e3de147b703c1a1e6dff81cdc46d1e7
+Author: Chunyan Liu <cyliu@suse.com>
+Date:   Fri Aug 8 16:44:36 2014 +0800
+
+    cmdMigrate: move vshConnect before vshWatchJob
+    
+    A possible fix to issue:
+    http://www.redhat.com/archives/libvir-list/2014-August/thread.html#00227
+    
+    While doing migration on KVM host, found problem sometimes:
+    VM is already running on the target host and disappears from source
+    host, but 'virsh migrate' command line hangs, cannot exit normally.
+    If pressing "ENTER" key, it will exit.
+    
+    The code hangs at tools/virsh-domain.c: cmdMigrate
+    ->vshWatchJob->poll():
+    poll() is trying to select pipe_fd, which is used to receive message
+    from doMigrate thread. In debugging, found that doMigrate finishes
+    and at the end it does call safewrite() to write the retval ('0' or
+    '1') to pipe_fd, and the write is completed. But cmdMigrate poll()
+    cannot get the event. If pressing "ENTER" key, poll() can get the
+    event and select pipe_fd, then command line can exit.
+    
+    In current code, authentication thread which is called by vshConnect
+    will use stdin, and at the same time, in cmdMigrate main process,
+    poll() is listening to stdin, that probably affect poll() to get
+    pipe_fd event. Better to move authentication before vshWatchJob. With
+    this change, above problem does not exist.
+    
+    Signed-off-by: Chunyan Liu <cyliu@suse.com>
+
+Index: libvirt-1.2.2/tools/virsh-domain.c
+===================================================================
+--- libvirt-1.2.2.orig/tools/virsh-domain.c
++++ libvirt-1.2.2/tools/virsh-domain.c
+@@ -8663,6 +8663,7 @@ doMigrate(void *opaque)
+     virTypedParameterPtr params = NULL;
+     int nparams = 0;
+     int maxparams = 0;
++    virConnectPtr dconn = data->dconn;
+ 
+     sigemptyset(&sigmask);
+     sigaddset(&sigmask, SIGINT);
+@@ -8774,18 +8775,12 @@ doMigrate(void *opaque)
+             ret = '0';
+     } else {
+         /* For traditional live migration, connect to the destination host directly. */
+-        virConnectPtr dconn = NULL;
+         virDomainPtr ddom = NULL;
+ 
+-        dconn = vshConnect(ctl, desturi, false);
+-        if (!dconn)
+-            goto out;
+-
+         if ((ddom = virDomainMigrate3(dom, dconn, params, nparams, flags))) {
+             virDomainFree(ddom);
+             ret = '0';
+         }
+-        virConnectClose(dconn);
+     }
+ 
+ out:
+@@ -8847,6 +8842,23 @@ cmdMigrate(vshControl *ctl, const vshCmd
+     data.cmd = cmd;
+     data.writefd = p[1];
+ 
++    if (vshCommandOptBool(cmd, "p2p") || vshCommandOptBool(cmd, "direct")) {
++        data.dconn = NULL;
++    } else {
++        /* For traditional live migration, connect to the destination host. */
++        virConnectPtr dconn = NULL;
++        const char *desturi = NULL;
++
++        if (vshCommandOptStringReq(ctl, cmd, "desturi", &desturi) < 0)
++            goto cleanup;
++
++        dconn = vshConnect(ctl, desturi, false);
++        if (!dconn)
++            goto cleanup;
++
++        data.dconn = dconn;
++    }
++
+     if (virThreadCreate(&workerThread,
+                         true,
+                         doMigrate,
+@@ -8858,6 +8870,8 @@ cmdMigrate(vshControl *ctl, const vshCmd
+     virThreadJoin(&workerThread);
+ 
+ cleanup:
++    if (data.dconn)
++        virConnectClose(data.dconn);
+     virDomainFree(dom);
+     VIR_FORCE_CLOSE(p[0]);
+     VIR_FORCE_CLOSE(p[1]);
+Index: libvirt-1.2.2/tools/virsh.h
+===================================================================
+--- libvirt-1.2.2.orig/tools/virsh.h
++++ libvirt-1.2.2/tools/virsh.h
+@@ -362,6 +362,7 @@ struct _vshCtrlData {
+     vshControl *ctl;
+     const vshCmd *cmd;
+     int writefd;
++    virConnectPtr dconn;
+ };
+ 
+ /* error handling */

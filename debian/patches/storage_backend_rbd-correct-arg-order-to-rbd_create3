@@ -1,0 +1,26 @@
+commit 4cd508ba4fc3cc33c72629fe8b9012e73d8dd8bf
+Author: Steven McDonald <steven.mcdonald@anchor.net.au>
+Date:   Tue Apr 29 12:19:01 2014 +1000
+
+    storage_backend_rbd: Correct argument order to rbd_create3
+    
+    The stripe_unit and stripe_count arguments are passed to rbd_create3 in
+    the wrong order, resulting in a stripe size of 1 byte with 4194304
+    stripes on newly created RBD volumes.
+    
+    https://bugzilla.redhat.com/show_bug.cgi?id=1092208
+    Signed-off-by: Steven McDonald <steven.mcdonald@anchor.net.au>
+
+Index: libvirt-1.2.2/src/storage/storage_backend_rbd.c
+===================================================================
+--- libvirt-1.2.2.orig/src/storage/storage_backend_rbd.c
++++ libvirt-1.2.2/src/storage/storage_backend_rbd.c
+@@ -491,7 +491,7 @@ static int virStorageBackendRBDCreateIma
+     uint64_t stripe_unit = 4194304;
+ 
+     if (rbd_create3(io, name, capacity, features, &order,
+-                    stripe_count, stripe_unit) < 0) {
++                    stripe_unit, stripe_count) < 0) {
+ #else
+     if (rbd_create(io, name, capacity, &order) < 0) {
+ #endif

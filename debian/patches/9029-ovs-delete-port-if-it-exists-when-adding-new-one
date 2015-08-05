@@ -1,0 +1,38 @@
+commit 33445ce8446d9d061a1620cd8ec5e81fcca127d9
+Author: Chunhe Li <lichunhe@huawei.com>
+Date:   Mon Jul 14 12:37:50 2014 +0200
+
+    openvswitch: Delete port if it exists while adding a new one
+    
+    If the openvswitch service is stopped, and is followed by destroying a
+    VM, the openvswitch bridge translates into a state where it doesn't
+    recover the port configuration. While it successfully fetches data
+    from the internal DB, since the corresponding virtual interface does
+    not exists anymore the whole recovery process fails leaving restarted
+    VM with inability to connect to the bridge. The following set of
+    commands will trigger the problem:
+    
+    virsh start vm
+    service openvswitch-switch stop
+    virsh destroy vm
+    service openvswitch-switch start
+    virsh start vm
+    
+    Signed-off-by: Chunhe Li <lichunhe@huawei.com>
+    Signed-off-by: Michal Privoznik <mprivozn@redhat.com>
+
+diff --git a/src/util/virnetdevopenvswitch.c b/src/util/virnetdevopenvswitch.c
+index 9bcbfb1..8ea1def 100644
+--- a/src/util/virnetdevopenvswitch.c
++++ b/src/util/virnetdevopenvswitch.c
+@@ -84,8 +84,8 @@ int virNetDevOpenvswitchAddPort(const char *brname, const char *ifname,
+ 
+     cmd = virCommandNew(OVSVSCTL);
+ 
+-    virCommandAddArgList(cmd, "--timeout=5", "--", "--may-exist", "add-port",
+-                        brname, ifname, NULL);
++    virCommandAddArgList(cmd, "--timeout=5", "--", "--if-exists", "del-port",
++                         ifname, "--", "add-port", brname, ifname, NULL);
+ 
+     if (virtVlan && virtVlan->nTags > 0) {
+ 

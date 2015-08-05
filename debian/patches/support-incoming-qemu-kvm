@@ -1,0 +1,84 @@
+Description: Support incoming migration from 12.04
+ This implements a new flag in /etc/libvirt/qemu.conf,
+ 'allow_incoming_qemukvm', default false.  When true, then any
+ incoming migration of machine type pc-1.0 is assumed to come from
+ qemu-kvm in precise.
+ This depends on the qemu patch by Alex Bligh.
+Author: Serge Hallyn <serge.hallyn@ubuntu.com>
+Forwarded: no
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/libvirt/+bug/1291321
+
+Changelog:
+   oct 6 2014 [seh]: rename assume_incoming_qemukvm to allow_incoming_qemukvm.
+
+Index: libvirt-1.2.2/src/qemu/qemu_conf.c
+===================================================================
+--- libvirt-1.2.2.orig/src/qemu/qemu_conf.c
++++ libvirt-1.2.2/src/qemu/qemu_conf.c
+@@ -229,6 +229,8 @@ virQEMUDriverConfigPtr virQEMUDriverConf
+     cfg->migrationPortMin = QEMU_MIGRATION_PORT_MIN;
+     cfg->migrationPortMax = QEMU_MIGRATION_PORT_MAX;
+ 
++    cfg->allow_incoming_qemukvm = false;
++
+ #if defined HAVE_MNTENT_H && defined HAVE_GETMNTENT_R
+     /* For privileged driver, try and find hugepage mount automatically.
+      * Non-privileged driver requires admin to create a dir for the
+@@ -352,6 +354,7 @@ int virQEMUDriverConfigLoadFile(virQEMUD
+             goto cleanup;                  \
+     }
+ 
++    GET_VALUE_BOOL("allow_incoming_qemukvm", cfg->allow_incoming_qemukvm);
+     GET_VALUE_BOOL("vnc_auto_unix_socket", cfg->vncAutoUnixSocket);
+     GET_VALUE_BOOL("vnc_tls", cfg->vncTLS);
+     GET_VALUE_BOOL("vnc_tls_x509_verify", cfg->vncTLSx509verify);
+Index: libvirt-1.2.2/src/qemu/qemu_conf.h
+===================================================================
+--- libvirt-1.2.2.orig/src/qemu/qemu_conf.h
++++ libvirt-1.2.2/src/qemu/qemu_conf.h
+@@ -164,6 +164,9 @@ struct _virQEMUDriverConfig {
+     char *migrationAddress;
+     int migrationPortMin;
+     int migrationPortMax;
++
++    /* Whether incoming pc-1.0 migration should come from qemu-kvm */
++    bool allow_incoming_qemukvm;
+ };
+ 
+ /* Main driver state */
+Index: libvirt-1.2.2/src/qemu/qemu_migration.c
+===================================================================
+--- libvirt-1.2.2.orig/src/qemu/qemu_migration.c
++++ libvirt-1.2.2/src/qemu/qemu_migration.c
+@@ -2101,6 +2101,16 @@ static char
+         if (!qemuDomainDefCheckABIStability(driver, vm->def, def))
+             goto cleanup;
+ 
++        if (driver->config->allow_incoming_qemukvm) {
++            if (STREQ_NULLABLE(vm->def->os.machine, "pc-1.0")) {
++                VIR_FREE(vm->def->os.machine);
++                VIR_FREE(def->os.machine);
++                if (VIR_STRDUP(vm->def->os.machine, "pc-1.0-precise") < 0 ||
++                        VIR_STRDUP(def->os.machine, "pc-1.0-precise") < 0)
++                    goto cleanup;
++            }
++        }
++
+         rv = qemuDomainDefFormatLive(driver, def, false, true);
+     } else {
+         rv = qemuDomainDefFormatLive(driver, vm->def, false, true);
+@@ -2431,6 +2441,14 @@ qemuMigrationPrepareAny(virQEMUDriverPtr
+         goto endjob;
+     }
+ 
++    if (driver->config->allow_incoming_qemukvm) {
++            if (STREQ_NULLABLE(vm->def->os.machine, "pc-1.0")) {
++                VIR_FREE(vm->def->os.machine);
++                if (VIR_STRDUP(vm->def->os.machine, "pc-1.0-precise") < 0)
++                    goto endjob;
++            }
++    }
++ 
+     /* Start the QEMU daemon, with the same command-line arguments plus
+      * -incoming $migrateFrom
+      */

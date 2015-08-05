@@ -1,0 +1,253 @@
+commit 676cb4f4e762b8682a06c6dab1f690fbcd939550
+Author: Martin Kletzander <mkletzan@redhat.com>
+Date:   Thu Mar 6 17:20:11 2014 +0100
+
+    virsh: Add keepalive in new vshConnect function
+    
+    Introducing keepalive similarly to Guannan around 2 years ago.  Since
+    we want to introduce keepalive for every connection, it makes sense to
+    wrap the connecting function into new virsh one that can deal
+    keepalive as well.
+    
+    Function vshConnect() is now used for connecting and keepalive added
+    in that function (if possible) helps preventing long waits e.g. while
+    nework goes down during migration.
+    
+    This patch also adds the options for keepalive tuning into virsh and
+    fails connecting only when keepalives are explicitly requested and
+    cannot be set (whether it is due to missing support in connected
+    driver or remote server).  If not explicitely requested, a debug
+    message is printed (hence the addition to virsh-optparse test).
+    
+    Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=1073506
+    Resolves: https://bugzilla.redhat.com/show_bug.cgi?id=822839
+    
+    Signed-off-by: Martin Kletzander <mkletzan@redhat.com>
+
+Index: libvirt-1.2.2/tests/virsh-optparse
+===================================================================
+--- libvirt-1.2.2.orig/tests/virsh-optparse
++++ libvirt-1.2.2/tests/virsh-optparse
+@@ -1,7 +1,7 @@
+ #!/bin/sh
+ # Ensure that virsh option parsing doesn't regress
+ 
+-# Copyright (C) 2011-2012 Red Hat, Inc.
++# Copyright (C) 2011-2012, 2014 Red Hat, Inc.
+ 
+ # This program is free software: you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+@@ -65,7 +65,7 @@ for args in \
+     '--count 2 test' \
+     '--count=2 test' \
+ ; do
+-  virsh -d0 -c $test_url setvcpus $args >out 2>>err || fail=1
++  virsh -k0 -d0 -c $test_url setvcpus $args >out 2>>err || fail=1
+   LC_ALL=C sort out | compare exp-out - || fail=1
+ done
+ 
+Index: libvirt-1.2.2/tools/virsh-domain.c
+===================================================================
+--- libvirt-1.2.2.orig/tools/virsh-domain.c
++++ libvirt-1.2.2/tools/virsh-domain.c
+@@ -8777,7 +8777,7 @@ doMigrate(void *opaque)
+         virConnectPtr dconn = NULL;
+         virDomainPtr ddom = NULL;
+ 
+-        dconn = virConnectOpenAuth(desturi, virConnectAuthPtrDefault, 0);
++        dconn = vshConnect(ctl, desturi, false);
+         if (!dconn)
+             goto out;
+ 
+Index: libvirt-1.2.2/tools/virsh.c
+===================================================================
+--- libvirt-1.2.2.orig/tools/virsh.c
++++ libvirt-1.2.2/tools/virsh.c
+@@ -315,6 +315,46 @@ vshCatchDisconnect(virConnectPtr conn AT
+         disconnected++;
+ }
+ 
++/* Main Function which should be used for connecting.
++ * This function properly handles keepalive settings. */
++virConnectPtr
++vshConnect(vshControl *ctl, const char *uri, bool readonly)
++{
++    virConnectPtr c = NULL;
++    int interval = 5; /* Default */
++    int count = 6;    /* Default */
++    bool keepalive_forced = false;
++
++    if (ctl->keepalive_interval >= 0) {
++        interval = ctl->keepalive_interval;
++        keepalive_forced = true;
++    }
++    if (ctl->keepalive_count >= 0) {
++        count = ctl->keepalive_count;
++        keepalive_forced = true;
++    }
++
++    c = virConnectOpenAuth(uri, virConnectAuthPtrDefault,
++                           readonly ? VIR_CONNECT_RO : 0);
++    if (!c)
++        return NULL;
++
++    if (interval > 0 &&
++        virConnectSetKeepAlive(c, interval, count) != 0) {
++        if (keepalive_forced) {
++            vshError(ctl, "%s",
++                     _("Cannot setup keepalive on connection "
++                       "as requested, disconnecting"));
++            virConnectClose(c);
++            return NULL;
++        }
++        vshDebug(ctl, VSH_ERR_INFO, "%s",
++                 _("Failed to setup keepalive on connection\n"));
++    }
++
++    return c;
++}
++
+ /*
+  * vshReconnect:
+  *
+@@ -340,9 +380,8 @@ vshReconnect(vshControl *ctl)
+                                   "disconnect from the hypervisor"));
+     }
+ 
+-    ctl->conn = virConnectOpenAuth(ctl->name,
+-                                   virConnectAuthPtrDefault,
+-                                   ctl->readonly ? VIR_CONNECT_RO : 0);
++    ctl->conn = vshConnect(ctl, ctl->name, ctl->readonly);
++
+     if (!ctl->conn) {
+         if (disconnected)
+             vshError(ctl, "%s", _("Failed to reconnect to the hypervisor"));
+@@ -417,8 +456,7 @@ cmdConnect(vshControl *ctl, const vshCmd
+     ctl->useSnapshotOld = false;
+     ctl->readonly = ro;
+ 
+-    ctl->conn = virConnectOpenAuth(ctl->name, virConnectAuthPtrDefault,
+-                                   ctl->readonly ? VIR_CONNECT_RO : 0);
++    ctl->conn = vshConnect(ctl, ctl->name, ctl->readonly);
+ 
+     if (!ctl->conn) {
+         vshError(ctl, "%s", _("Failed to connect to the hypervisor"));
+@@ -3113,6 +3151,10 @@ vshUsage(void)
+                       "    -r | --readonly         connect readonly\n"
+                       "    -d | --debug=NUM        debug level [0-4]\n"
+                       "    -h | --help             this help\n"
++                      "    -k | --keepalive-interval=NUM\n"
++                      "                            keepalive interval in seconds, 0 for disable\n"
++                      "    -K | --keepalive-count=NUM\n"
++                      "                            number of possible missed keepalive messages\n"
+                       "    -q | --quiet            quiet mode\n"
+                       "    -t | --timing           print timing information\n"
+                       "    -l | --log=FILE         output logging to file\n"
+@@ -3302,12 +3344,14 @@ vshAllowedEscapeChar(char c)
+ static bool
+ vshParseArgv(vshControl *ctl, int argc, char **argv)
+ {
+-    int arg, len, debug;
++    int arg, len, debug, keepalive;
+     size_t i;
+     int longindex = -1;
+     struct option opt[] = {
+         {"debug", required_argument, NULL, 'd'},
+         {"help", no_argument, NULL, 'h'},
++        {"keepalive-interval", required_argument, NULL, 'k'},
++        {"keepalive-count", required_argument, NULL, 'K'},
+         {"quiet", no_argument, NULL, 'q'},
+         {"timing", no_argument, NULL, 't'},
+         {"version", optional_argument, NULL, 'v'},
+@@ -3321,7 +3365,7 @@ vshParseArgv(vshControl *ctl, int argc,
+     /* Standard (non-command) options. The leading + ensures that no
+      * argument reordering takes place, so that command options are
+      * not confused with top-level virsh options. */
+-    while ((arg = getopt_long(argc, argv, "+:d:hqtc:vVrl:e:", opt, &longindex)) != -1) {
++    while ((arg = getopt_long(argc, argv, "+:d:hk:K:qtc:vVrl:e:", opt, &longindex)) != -1) {
+         switch (arg) {
+         case 'd':
+             if (virStrToLong_i(optarg, NULL, 10, &debug) < 0) {
+@@ -3361,6 +3405,24 @@ vshParseArgv(vshControl *ctl, int argc,
+         case 'r':
+             ctl->readonly = true;
+             break;
++        case 'k':
++            if (virStrToLong_i(optarg, NULL, 0, &keepalive) < 0 ||
++                keepalive < 0) {
++                vshError(ctl, _("option -%s requires a positive numeric argument"),
++                         longindex == -1 ? "-k" : "--keepalive-interval");
++                exit(EXIT_FAILURE);
++            }
++            ctl->keepalive_interval = keepalive;
++            break;
++        case 'K':
++            if (virStrToLong_i(optarg, NULL, 0, &keepalive) < 0 ||
++                keepalive < 0) {
++                vshError(ctl, _("option -%s requires a positive numeric argument"),
++                         longindex == -1 ? "-K" : "--keepalive-count");
++                exit(EXIT_FAILURE);
++            }
++            ctl->keepalive_count = keepalive;
++            break;
+         case 'l':
+             vshCloseLogFile(ctl);
+             ctl->logfile = vshStrdup(ctl, optarg);
+@@ -3490,6 +3552,11 @@ main(int argc, char **argv)
+     ctl->log_fd = -1;           /* Initialize log file descriptor */
+     ctl->debug = VSH_DEBUG_DEFAULT;
+     ctl->escapeChar = "^]";     /* Same default as telnet */
++
++    /* In order to distinguish default from setting to 0 */
++    ctl->keepalive_interval = -1;
++    ctl->keepalive_count = -1;
++
+     ctl->eventPipe[0] = -1;
+     ctl->eventPipe[1] = -1;
+     ctl->eventTimerId = -1;
+Index: libvirt-1.2.2/tools/virsh.h
+===================================================================
+--- libvirt-1.2.2.orig/tools/virsh.h
++++ libvirt-1.2.2/tools/virsh.h
+@@ -249,6 +249,9 @@ struct _vshControl {
+     const char *escapeChar;     /* String representation of
+                                    console escape character */
+ 
++    int keepalive_interval;     /* Client keepalive interval */
++    int keepalive_count;        /* Client keepalive count */
++
+ # ifndef WIN32
+     struct termios termattr;    /* settings of the tty terminal */
+ # endif
+@@ -269,6 +272,8 @@ void vshOutputLogFile(vshControl *ctl, i
+     ATTRIBUTE_FMT_PRINTF(3, 0);
+ void vshCloseLogFile(vshControl *ctl);
+ 
++virConnectPtr vshConnect(vshControl *ctl, const char *uri, bool readonly);
++
+ const char *vshCmddefGetInfo(const vshCmdDef *cmd, const char *info);
+ const vshCmdDef *vshCmddefSearch(const char *cmdname);
+ bool vshCmddefHelp(vshControl *ctl, const char *name);
+Index: libvirt-1.2.2/tools/virsh.pod
+===================================================================
+--- libvirt-1.2.2.orig/tools/virsh.pod
++++ libvirt-1.2.2/tools/virsh.pod
+@@ -78,6 +78,18 @@ Enable debug messages at integer I<LEVEL
+ range from 0 to 4 (default).  See the documentation of B<VIRSH_DEBUG>
+ environment variable below for the description of each I<LEVEL>.
+ 
++=item B<-k>, B<--keepalive-interval> I<INTERVAL>
++
++Set an I<INTERVAL> (in seconds) for sending keepalive messages to
++check whether connection to the server is still alive.  Setting the
++interval to 0 disables client keepalive mechanism.
++
++=item B<-K>, B<--keepalive-count> I<COUNT>
++
++Set a number of times keepalive message can be sent without getting an
++answer from the server without marking the connection dead.  There is
++no effect to this setting in case the I<INTERVAL> is set to 0.
++
+ =item B<-l>, B<--log> I<FILE>
+ 
+ Output logging details to I<FILE>.

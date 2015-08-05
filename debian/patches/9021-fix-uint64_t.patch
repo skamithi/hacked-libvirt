@@ -1,0 +1,16 @@
+Author: Serge Hallyn <serge.hallyn@canonical.com>
+Description: include stdint.h to provide a definition for
+   uint64_t, which is now used in linux/fs.h.
+Forwarded: no
+Index: libvirt-1.1.4/src/lxc/lxc_container.c
+===================================================================
+--- libvirt-1.1.4.orig/src/lxc/lxc_container.c	2013-11-12 11:48:35.607867024 -0600
++++ libvirt-1.1.4/src/lxc/lxc_container.c	2013-11-12 11:48:35.595867025 -0600
+@@ -42,6 +42,7 @@
+ #include <linux/unistd.h>
+ 
+ /* For MS_MOVE */
++#include <stdint.h>
+ #include <linux/fs.h>
+ 
+ #if WITH_CAPNG

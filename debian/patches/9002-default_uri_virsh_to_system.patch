@@ -1,0 +1,30 @@
+Description: Use qemu:///system as the default URI
+ We've done this in Ubuntu for ages, and can't switch it now.  However
+ the old patch ended up changing the behavior of various ways of
+ specifying URI preferences.  We don't want that - we only want to
+ change the default if nothing is specified.
+Author: Serge Hallyn <serge.hallyn@ubuntu.com>
+Forwarded: no
+
+Index: libvirt-1.1.4/src/libvirt.c
+===================================================================
+--- libvirt-1.1.4.orig/src/libvirt.c	2013-11-13 16:44:33.472085000 +0100
++++ libvirt-1.1.4/src/libvirt.c	2013-11-13 16:47:26.924085000 +0100
+@@ -1103,6 +1103,7 @@
+     int ret = -1;
+     virConfValuePtr value = NULL;
+     const char *defname = virGetEnvBlockSUID("LIBVIRT_DEFAULT_URI");
++    const char *fallback = "qemu:///system";
+     if (defname && *defname) {
+         VIR_DEBUG("Using LIBVIRT_DEFAULT_URI '%s'", defname);
+         *name = defname;
+@@ -1114,6 +1115,9 @@
+         }
+         VIR_DEBUG("Using config file uri '%s'", value->str);
+         *name = value->str;
++    } else {
++        VIR_DEBUG("Falling back to uri qemu:///system");
++        *name = fallback;
+     }
+ 
+     ret = 0;

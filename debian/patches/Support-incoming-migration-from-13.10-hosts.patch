@@ -1,0 +1,30 @@
+Index: libvirt-1.2.2/src/qemu/qemu_migration.c
+===================================================================
+--- libvirt-1.2.2.orig/src/qemu/qemu_migration.c
++++ libvirt-1.2.2/src/qemu/qemu_migration.c
+@@ -2109,6 +2109,13 @@ static char
+                         VIR_STRDUP(def->os.machine, "pc-1.0-precise") < 0)
+                     goto cleanup;
+             }
++            if (STREQ_NULLABLE(vm->def->os.machine, "pc-i440fx-1.5")) {
++                VIR_FREE(vm->def->os.machine);
++                VIR_FREE(def->os.machine);
++                if (VIR_STRDUP(vm->def->os.machine, "pc-i440fx-1.5-saucy") < 0 ||
++                        VIR_STRDUP(def->os.machine, "pc-i440fx-1.5-saucy") < 0)
++                    goto cleanup;
++            }
+         }
+ 
+         rv = qemuDomainDefFormatLive(driver, def, false, true);
+@@ -2447,6 +2454,11 @@ qemuMigrationPrepareAny(virQEMUDriverPtr
+                 if (VIR_STRDUP(vm->def->os.machine, "pc-1.0-precise") < 0)
+                     goto endjob;
+             }
++            if (STREQ_NULLABLE(vm->def->os.machine, "pc-i440fx-1.5")) {
++                VIR_FREE(vm->def->os.machine);
++                if (VIR_STRDUP(vm->def->os.machine, "pc-i440fx-1.5-saucy") < 0)
++                    goto endjob;
++            }
+     }
+  
+     /* Start the QEMU daemon, with the same command-line arguments plus

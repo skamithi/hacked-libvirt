@@ -1,0 +1,54 @@
+From 63203dc790819b07dbe529254aee65c77eab6865 Mon Sep 17 00:00:00 2001
+From: Stefan Bader <stefan.bader@canonical.com>
+Date: Wed, 12 Mar 2014 11:37:16 +0100
+Subject: [PATCH] libxl: Check for control_d string to decide about dom0
+
+As soon as any guest mounts xenfs to /proc/xen, there is a capabilities
+file in that directory. However it returns nothing when reading from it.
+Change the test to actually check the contents of the file.
+
+BugLink: http://bugs.launchpad.net/bugs/1248025
+
+Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+---
+ src/libxl/libxl_driver.c |   14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
+
+Index: libvirt-1.2.2/src/libxl/libxl_driver.c
+===================================================================
+--- libvirt-1.2.2.orig/src/libxl/libxl_driver.c	2014-03-17 13:07:05.000000000 +0100
++++ libvirt-1.2.2/src/libxl/libxl_driver.c	2014-03-17 13:39:34.501563979 +0100
+@@ -941,8 +941,8 @@ libxlDriverShouldLoad(bool privileged)
+ {
+     bool ret = false;
+     virCommandPtr cmd;
+-    char *output;
+     int status;
++    char *output = NULL;
+ 
+     /* Don't load if non-root */
+     if (!privileged) {
+@@ -950,8 +950,22 @@ libxlDriverShouldLoad(bool privileged)
+         return ret;
+     }
+ 
+-    /* Don't load if not running on a Xen control domain (dom0) */
+     if (!virFileExists("/proc/xen/capabilities")) {
++        VIR_INFO("Disabling driver as /proc/xen/capabilities does not exist");
++        return false;
++    }
++    /*
++     * Don't load if not running on a Xen control domain (dom0). It is not
++     * sufficient to check for the file to exist as any guest can mount
++     * xenfs to /proc/xen.
++     */
++    status = virFileReadAll("/proc/xen/capabilities", 10, &output);
++    if (status >= 0) {
++        status = strncmp(output, "control_d", 9);
++    }
++    VIR_FREE(output);
++    output = NULL;
++    if (status) {
+         VIR_INFO("No Xen capabilities detected, probably not running "
+                  "in a Xen Dom0.  Disabling libxenlight driver");
+ 

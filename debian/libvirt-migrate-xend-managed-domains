@@ -1,0 +1,145 @@
+#!/bin/sh
+#------------------------------------------------------------------------------
+# Author: Stefan Bader <stefan.bader@canonical.com>
+# Copyright 2014 Canonical Ltd.
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License version 3,
+#    as published by the Free Software Foundation.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#------------------------------------------------------------------------------
+
+# Migrate managed guests from xend into xml format managed by libvirt.
+
+XEND_GUEST_DIR="/var/lib/xend/domains"
+if [ "$(find $XEND_GUEST_DIR -name config.sxp 2>/dev/null)" = "" ]; then
+	exit 0
+fi
+
+XEN_CAPS="/proc/xen/capabilities"
+if [ ! -f $XEN_CAPS ] || [ "$(cat $XEN_CAPS)" != "control_d" ]; then
+	cat <<-EOD >&2
+	---
+	--- INFO:
+	---
+	Old xend managed domains detected but currently not running in
+	Xen dom0. Conversion aborted. You can run the conversion later
+	by calling $(basename $0)
+	EOD
+	exit 0
+fi
+if [ "$(ps ax|grep xend|grep -v migrate|grep -v grep)" != "" ]; then
+	cat <<-EOD >&2
+	---
+	--- INFO:
+	---
+	The old toolstack (xend/xm) seems to be running. This toolstack is
+	deprecated and will be removed in Xen-4.5. Please switch to the xl
+	toolstack as soon as possible. The old xend managed domains can be
+	migrated to libvirt later by calling $(basename $0)".
+	EOD
+	exit 0
+fi
+#
+# Can libvirt be contacted? Found that sometimes it does not yet seem to be
+# up after a restart.
+#
+if ! virsh -c xen:/// version >/dev/null 2>&1; then
+	sleep 5
+	if ! virsh -c xen:/// version >/dev/null 2>&1; then
+		cat <<-EOD >&2
+		---
+		--- WARNING
+		---
+		Atempted convestion of xend managed domains could not be
+		done as libvirt did not seem to start correctly.
+		You can manually start the migration ilater by calling
+		$(basename $0).
+		EOD
+		exit 0
+	fi
+fi
+
+if [ -f /var/lib/libvirt/xend-migration-done ]; then
+	exit 0
+fi
+
+if [ $(id -u) -ne 0 ]; then
+	echo "$(basename $0) must be executed by root" >&2
+	exit 1
+fi
+
+GUEST_LIST="$(virsh -c xen:/// list --all|awk 'FNR>2{print $2}')"
+
+cat <<EOD >&2
+---
+--- Info:
+---
+Trying to migrate guests that were provided through xend managed domains
+before. That conversion might not be complete. Please verify the resulting
+guest definitions.
+
+EOD
+
+for DOM_UUID in $(ls -1 "${XEND_GUEST_DIR}"); do
+	CFG_FILE="${XEND_GUEST_DIR}/${DOM_UUID}/config.sxp"
+	if [ ! -f "${CFG_FILE}" ]; then
+		continue
+	fi
+	NAME=$(awk '/name_label/{print substr($2, 1, length($2)-1)}' $CFG_FILE)
+	if [ "$(echo $GUEST_LIST|grep $NAME)" != "" ]; then
+		echo "Domain $NAME already defined. Skipping..."
+		continue
+	fi
+
+	#
+	# Replace any occurrence of device_model with "qemu-xen". This
+	# is more or less convenience right now as libvirt does not use
+	# that information. It probably should get mapped to
+	# device_model_version and then is either qemu-xen (default) or
+	# qemu-xen-traditional.
+	#
+	awk '
+		/device_model/{
+			sub(/_model.*/, "_model qemu-xen)")
+		}
+		{
+			print
+		}' $CFG_FILE >/tmp/$NAME.sxpr
+
+	virsh -c xen:/// domxml-from-native xen-sxpr /tmp/$NAME.sxpr |
+	#
+	# Not sure how those lines get generated, but any specific
+	# vif#.# as a target device cannot be right.
+	#
+	# The other problem is file based virtual disks. The conversion
+	# creates a driver name line that does prove fatal as it causes
+	# libxl to try blktap.
+	#
+	awk '
+		/target dev=.vif/{
+			next
+		}
+		/driver name=.file./{
+			next
+		}
+		{
+			print
+		}
+	' >/tmp/$NAME.xml
+	virsh -c xen:/// define /tmp/$NAME.xml
+	rm /tmp/$NAME.xml /tmp/$NAME.sxpr
+done >&2
+
+touch /var/lib/libvirt/xend-migration-done
+
+
+exit 0

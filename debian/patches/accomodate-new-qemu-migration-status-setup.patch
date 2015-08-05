@@ -1,0 +1,254 @@
+From 82865cf73a498cc6897edd52bb2b82e034f2a20d Mon Sep 17 00:00:00 2001
+From: Serge Hallyn <serge.hallyn@ubuntu.com>
+Date: Wed, 13 Nov 2013 13:44:05 -0600
+Subject: [PATCH 1/1] accomodate new qemu migration status 'setup'
+
+Treat it as active, but don't try to query for status info
+yet.
+
+Signed-off-by: Serge Hallyn <serge.hallyn@ubuntu.com>
+---
+ src/qemu/qemu_migration.c    | 48 ++++++++++++++++++++++++++++----------------
+ src/qemu/qemu_monitor.c      |  8 +++++---
+ src/qemu/qemu_monitor.h      |  3 ++-
+ src/qemu/qemu_monitor_json.c |  8 +++++++-
+ src/qemu/qemu_monitor_text.c |  9 ++++++++-
+ 5 files changed, 53 insertions(+), 23 deletions(-)
+
+Index: libvirt-1.1.4/src/qemu/qemu_migration.c
+===================================================================
+--- libvirt-1.1.4.orig/src/qemu/qemu_migration.c	2013-11-13 20:47:05.100085000 +0100
++++ libvirt-1.1.4/src/qemu/qemu_migration.c	2013-11-13 20:47:05.092085000 +0100
+@@ -1614,7 +1614,7 @@
+                              enum qemuDomainAsyncJob asyncJob)
+ {
+     qemuDomainObjPrivatePtr priv = vm->privateData;
+-    int ret;
++    int ret, setting_up;
+     qemuMonitorMigrationStatus status;
+ 
+     memset(&status, 0, sizeof(status));
+@@ -1624,7 +1624,7 @@
+         /* Guest already exited; nothing further to update.  */
+         return -1;
+     }
+-    ret = qemuMonitorGetMigrationStatus(priv->mon, &status);
++    ret = qemuMonitorGetMigrationStatus(priv->mon, &status, &setting_up);
+ 
+     qemuDomainObjExitMonitor(driver, vm);
+ 
+@@ -1645,21 +1645,35 @@
+         break;
+ 
+     case QEMU_MONITOR_MIGRATION_STATUS_ACTIVE:
+-        priv->job.info.fileTotal = priv->job.status.disk_total;
+-        priv->job.info.fileRemaining = priv->job.status.disk_remaining;
+-        priv->job.info.fileProcessed = priv->job.status.disk_transferred;
+-
+-        priv->job.info.memTotal = priv->job.status.ram_total;
+-        priv->job.info.memRemaining = priv->job.status.ram_remaining;
+-        priv->job.info.memProcessed = priv->job.status.ram_transferred;
+-
+-        priv->job.info.dataTotal =
+-            priv->job.status.ram_total + priv->job.status.disk_total;
+-        priv->job.info.dataRemaining =
+-            priv->job.status.ram_remaining + priv->job.status.disk_remaining;
+-        priv->job.info.dataProcessed =
+-            priv->job.status.ram_transferred +
+-            priv->job.status.disk_transferred;
++        if (setting_up) {
++            priv->job.info.fileTotal = -1;
++            priv->job.info.fileRemaining = -1;
++            priv->job.info.fileProcessed = 0;
++
++            priv->job.info.memTotal = -1;
++            priv->job.info.memRemaining = -1;
++            priv->job.info.memProcessed = 0;
++
++            priv->job.info.dataTotal = -1;
++            priv->job.info.dataRemaining = -1;
++            priv->job.info.dataProcessed = 0;
++        } else {
++            priv->job.info.fileTotal = priv->job.status.disk_total;
++            priv->job.info.fileRemaining = priv->job.status.disk_remaining;
++            priv->job.info.fileProcessed = priv->job.status.disk_transferred;
++
++            priv->job.info.memTotal = priv->job.status.ram_total;
++            priv->job.info.memRemaining = priv->job.status.ram_remaining;
++            priv->job.info.memProcessed = priv->job.status.ram_transferred;
++
++            priv->job.info.dataTotal =
++                priv->job.status.ram_total + priv->job.status.disk_total;
++            priv->job.info.dataRemaining =
++                priv->job.status.ram_remaining + priv->job.status.disk_remaining;
++            priv->job.info.dataProcessed =
++                priv->job.status.ram_transferred +
++                priv->job.status.disk_transferred;
++        }
+ 
+         ret = 0;
+         break;
+Index: libvirt-1.1.4/src/qemu/qemu_monitor.c
+===================================================================
+--- libvirt-1.1.4.orig/src/qemu/qemu_monitor.c	2013-11-13 20:47:05.100085000 +0100
++++ libvirt-1.1.4/src/qemu/qemu_monitor.c	2013-11-13 20:57:06.932085000 +0100
+@@ -2087,7 +2087,8 @@
+ 
+ 
+ int qemuMonitorGetMigrationStatus(qemuMonitorPtr mon,
+-                                  qemuMonitorMigrationStatusPtr status)
++                                  qemuMonitorMigrationStatusPtr status,
++                                  int *setting_up)
+ {
+     int ret;
+     VIR_DEBUG("mon=%p", mon);
+@@ -2098,10 +2099,11 @@
+         return -1;
+     }
+ 
++    *setting_up = 0;
+     if (mon->json)
+-        ret = qemuMonitorJSONGetMigrationStatus(mon, status);
++        ret = qemuMonitorJSONGetMigrationStatus(mon, status, setting_up);
+     else
+-        ret = qemuMonitorTextGetMigrationStatus(mon, status);
++        ret = qemuMonitorTextGetMigrationStatus(mon, status, setting_up);
+     return ret;
+ }
+ 
+Index: libvirt-1.1.4/src/qemu/qemu_monitor.h
+===================================================================
+--- libvirt-1.1.4.orig/src/qemu/qemu_monitor.h	2013-11-13 20:47:05.100085000 +0100
++++ libvirt-1.1.4/src/qemu/qemu_monitor.h	2013-11-13 20:47:05.096085000 +0100
+@@ -432,7 +432,8 @@
+ };
+ 
+ int qemuMonitorGetMigrationStatus(qemuMonitorPtr mon,
+-                                  qemuMonitorMigrationStatusPtr status);
++                                  qemuMonitorMigrationStatusPtr status,
++                                  int *setting_up);
+ int qemuMonitorGetSpiceMigrationStatus(qemuMonitorPtr mon,
+                                        bool *spice_migrated);
+ 
+Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.c
+===================================================================
+--- libvirt-1.1.4.orig/src/qemu/qemu_monitor_json.c	2013-11-13 20:47:05.100085000 +0100
++++ libvirt-1.1.4/src/qemu/qemu_monitor_json.c	2013-11-13 21:02:16.492085000 +0100
+@@ -2351,7 +2351,8 @@
+ 
+ static int
+ qemuMonitorJSONGetMigrationStatusReply(virJSONValuePtr reply,
+-                                       qemuMonitorMigrationStatusPtr status)
++                                       qemuMonitorMigrationStatusPtr status,
++                                       int *setting_up)
+ {
+     virJSONValuePtr ret;
+     const char *statusstr;
+@@ -2369,6 +2370,11 @@
+         return -1;
+     }
+ 
++    if (strncmp(statusstr, "setup", 5) == 0) {
++        status->status = QEMU_MONITOR_MIGRATION_STATUS_ACTIVE;
++        *setting_up = 1;
++        return 0;
++    }
+     status->status = qemuMonitorMigrationStatusTypeFromString(statusstr);
+     if (status->status < 0) {
+         virReportError(VIR_ERR_INTERNAL_ERROR,
+@@ -2509,7 +2515,8 @@
+ 
+ 
+ int qemuMonitorJSONGetMigrationStatus(qemuMonitorPtr mon,
+-                                      qemuMonitorMigrationStatusPtr status)
++                                      qemuMonitorMigrationStatusPtr status,
++                                      int *setting_up)
+ {
+     int ret;
+     virJSONValuePtr cmd = qemuMonitorJSONMakeCommand("query-migrate",
+@@ -2527,7 +2534,7 @@
+         ret = qemuMonitorJSONCheckError(cmd, reply);
+ 
+     if (ret == 0 &&
+-        qemuMonitorJSONGetMigrationStatusReply(reply, status) < 0)
++        qemuMonitorJSONGetMigrationStatusReply(reply, status, &setting_up) < 0)
+         ret = -1;
+ 
+     if (ret < 0)
+Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.c
+===================================================================
+--- libvirt-1.1.4.orig/src/qemu/qemu_monitor_text.c	2013-11-13 20:47:05.100085000 +0100
++++ libvirt-1.1.4/src/qemu/qemu_monitor_text.c	2013-11-13 20:47:05.096085000 +0100
+@@ -1419,7 +1419,8 @@
+ #define MIGRATION_DISK_TOTAL_PREFIX "total disk: "
+ 
+ int qemuMonitorTextGetMigrationStatus(qemuMonitorPtr mon,
+-                                      qemuMonitorMigrationStatusPtr status)
++                                      qemuMonitorMigrationStatusPtr status,
++                                      int *setting_up)
+ {
+     char *reply;
+     char *tmp;
+@@ -1441,6 +1442,12 @@
+         }
+         *end = '\0';
+ 
++        if (strncmp(tmp, "setup", 5) == 0) {
++            status->status = QEMU_MONITOR_MIGRATION_STATUS_ACTIVE;
++            *setting_up = 1;
++            goto done;
++        }
++
+         status->status = qemuMonitorMigrationStatusTypeFromString(tmp);
+         if (status->status < 0) {
+             virReportError(VIR_ERR_INTERNAL_ERROR,
+Index: libvirt-1.1.4/tests/qemumonitorjsontest.c
+===================================================================
+--- libvirt-1.1.4.orig/tests/qemumonitorjsontest.c	2013-10-18 23:15:06.000000000 +0200
++++ libvirt-1.1.4/tests/qemumonitorjsontest.c	2013-11-13 20:58:46.348085000 +0100
+@@ -1660,7 +1660,7 @@
+ {
+     virDomainXMLOptionPtr xmlopt = (virDomainXMLOptionPtr)data;
+     qemuMonitorTestPtr test = qemuMonitorTestNewSimple(true, xmlopt);
+-    int ret = -1;
++    int ret = -1, setting_up;
+     qemuMonitorMigrationStatus status, expectedStatus;
+ 
+     if (!test)
+@@ -1689,7 +1689,7 @@
+                                "}") < 0)
+         goto cleanup;
+ 
+-    if (qemuMonitorJSONGetMigrationStatus(qemuMonitorTestGetMonitor(test), &status) < 0)
++    if (qemuMonitorJSONGetMigrationStatus(qemuMonitorTestGetMonitor(test), &status, &setting_up) < 0)
+         goto cleanup;
+ 
+     if (memcmp(&status, &expectedStatus, sizeof(status)) != 0) {
+Index: libvirt-1.1.4/src/qemu/qemu_monitor_json.h
+===================================================================
+--- libvirt-1.1.4.orig/src/qemu/qemu_monitor_json.h	2013-11-13 21:00:07.052085000 +0100
++++ libvirt-1.1.4/src/qemu/qemu_monitor_json.h	2013-11-13 21:00:42.028085000 +0100
+@@ -130,7 +130,8 @@
+                                          unsigned long long cacheSize);
+ 
+ int qemuMonitorJSONGetMigrationStatus(qemuMonitorPtr mon,
+-                                      qemuMonitorMigrationStatusPtr status);
++                                      qemuMonitorMigrationStatusPtr status,
++                                      int *setting_up);
+ 
+ int qemuMonitorJSONGetMigrationCapability(qemuMonitorPtr mon,
+                                           qemuMonitorMigrationCaps capability);
+Index: libvirt-1.1.4/src/qemu/qemu_monitor_text.h
+===================================================================
+--- libvirt-1.1.4.orig/src/qemu/qemu_monitor_text.h	2013-11-13 21:00:15.432085000 +0100
++++ libvirt-1.1.4/src/qemu/qemu_monitor_text.h	2013-11-13 21:01:00.124085000 +0100
+@@ -117,7 +117,8 @@
+                                         unsigned long long downtime);
+ 
+ int qemuMonitorTextGetMigrationStatus(qemuMonitorPtr mon,
+-                                      qemuMonitorMigrationStatusPtr status);
++                                      qemuMonitorMigrationStatusPtr status,
++                                      int *setting_up);
+ 
+ int qemuMonitorTextMigrate(qemuMonitorPtr mon,
+                            unsigned int flags,
