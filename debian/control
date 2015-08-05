@@ -53,6 +53,7 @@ Build-Depends: cdbs (>= 0.4.90~),
  iptables [linux-any],
  qemu-utils [linux-any],
  libcgmanager-dev,
+ w3c-dtd-xhtml,
  xsltproc
 Build-Conflicts: dpkg-dev (= 1.15.3)
 Homepage: http://libvirt.org
