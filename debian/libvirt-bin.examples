@@ -1,3 +1,0 @@
-daemon/libvirtd.conf
-daemon/libvirtd.sasl
-debian/libvirt-suspendonreboot

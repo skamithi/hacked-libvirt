@@ -1,4 +1,0 @@
-tools/*.1
-debian/libvirt-migrate-qemu-disks.1
-debian/libvirt-migrate-qemu-machinetype.1
-debian/libvirt-migrate-xend-managed-domains.1
