@@ -1,0 +1,132 @@
+From: Jonathan Toppins <jtoppins@cumulusnetworks.com>
+Date: Fri, 7 Aug 2015 10:45:46 -0700
+Subject: add localaddr attribute
+
+---
+ src/conf/domain_conf.c  | 47 ++++++++++++++++++++++++++++++++++++++++++++++-
+ src/conf/domain_conf.h  |  2 ++
+ src/qemu/qemu_command.c |  5 ++++-
+ 3 files changed, 52 insertions(+), 2 deletions(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 7665708..e09fa28 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -1425,6 +1425,7 @@ void virDomainNetDefFree(virDomainNetDefPtr def)
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+     case VIR_DOMAIN_NET_TYPE_UDP:
+         VIR_FREE(def->data.socket.address);
++        VIR_FREE(def->data.socket.localaddr);
+         break;
+ 
+     case VIR_DOMAIN_NET_TYPE_NETWORK:
+@@ -6519,6 +6520,8 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+     char *script = NULL;
+     char *address = NULL;
+     char *port = NULL;
++    char *destaddr = NULL;
++    char *destport = NULL;
+     char *model = NULL;
+     char *backend = NULL;
+     char *txmode = NULL;
+@@ -6608,6 +6611,10 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+                        xmlStrEqual(cur->name, BAD_CAST "source")) {
+                 address = virXMLPropString(cur, "address");
+                 port = virXMLPropString(cur, "port");
++            } else if (!destaddr && def->type == VIR_DOMAIN_NET_TYPE_UDP &&
++                       xmlStrEqual(cur->name, BAD_CAST "dest")) {
++                destaddr = virXMLPropString(cur, "address");
++                destport = virXMLPropString(cur, "port");
+             } else if (!address &&
+                        (def->type == VIR_DOMAIN_NET_TYPE_ETHERNET ||
+                         def->type == VIR_DOMAIN_NET_TYPE_BRIDGE) &&
+@@ -6779,7 +6786,8 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+ 
+         if (address == NULL) {
+             if (def->type == VIR_DOMAIN_NET_TYPE_CLIENT ||
+-                def->type == VIR_DOMAIN_NET_TYPE_MCAST) {
++                def->type == VIR_DOMAIN_NET_TYPE_MCAST ||
++                def->type == VIR_DOMAIN_NET_TYPE_UDP) {
+                 virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                                _("No <source> 'address' attribute "
+                                  "specified with socket interface"));
+@@ -6789,6 +6797,32 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+             def->data.socket.address = address;
+             address = NULL;
+         }
++
++        if (def->type != VIR_DOMAIN_NET_TYPE_UDP)
++            break;
++
++        if (destport == NULL) {
++            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                           _("No <dest> 'port' attribute "
++                             "specified with socket interface"));
++            goto error;
++        }
++        if (virStrToLong_i(destport, NULL, 10, &def->data.socket.destport) < 0) {
++            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                           _("Cannot parse <dest> 'port' attribute "
++                             "with socket interface"));
++            goto error;
++        }
++
++        if (destport == NULL) {
++            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                           _("No <dest> 'address' attribute "
++                             "specified with socket interface"));
++            goto error;
++        } else {
++            def->data.socket.destaddr = destaddr;
++            address = NULL;
++        }
+         break;
+ 
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+@@ -15650,6 +15684,17 @@ virDomainNetDefFormat(virBufferPtr buf,
+                 virBufferAsprintf(buf, "<source port='%d'/>\n",
+                                   def->data.socket.port);
+             }
++
++            if (def->type != VIR_DOMAIN_NET_TYPE_UDP)
++                break;
++
++            if (def->data.socket.destaddr) {
++                virBufferAsprintf(buf, "<dest address='%s' port='%d'/>\n",
++                                  def->data.socket.destaddr, def->data.socket.destport);
++            } else {
++                virBufferAsprintf(buf, "<dest port='%d'/>\n",
++                                  def->data.socket.destport);
++            }
+             break;
+ 
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index fa3396a..dfa56d0 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -1007,6 +1007,8 @@ struct _virDomainNetDef {
+         struct {
+             char *address;
+             int port;
++            char *destaddr;
++            int destport;
+         } socket; /* any of NET_CLIENT or NET_SERVER or NET_MCAST */
+         struct {
+             char *name;
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index c621d4f..45d0901 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -5156,7 +5156,10 @@ qemuBuildHostNetStr(virDomainNetDefPtr net,
+        break;
+ 
+     case VIR_DOMAIN_NET_TYPE_UDP:
+-       virBufferAsprintf(&buf, "socket%cudp=%s:%d",
++       virBufferAsprintf(&buf, "socket%cudp=%s:%d%clocalhost=%s:%d",
++                         type_sep,
++                         net->data.socket.destaddr,
++                         net->data.soclet.destport,
+                          type_sep,
+                          net->data.socket.address,
+                          net->data.socket.port);

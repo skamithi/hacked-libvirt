@@ -3,9 +3,33 @@ Date: Wed, 5 Aug 2015 02:00:54 -0400
 Subject: 9002-default_uri_virsh_to_system
 
 ---
- src/libvirt.c | 4 ++++
- 1 file changed, 4 insertions(+)
+ debian/changelog | 15 +++++++++++++++
+ src/libvirt.c    |  4 ++++
+ 2 files changed, 19 insertions(+)
 
+diff --git a/debian/changelog b/debian/changelog
+index f6ba000..51603fb 100644
+--- a/debian/changelog
++++ b/debian/changelog
+@@ -1,3 +1,18 @@
++libvirt (1.2.2-1~1.gbp777db3) UNRELEASED; urgency=medium
++
++  ** SNAPSHOT build @777db3e720939d7b6ad854849d0fb6d4e03a0418 **
++
++  [ stanley karunditu ]
++  * remove dependency for libxl (xen stuff) so that it can compile cleanly
++  * add new patch in testing code that hinders compilation on ubuntu 14.04 amd64 laptop to complete
++  * add udp unicast support (maybe)
++  * Revert "add udp unicast support (maybe)"
++  * add udp socket support
++
++  [ Stanley Karunditu ]
++
++ -- stanley karunditu <stanleyk@cumulusnetworks.com>  Wed, 05 Aug 2015 18:54:43 -0400
++
+ libvirt (1.2.2-0ubuntu13.1.14) trusty; urgency=medium
+ 
+   [ Seyeong Kim ]
 diff --git a/src/libvirt.c b/src/libvirt.c
 index dcf6b53..3b99c1c 100644
 --- a/src/libvirt.c
