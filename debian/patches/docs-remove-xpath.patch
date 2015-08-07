@@ -1,9 +1,15 @@
-Description: Remove XPath in favor of LibXML
-Author: Chuck Short <zulcss@ubuntu.com>
-Forwarded: No
-diff -Naurp libvirt-1.2.12.orig/docs/hvsupport.pl libvirt-1.2.12/docs/hvsupport.pl
---- libvirt-1.2.12.orig/docs/hvsupport.pl	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.12/docs/hvsupport.pl	2015-02-07 20:52:38.082011285 -0500
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:53 -0400
+Subject: docs-remove-xpath
+
+---
+ docs/hvsupport.pl | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/docs/hvsupport.pl b/docs/hvsupport.pl
+index 44a30ce..c1fcbab 100755
+--- a/docs/hvsupport.pl
++++ b/docs/hvsupport.pl
 @@ -4,12 +4,12 @@ use strict;
  use warnings;
  

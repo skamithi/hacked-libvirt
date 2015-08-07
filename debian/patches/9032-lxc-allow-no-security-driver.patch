@@ -1,8 +1,17 @@
-Index: libvirt-1.2.8/src/lxc/lxc_driver.c
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:53 -0400
+Subject: 9032-lxc-allow-no-security-driver
+
 ===================================================================
---- libvirt-1.2.8.orig/src/lxc/lxc_driver.c
-+++ libvirt-1.2.8/src/lxc/lxc_driver.c
-@@ -1541,6 +1541,11 @@ lxcSecurityInit(virLXCDriverConfigPtr cf
+---
+ src/lxc/lxc_driver.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/lxc/lxc_driver.c b/src/lxc/lxc_driver.c
+index 31fb470..487dd9b 100644
+--- a/src/lxc/lxc_driver.c
++++ b/src/lxc/lxc_driver.c
+@@ -1560,6 +1560,11 @@ lxcSecurityInit(virLXCDriverConfigPtr cfg)
                                                        cfg->securityDefaultConfined,
                                                        cfg->securityRequireConfined);
      if (!mgr)

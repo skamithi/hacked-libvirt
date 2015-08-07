@@ -2,11 +2,15 @@ From: Guido Guenther <agx@sigxcpu.org>
 Date: Thu, 26 Jun 2008 20:01:38 +0200
 Subject: Allow libvirt group to access the socket
 
+---
+ daemon/libvirtd.conf | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
 
-diff -Naurp libvirt-1.2.2.orig/daemon/libvirtd.conf libvirt-1.2.2/daemon/libvirtd.conf
---- libvirt-1.2.2.orig/daemon/libvirtd.conf	2014-02-21 06:24:39.000000000 -0500
-+++ libvirt-1.2.2/daemon/libvirtd.conf	2014-03-03 13:55:23.602192862 -0500
-@@ -78,14 +78,14 @@
+diff --git a/daemon/libvirtd.conf b/daemon/libvirtd.conf
+index 069ef3a..5f5a0d2 100644
+--- a/daemon/libvirtd.conf
++++ b/daemon/libvirtd.conf
+@@ -87,14 +87,14 @@
  # without becoming root.
  #
  # This is restricted to 'root' by default.
@@ -23,7 +27,7 @@ diff -Naurp libvirt-1.2.2.orig/daemon/libvirtd.conf libvirt-1.2.2/daemon/libvirt
  
  # Set the UNIX socket permissions for the R/W socket. This is used
  # for full management of VMs
-@@ -95,7 +95,7 @@
+@@ -104,7 +104,7 @@
  #
  # If not using PolicyKit and setting group ownership for access
  # control, then you may want to relax this too.
@@ -32,7 +36,7 @@ diff -Naurp libvirt-1.2.2.orig/daemon/libvirtd.conf libvirt-1.2.2/daemon/libvirt
  
  # Set the name of the directory in which sockets will be found/created.
  #unix_sock_dir = "/var/run/libvirt"
-@@ -126,7 +126,7 @@
+@@ -135,7 +135,7 @@
  #
  # To restrict monitoring of domains you may wish to enable
  # an authentication mechanism here
@@ -41,7 +45,7 @@ diff -Naurp libvirt-1.2.2.orig/daemon/libvirtd.conf libvirt-1.2.2/daemon/libvirt
  
  # Set an authentication scheme for UNIX read-write sockets
  # By default socket permissions only allow root. If PolicyKit
-@@ -135,7 +135,7 @@
+@@ -144,7 +144,7 @@
  #
  # If the unix_sock_rw_perms are changed you may wish to enable
  # an authentication mechanism here

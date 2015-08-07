@@ -1,8 +1,18 @@
-Index: libvirt-1.2.6/src/libxl/libxl_driver.c
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:53 -0400
+Subject: ubuntu-xend-probe
+
 ===================================================================
---- libvirt-1.2.6.orig/src/libxl/libxl_driver.c	2014-09-17 14:09:44.223088490 +0200
-+++ libvirt-1.2.6/src/libxl/libxl_driver.c	2014-09-17 15:15:44.031049876 +0200
-@@ -227,6 +227,7 @@ libxlDriverShouldLoad(bool privileged)
+---
+ src/libxl/libxl_driver.c | 21 +++++++++++++--------
+ src/xen/xen_driver.c     | 22 ++++++++++++++++++----
+ 2 files changed, 31 insertions(+), 12 deletions(-)
+
+diff --git a/src/libxl/libxl_driver.c b/src/libxl/libxl_driver.c
+index c297d12..6cede83 100644
+--- a/src/libxl/libxl_driver.c
++++ b/src/libxl/libxl_driver.c
+@@ -429,6 +429,7 @@ libxlDriverShouldLoad(bool privileged)
      bool ret = false;
      int status;
      char *output = NULL;
@@ -10,7 +20,7 @@ Index: libvirt-1.2.6/src/libxl/libxl_driver.c
  
      /* Don't load if non-root */
      if (!privileged) {
-@@ -257,19 +258,23 @@ libxlDriverShouldLoad(bool privileged)
+@@ -458,19 +459,23 @@ libxlDriverShouldLoad(bool privileged)
      }
  
      /* Don't load if legacy xen toolstack (xend) is in use */
@@ -20,13 +30,13 @@ Index: libvirt-1.2.6/src/libxl/libxl_driver.c
 +    virCommandSetOutputBuffer(cmd, &output);
 +    if (virCommandRun(cmd, &status) == 0 && status == 0) {
 +        int i, j;
-+
-+        for (i = 0, j = 0; output[i] != '\0'; i++)
-+            if (output[i] == '/')
-+                j = i + 1;
  
 -        cmd = virCommandNewArgList("/usr/sbin/xend", "status", NULL);
 -        if (virCommandRun(cmd, NULL) == 0) {
++        for (i = 0, j = 0; output[i] != '\0'; i++)
++            if (output[i] == '/')
++                j = i + 1;
++
 +        if (output[j] == 'x' && output[j+1] == 'l') {
 +            ret = true;
 +        } else {
@@ -42,11 +52,11 @@ Index: libvirt-1.2.6/src/libxl/libxl_driver.c
      }
  
      return ret;
-Index: libvirt-1.2.6/src/xen/xen_driver.c
-===================================================================
---- libvirt-1.2.6.orig/src/xen/xen_driver.c	2014-09-17 14:09:44.223088490 +0200
-+++ libvirt-1.2.6/src/xen/xen_driver.c	2014-09-17 15:21:18.311046617 +0200
-@@ -312,22 +312,36 @@ xenUnifiedProbe(void)
+diff --git a/src/xen/xen_driver.c b/src/xen/xen_driver.c
+index da9e6f4..4c30911 100644
+--- a/src/xen/xen_driver.c
++++ b/src/xen/xen_driver.c
+@@ -310,22 +310,36 @@ xenUnifiedProbe(void)
  }
  
  #ifdef WITH_LIBXL

@@ -1,7 +1,16 @@
-diff -Naurp libvirt-1.2.12.orig/tests/networkxml2conftest.c libvirt-1.2.12/tests/networkxml2conftest.c
---- libvirt-1.2.12.orig/tests/networkxml2conftest.c	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.12/tests/networkxml2conftest.c	2015-02-03 15:01:19.233549026 -0500
-@@ -103,6 +103,7 @@ testCompareXMLToConfHelper(const void *d
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:53 -0400
+Subject: disable-network-test
+
+---
+ tests/networkxml2conftest.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tests/networkxml2conftest.c b/tests/networkxml2conftest.c
+index fe95e8c..a6cb139 100644
+--- a/tests/networkxml2conftest.c
++++ b/tests/networkxml2conftest.c
+@@ -91,6 +91,7 @@ testCompareXMLToConfHelper(const void *data)
  static int
  mymain(void)
  {

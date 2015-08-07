@@ -1,12 +1,26 @@
-Description: Make hvmloader and qemu-dm paths relative
- This is a refresh for the patch of the same name we were already
- carrying but did just replace absolute paths by other absolute
- ones which broke again.
-Forwarded: not-needed
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:52 -0400
+Subject: fix-ubuntu-xen-qemu-dm-path
 
-diff -Naurp libvirt-1.2.15.orig/docs/schemas/capability.rng libvirt-1.2.15/docs/schemas/capability.rng
---- libvirt-1.2.15.orig/docs/schemas/capability.rng	2015-04-30 05:04:46.000000000 -0400
-+++ libvirt-1.2.15/docs/schemas/capability.rng	2015-05-07 10:55:35.790498003 -0400
+---
+ docs/schemas/capability.rng            |  4 ++--
+ src/xen/xen_hypervisor.c               |  6 +++---
+ tests/xencapsdata/xen-i686-pae-hvm.xml |  6 +++---
+ tests/xencapsdata/xen-i686-pae.xml     |  2 +-
+ tests/xencapsdata/xen-i686.xml         |  2 +-
+ tests/xencapsdata/xen-ia64-be-hvm.xml  |  6 +++---
+ tests/xencapsdata/xen-ia64-be.xml      |  2 +-
+ tests/xencapsdata/xen-ia64-hvm.xml     |  6 +++---
+ tests/xencapsdata/xen-ia64.xml         |  2 +-
+ tests/xencapsdata/xen-ppc64.xml        |  2 +-
+ tests/xencapsdata/xen-x86_64-hvm.xml   | 10 +++++-----
+ tests/xencapsdata/xen-x86_64.xml       |  2 +-
+ 12 files changed, 25 insertions(+), 25 deletions(-)
+
+diff --git a/docs/schemas/capability.rng b/docs/schemas/capability.rng
+index 88e08d2..bfbc8c9 100644
+--- a/docs/schemas/capability.rng
++++ b/docs/schemas/capability.rng
 @@ -294,13 +294,13 @@
  
    <define name='emulator'>
@@ -23,10 +37,11 @@ diff -Naurp libvirt-1.2.15.orig/docs/schemas/capability.rng libvirt-1.2.15/docs/
      </element>
    </define>
  
-diff -Naurp libvirt-1.2.15.orig/src/xen/xen_hypervisor.c libvirt-1.2.15/src/xen/xen_hypervisor.c
---- libvirt-1.2.15.orig/src/xen/xen_hypervisor.c	2015-04-27 21:15:40.000000000 -0400
-+++ libvirt-1.2.15/src/xen/xen_hypervisor.c	2015-05-07 10:55:35.790498003 -0400
-@@ -2145,10 +2145,10 @@ xenHypervisorBuildCapabilities(virConnec
+diff --git a/src/xen/xen_hypervisor.c b/src/xen/xen_hypervisor.c
+index 431c47a..ccefc4f 100644
+--- a/src/xen/xen_hypervisor.c
++++ b/src/xen/xen_hypervisor.c
+@@ -2145,10 +2145,10 @@ xenHypervisorBuildCapabilities(virConnectPtr conn, virArch hostarch,
                                               guest_archs[i].hvm ? VIR_DOMAIN_OSTYPE_HVM : VIR_DOMAIN_OSTYPE_XEN,
                                               guest_archs[i].arch,
                                               (hostarch == VIR_ARCH_X86_64 ?
@@ -40,9 +55,10 @@ diff -Naurp libvirt-1.2.15.orig/src/xen/xen_hypervisor.c libvirt-1.2.15/src/xen/
                                                NULL),
                                               1,
                                               machines)) == NULL) {
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-i686-pae-hvm.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae-hvm.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-i686-pae-hvm.xml	2015-05-07 10:55:35.790498003 -0400
+diff --git a/tests/xencapsdata/xen-i686-pae-hvm.xml b/tests/xencapsdata/xen-i686-pae-hvm.xml
+index cf6a1de..a33d65d 100644
+--- a/tests/xencapsdata/xen-i686-pae-hvm.xml
++++ b/tests/xencapsdata/xen-i686-pae-hvm.xml
 @@ -20,7 +20,7 @@
      <os_type>xen</os_type>
      <arch name='i686'>
@@ -63,9 +79,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae-hvm.xml libvirt-1
        <machine>xenfv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae.xml libvirt-1.2.15/tests/xencapsdata/xen-i686-pae.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-i686-pae.xml	2015-05-07 10:55:35.790498003 -0400
+diff --git a/tests/xencapsdata/xen-i686-pae.xml b/tests/xencapsdata/xen-i686-pae.xml
+index c917fbe..d211163 100644
+--- a/tests/xencapsdata/xen-i686-pae.xml
++++ b/tests/xencapsdata/xen-i686-pae.xml
 @@ -20,7 +20,7 @@
      <os_type>xen</os_type>
      <arch name='i686'>
@@ -75,9 +92,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686-pae.xml libvirt-1.2.1
        <machine>xenpv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686.xml libvirt-1.2.15/tests/xencapsdata/xen-i686.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-i686.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-i686.xml	2015-05-07 10:55:35.790498003 -0400
+diff --git a/tests/xencapsdata/xen-i686.xml b/tests/xencapsdata/xen-i686.xml
+index 5771e2b..c540996 100644
+--- a/tests/xencapsdata/xen-i686.xml
++++ b/tests/xencapsdata/xen-i686.xml
 @@ -17,7 +17,7 @@
      <os_type>xen</os_type>
      <arch name='i686'>
@@ -87,9 +105,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-i686.xml libvirt-1.2.15/te
        <machine>xenpv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64-be-hvm.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be-hvm.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-ia64-be-hvm.xml	2015-05-07 10:55:35.790498003 -0400
+diff --git a/tests/xencapsdata/xen-ia64-be-hvm.xml b/tests/xencapsdata/xen-ia64-be-hvm.xml
+index 19d23e9..00bdcf9 100644
+--- a/tests/xencapsdata/xen-ia64-be-hvm.xml
++++ b/tests/xencapsdata/xen-ia64-be-hvm.xml
 @@ -17,7 +17,7 @@
      <os_type>xen</os_type>
      <arch name='ia64'>
@@ -110,9 +129,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be-hvm.xml libvirt-1.
        <machine>xenfv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64-be.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-ia64-be.xml	2015-05-07 10:55:35.790498003 -0400
+diff --git a/tests/xencapsdata/xen-ia64-be.xml b/tests/xencapsdata/xen-ia64-be.xml
+index 78fa77e..77f0acb 100644
+--- a/tests/xencapsdata/xen-ia64-be.xml
++++ b/tests/xencapsdata/xen-ia64-be.xml
 @@ -17,7 +17,7 @@
      <os_type>xen</os_type>
      <arch name='ia64'>
@@ -122,9 +142,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-be.xml libvirt-1.2.15
        <machine>xenpv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64-hvm.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-hvm.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-ia64-hvm.xml	2015-05-07 10:55:35.790498003 -0400
+diff --git a/tests/xencapsdata/xen-ia64-hvm.xml b/tests/xencapsdata/xen-ia64-hvm.xml
+index 6e22372..6a5b299 100644
+--- a/tests/xencapsdata/xen-ia64-hvm.xml
++++ b/tests/xencapsdata/xen-ia64-hvm.xml
 @@ -17,7 +17,7 @@
      <os_type>xen</os_type>
      <arch name='ia64'>
@@ -145,9 +166,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64-hvm.xml libvirt-1.2.1
        <machine>xenfv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64.xml libvirt-1.2.15/tests/xencapsdata/xen-ia64.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-ia64.xml	2015-05-07 10:55:35.790498003 -0400
+diff --git a/tests/xencapsdata/xen-ia64.xml b/tests/xencapsdata/xen-ia64.xml
+index 9e3eaf4..79eabf1 100644
+--- a/tests/xencapsdata/xen-ia64.xml
++++ b/tests/xencapsdata/xen-ia64.xml
 @@ -17,7 +17,7 @@
      <os_type>xen</os_type>
      <arch name='ia64'>
@@ -157,9 +179,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ia64.xml libvirt-1.2.15/te
        <machine>xenpv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ppc64.xml libvirt-1.2.15/tests/xencapsdata/xen-ppc64.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-ppc64.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-ppc64.xml	2015-05-07 10:55:35.794498003 -0400
+diff --git a/tests/xencapsdata/xen-ppc64.xml b/tests/xencapsdata/xen-ppc64.xml
+index 0132c45..3445bfa 100644
+--- a/tests/xencapsdata/xen-ppc64.xml
++++ b/tests/xencapsdata/xen-ppc64.xml
 @@ -17,7 +17,7 @@
      <os_type>xen</os_type>
      <arch name='ppc64'>
@@ -169,9 +192,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-ppc64.xml libvirt-1.2.15/t
        <machine>xenpv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64-hvm.xml libvirt-1.2.15/tests/xencapsdata/xen-x86_64-hvm.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64-hvm.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-x86_64-hvm.xml	2015-05-07 10:55:35.794498003 -0400
+diff --git a/tests/xencapsdata/xen-x86_64-hvm.xml b/tests/xencapsdata/xen-x86_64-hvm.xml
+index 7458f0b..2c5ab2e 100644
+--- a/tests/xencapsdata/xen-x86_64-hvm.xml
++++ b/tests/xencapsdata/xen-x86_64-hvm.xml
 @@ -20,7 +20,7 @@
      <os_type>xen</os_type>
      <arch name='x86_64'>
@@ -203,9 +227,10 @@ diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64-hvm.xml libvirt-1.2
        <machine>xenfv</machine>
        <domain type='xen'/>
      </arch>
-diff -Naurp libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64.xml libvirt-1.2.15/tests/xencapsdata/xen-x86_64.xml
---- libvirt-1.2.15.orig/tests/xencapsdata/xen-x86_64.xml	2015-01-23 06:46:24.000000000 -0500
-+++ libvirt-1.2.15/tests/xencapsdata/xen-x86_64.xml	2015-05-07 10:55:35.794498003 -0400
+diff --git a/tests/xencapsdata/xen-x86_64.xml b/tests/xencapsdata/xen-x86_64.xml
+index b686432..2cdae7c 100644
+--- a/tests/xencapsdata/xen-x86_64.xml
++++ b/tests/xencapsdata/xen-x86_64.xml
 @@ -20,7 +20,7 @@
      <os_type>xen</os_type>
      <arch name='x86_64'>

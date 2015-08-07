@@ -1,11 +1,15 @@
-Description: enable apparmor confinement of containers by default
-Author: Serge Hallyn <serge.hallyn@ubuntu.com>
-Forwarded: no
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:52 -0400
+Subject: 9031-enable-lxc-apparmor
 
-Index: libvirt-1.2.8/src/lxc/lxc.conf
-===================================================================
---- libvirt-1.2.8.orig/src/lxc/lxc.conf
-+++ libvirt-1.2.8/src/lxc/lxc.conf
+---
+ src/lxc/lxc.conf | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/lxc/lxc.conf b/src/lxc/lxc.conf
+index 8df4601..582d62d 100644
+--- a/src/lxc/lxc.conf
++++ b/src/lxc/lxc.conf
 @@ -20,11 +20,13 @@
  # to 'none' instead.
  #

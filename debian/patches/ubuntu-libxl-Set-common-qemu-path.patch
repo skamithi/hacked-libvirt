@@ -11,12 +11,16 @@ path (/usr/bin).
 BugLink: http://bugs.launchpad.net/bugs/1459600
 
 Signed-off-by: Stefan Bader <stefan.bader@canonical.com>
+---
+ src/libxl/libxl_conf.c   |  2 +-
+ src/libxl/libxl_domain.c | 12 ++++++++++++
+ 2 files changed, 13 insertions(+), 1 deletion(-)
 
-Index: libvirt-1.2.15/src/libxl/libxl_conf.c
-===================================================================
---- libvirt-1.2.15.orig/src/libxl/libxl_conf.c	2015-05-28 12:05:40.041502252 +0200
-+++ libvirt-1.2.15/src/libxl/libxl_conf.c	2015-05-28 12:05:40.037502252 +0200
-@@ -429,7 +429,7 @@ libxlCapsInitGuests(libxl_ctx *ctx, virC
+diff --git a/src/libxl/libxl_conf.c b/src/libxl/libxl_conf.c
+index 9b258ac..4da2b9d 100644
+--- a/src/libxl/libxl_conf.c
++++ b/src/libxl/libxl_conf.c
+@@ -429,7 +429,7 @@ libxlCapsInitGuests(libxl_ctx *ctx, virCapsPtr caps)
          if ((guest = virCapabilitiesAddGuest(caps,
                                               guest_archs[i].hvm ? VIR_DOMAIN_OSTYPE_HVM : VIR_DOMAIN_OSTYPE_XEN,
                                               guest_archs[i].arch,
@@ -25,11 +29,11 @@ Index: libvirt-1.2.15/src/libxl/libxl_conf.c
                                               (guest_archs[i].hvm ?
                                                LIBXL_FIRMWARE_DIR "/hvmloader" :
                                                NULL),
-Index: libvirt-1.2.15/src/libxl/libxl_domain.c
-===================================================================
---- libvirt-1.2.15.orig/src/libxl/libxl_domain.c	2015-05-28 12:04:11.000000000 +0200
-+++ libvirt-1.2.15/src/libxl/libxl_domain.c	2015-05-28 12:12:09.493496247 +0200
-@@ -364,6 +364,18 @@ libxlDomainDefPostParse(virDomainDefPtr
+diff --git a/src/libxl/libxl_domain.c b/src/libxl/libxl_domain.c
+index c7f0ed9..238b8eb 100644
+--- a/src/libxl/libxl_domain.c
++++ b/src/libxl/libxl_domain.c
+@@ -368,6 +368,18 @@ libxlDomainDefPostParse(virDomainDefPtr def,
      if (virDomainDefCheckUnsupportedMemoryHotplug(def) < 0)
          return -1;
  

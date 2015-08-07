@@ -1,8 +1,6 @@
-From 0bcda653b86360f17cecf98c2531c8c4d3d9e0bf Mon Sep 17 00:00:00 2001
 From: Chris J Arges <chris.j.arges@canonical.com>
 Date: Tue, 30 Jun 2015 15:12:19 -0500
-Subject: [PATCH 2/2] tests: add vol-qcow2-zerocapacity test to
- storagevolxml2argvtest
+Subject: tests: add vol-qcow2-zerocapacity test to storagevolxml2argvtest
 
 Add a testcase for the previous change to ensure zero capacity volumes can be
 defined without a backing store.
@@ -50,6 +48,3 @@ index 0000000..1d1e6de
 +  </target>
 +  <capacity>0</capacity>
 +</volume>
--- 
-1.9.1
-

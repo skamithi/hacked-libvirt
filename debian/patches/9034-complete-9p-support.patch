@@ -1,0 +1,21 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:53 -0400
+Subject: 9034-complete-9p-support
+
+---
+ src/security/virt-aa-helper.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/security/virt-aa-helper.c b/src/security/virt-aa-helper.c
+index 35423b5..7d5dbc7 100644
+--- a/src/security/virt-aa-helper.c
++++ b/src/security/virt-aa-helper.c
+@@ -1096,7 +1096,7 @@ get_files(vahControl * ctl)
+                 ctl->def->fss[i]->src) {
+             virDomainFSDefPtr fs = ctl->def->fss[i];
+ 
+-            if (vah_add_path(&buf, fs->src, fs->readonly ? "r" : "rw", true) != 0)
++            if (vah_add_path(&buf, fs->src, fs->readonly ? "r" : "rwl", true) != 0)
+                 goto cleanup;
+         }
+     }

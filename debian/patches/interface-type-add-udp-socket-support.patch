@@ -1,0 +1,369 @@
+From: Jonathan Toppins <jtoppins@cumulusnetworks.com>
+Date: Tue, 4 Aug 2015 11:32:46 -0700
+Subject: interface type: add udp socket support
+
+Adds a new interface type using UDP sockets, this seems only applicable
+to QEMU but have edited tree-wide to support the new interface type.
+
+The interface type required the addition of a "destaddr" (destination
+address), this then maps into the following xml and qemu call.
+
+<interface type='udp'>
+	<mac address='52:54:00:5c:67:56'/>
+	<source address='127.0.0.1' port='11112'/>
+	<model type='virtio'/>
+	<dest address="127.0.0.1' port='22222'/>
+	<address type='pci' domain='0x0000' bus='0x00' slot='0x07' function='0x0'/>
+	...
+
+QEMU call:
+	-netdev socket,udp=127.0.0.1:22222,localaddr=127.0.0.1:11112
+
+Notice the xml "source" entry becomes the "localaddr" for the qemu call.
+
+reference:
+http://lists.gnu.org/archive/html/qemu-devel/2011-11/msg00629.html
+
+Signed-off-by: Jonathan Toppins <jtoppins@cumulusnetworks.com>
+---
+ docs/formatdomain.html.in        | 17 ++++++++++++
+ src/conf/domain_conf.c           | 56 +++++++++++++++++++++++++++++++++++++---
+ src/conf/domain_conf.h           |  3 +++
+ src/conf/netdev_bandwidth_conf.h |  1 +
+ src/libxl/libxl_conf.c           |  1 +
+ src/lxc/lxc_controller.c         |  1 +
+ src/lxc/lxc_process.c            |  1 +
+ src/qemu/qemu_command.c          | 12 +++++++++
+ src/qemu/qemu_hotplug.c          |  1 +
+ src/qemu/qemu_interface.c        |  2 ++
+ src/uml/uml_conf.c               |  5 ++++
+ src/xenconfig/xen_sxpr.c         |  1 +
+ tools/virsh-domain.c             |  1 +
+ 13 files changed, 99 insertions(+), 3 deletions(-)
+
+diff --git a/docs/formatdomain.html.in b/docs/formatdomain.html.in
+index 6d58a40..3fd477d 100644
+--- a/docs/formatdomain.html.in
++++ b/docs/formatdomain.html.in
+@@ -4105,6 +4105,23 @@
+   &lt;/devices&gt;
+   ...</pre>
+ 
++    <h5><a name="elementsNICSUDP">UDP unicast tunnel</a></h5>
++
++    <p>
++    A UDP unicast architecture provides a virtual network which enables
++    connections between Qemu instances using Qemu's UDP infrastructure.</p>
++
++<pre>
++  ...
++  &lt;devices&gt;
++    &lt;interface type='udp'&gt;
++      &lt;mac address='52:54:00:22:c9:42'/&gt;
++      &lt;source address='127.0.0.1' port='11115'/&gt;
++      &lt;dest address='127.0.0.1' port='11116'/&gt;
++    &lt;/interface&gt;
++  &lt;/devices&gt;
++  ...</pre>
++
+     <h5><a name="elementsNICSModel">Setting the NIC model</a></h5>
+ 
+ <pre>
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index 6e57425..1e7763f 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -383,7 +383,8 @@ VIR_ENUM_IMPL(virDomainNet, VIR_DOMAIN_NET_TYPE_LAST,
+               "bridge",
+               "internal",
+               "direct",
+-              "hostdev")
++              "hostdev",
++              "udp")
+ 
+ VIR_ENUM_IMPL(virDomainNetBackend, VIR_DOMAIN_NET_BACKEND_TYPE_LAST,
+               "default",
+@@ -1593,7 +1594,9 @@ void virDomainNetDefFree(virDomainNetDefPtr def)
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+         VIR_FREE(def->data.socket.address);
++        VIR_FREE(def->data.socket.destaddr);
+         break;
+ 
+     case VIR_DOMAIN_NET_TYPE_NETWORK:
+@@ -7995,6 +7998,8 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+     char *script = NULL;
+     char *address = NULL;
+     char *port = NULL;
++    char *destaddr = NULL;
++    char *destport = NULL;
+     char *model = NULL;
+     char *backend = NULL;
+     char *txmode = NULL;
+@@ -8107,10 +8112,15 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+             } else if (!address &&
+                        (def->type == VIR_DOMAIN_NET_TYPE_SERVER ||
+                         def->type == VIR_DOMAIN_NET_TYPE_CLIENT ||
+-                        def->type == VIR_DOMAIN_NET_TYPE_MCAST) &&
++                        def->type == VIR_DOMAIN_NET_TYPE_MCAST ||
++                        def->type == VIR_DOMAIN_NET_TYPE_UDP) &&
+                        xmlStrEqual(cur->name, BAD_CAST "source")) {
+                 address = virXMLPropString(cur, "address");
+                 port = virXMLPropString(cur, "port");
++            } else if (!destaddr && def->type == VIR_DOMAIN_NET_TYPE_UDP &&
++                       xmlStrEqual(cur->name, BAD_CAST "dest")) {
++                destaddr = virXMLPropString(cur, "address");
++                destport = virXMLPropString(cur, "port");
+             } else if (xmlStrEqual(cur->name, BAD_CAST "ip")) {
+                 virDomainNetIpDefPtr ip = NULL;
+ 
+@@ -8348,6 +8358,7 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+         if (port == NULL) {
+             virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                            _("No <source> 'port' attribute "
+@@ -8363,7 +8374,8 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+ 
+         if (address == NULL) {
+             if (def->type == VIR_DOMAIN_NET_TYPE_CLIENT ||
+-                def->type == VIR_DOMAIN_NET_TYPE_MCAST) {
++                def->type == VIR_DOMAIN_NET_TYPE_MCAST ||
++                def->type == VIR_DOMAIN_NET_TYPE_UDP) {
+                 virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                                _("No <source> 'address' attribute "
+                                  "specified with socket interface"));
+@@ -8373,6 +8385,32 @@ virDomainNetDefParseXML(virDomainXMLOptionPtr xmlopt,
+             def->data.socket.address = address;
+             address = NULL;
+         }
++
++        if (def->type != VIR_DOMAIN_NET_TYPE_UDP)
++            break;
++
++        if (destport == NULL) {
++            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                           _("No <dest> 'port' attribute "
++                             "specified with socket interface"));
++            goto error;
++        }
++        if (virStrToLong_i(destport, NULL, 10, &def->data.socket.destport) < 0) {
++            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                           _("Cannot parse <dest> 'port' attribute "
++                             "with socket interface"));
++            goto error;
++        }
++
++        if (destport == NULL) {
++            virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                           _("No <dest> 'address' attribute "
++                             "specified with socket interface"));
++            goto error;
++        } else {
++            def->data.socket.destaddr = destaddr;
++            address = NULL;
++        }
+         break;
+ 
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+@@ -19231,6 +19269,7 @@ virDomainNetDefFormat(virBufferPtr buf,
+         case VIR_DOMAIN_NET_TYPE_SERVER:
+         case VIR_DOMAIN_NET_TYPE_CLIENT:
+         case VIR_DOMAIN_NET_TYPE_MCAST:
++        case VIR_DOMAIN_NET_TYPE_UDP:
+             if (def->data.socket.address) {
+                 virBufferAsprintf(buf, "<source address='%s' port='%d'/>\n",
+                                   def->data.socket.address, def->data.socket.port);
+@@ -19238,6 +19277,17 @@ virDomainNetDefFormat(virBufferPtr buf,
+                 virBufferAsprintf(buf, "<source port='%d'/>\n",
+                                   def->data.socket.port);
+             }
++
++            if (def->type != VIR_DOMAIN_NET_TYPE_UDP)
++                break;
++
++            if (def->data.socket.destaddr) {
++                virBufferAsprintf(buf, "<dest address='%s' port='%d'/>\n",
++                                  def->data.socket.destaddr, def->data.socket.destport);
++            } else {
++                virBufferAsprintf(buf, "<dest port='%d'/>\n",
++                                  def->data.socket.destport);
++            }
+             break;
+ 
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+diff --git a/src/conf/domain_conf.h b/src/conf/domain_conf.h
+index 0fcf52e..891d68a 100644
+--- a/src/conf/domain_conf.h
++++ b/src/conf/domain_conf.h
+@@ -888,6 +888,7 @@ typedef enum {
+     VIR_DOMAIN_NET_TYPE_INTERNAL,
+     VIR_DOMAIN_NET_TYPE_DIRECT,
+     VIR_DOMAIN_NET_TYPE_HOSTDEV,
++    VIR_DOMAIN_NET_TYPE_UDP,
+ 
+     VIR_DOMAIN_NET_TYPE_LAST
+ } virDomainNetType;
+@@ -990,6 +991,8 @@ struct _virDomainNetDef {
+         struct {
+             char *address;
+             int port;
++            char *destaddr;
++            int destport;
+         } socket; /* any of NET_CLIENT or NET_SERVER or NET_MCAST */
+         struct {
+             char *name;
+diff --git a/src/conf/netdev_bandwidth_conf.h b/src/conf/netdev_bandwidth_conf.h
+index 6cbf4ae..cdeac09 100644
+--- a/src/conf/netdev_bandwidth_conf.h
++++ b/src/conf/netdev_bandwidth_conf.h
+@@ -53,6 +53,7 @@ static inline bool virNetDevSupportBandwidth(virDomainNetType type)
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+diff --git a/src/libxl/libxl_conf.c b/src/libxl/libxl_conf.c
+index 4da2b9d..a83ee9e 100644
+--- a/src/libxl/libxl_conf.c
++++ b/src/libxl/libxl_conf.c
+@@ -1177,6 +1177,7 @@ libxlMakeNic(virDomainDefPtr def,
+         case VIR_DOMAIN_NET_TYPE_SERVER:
+         case VIR_DOMAIN_NET_TYPE_CLIENT:
+         case VIR_DOMAIN_NET_TYPE_MCAST:
++        case VIR_DOMAIN_NET_TYPE_UDP:
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+         case VIR_DOMAIN_NET_TYPE_DIRECT:
+         case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+diff --git a/src/lxc/lxc_controller.c b/src/lxc/lxc_controller.c
+index efbe71f..d113a43 100644
+--- a/src/lxc/lxc_controller.c
++++ b/src/lxc/lxc_controller.c
+@@ -378,6 +378,7 @@ static int virLXCControllerGetNICIndexes(virLXCControllerPtr ctrl)
+         case VIR_DOMAIN_NET_TYPE_SERVER:
+         case VIR_DOMAIN_NET_TYPE_CLIENT:
+         case VIR_DOMAIN_NET_TYPE_MCAST:
++        case VIR_DOMAIN_NET_TYPE_UDP:
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+         case VIR_DOMAIN_NET_TYPE_DIRECT:
+         case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+diff --git a/src/lxc/lxc_process.c b/src/lxc/lxc_process.c
+index 6c23a0b..cacbc2d 100644
+--- a/src/lxc/lxc_process.c
++++ b/src/lxc/lxc_process.c
+@@ -412,6 +412,7 @@ static int virLXCProcessSetupInterfaces(virConnectPtr conn,
+         case VIR_DOMAIN_NET_TYPE_SERVER:
+         case VIR_DOMAIN_NET_TYPE_CLIENT:
+         case VIR_DOMAIN_NET_TYPE_MCAST:
++        case VIR_DOMAIN_NET_TYPE_UDP:
+         case VIR_DOMAIN_NET_TYPE_INTERNAL:
+         case VIR_DOMAIN_NET_TYPE_LAST:
+         case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 11c6823..f3665e1 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -5270,6 +5270,17 @@ qemuBuildHostNetStr(virDomainNetDefPtr net,
+        type_sep = ',';
+        break;
+ 
++    case VIR_DOMAIN_NET_TYPE_UDP:
++       virBufferAsprintf(&buf, "socket%cudp=%s:%d%clocaladdr=%s:%d",
++                         type_sep,
++                         net->data.socket.destaddr,
++                         net->data.socket.destport,
++                         type_sep,
++                         net->data.socket.address,
++                         net->data.socket.port);
++       type_sep = ',';
++       break;
++
+     case VIR_DOMAIN_NET_TYPE_USER:
+     default:
+         virBufferAddLit(&buf, "user");
+@@ -8265,6 +8276,7 @@ qemuBuildInterfaceCommandLine(virCommandPtr cmd,
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+diff --git a/src/qemu/qemu_hotplug.c b/src/qemu/qemu_hotplug.c
+index 170768b..d818133 100644
+--- a/src/qemu/qemu_hotplug.c
++++ b/src/qemu/qemu_hotplug.c
+@@ -2390,6 +2390,7 @@ qemuDomainChangeNet(virQEMUDriverPtr driver,
+         case VIR_DOMAIN_NET_TYPE_SERVER:
+         case VIR_DOMAIN_NET_TYPE_CLIENT:
+         case VIR_DOMAIN_NET_TYPE_MCAST:
++        case VIR_DOMAIN_NET_TYPE_UDP:
+             if (STRNEQ_NULLABLE(olddev->data.socket.address,
+                                 newdev->data.socket.address) ||
+                 olddev->data.socket.port != newdev->data.socket.port) {
+diff --git a/src/qemu/qemu_interface.c b/src/qemu/qemu_interface.c
+index 01226ac..4d55e4d 100644
+--- a/src/qemu/qemu_interface.c
++++ b/src/qemu/qemu_interface.c
+@@ -100,6 +100,7 @@ qemuInterfaceStartDevice(virDomainNetDefPtr net)
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+@@ -187,6 +188,7 @@ qemuInterfaceStopDevice(virDomainNetDefPtr net)
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+     case VIR_DOMAIN_NET_TYPE_LAST:
+diff --git a/src/uml/uml_conf.c b/src/uml/uml_conf.c
+index 86fbecc..a97ae64 100644
+--- a/src/uml/uml_conf.c
++++ b/src/uml/uml_conf.c
+@@ -195,6 +195,11 @@ umlBuildCommandLineNet(virConnectPtr conn,
+                        _("TCP client networking type not supported"));
+         goto error;
+ 
++    case VIR_DOMAIN_NET_TYPE_UDP:
++        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
++                       _("UDP networking type not supported"));
++        goto error;
++
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+         /* ethNNN=tuntap,macaddr,ipaddr,port */
+         virBufferAddLit(&buf, "mcast");
+diff --git a/src/xenconfig/xen_sxpr.c b/src/xenconfig/xen_sxpr.c
+index 8985295..80f0840 100644
+--- a/src/xenconfig/xen_sxpr.c
++++ b/src/xenconfig/xen_sxpr.c
+@@ -1962,6 +1962,7 @@ xenFormatSxprNet(virConnectPtr conn,
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_DIRECT:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+diff --git a/tools/virsh-domain.c b/tools/virsh-domain.c
+index fc4d1fc..a5855e7 100644
+--- a/tools/virsh-domain.c
++++ b/tools/virsh-domain.c
+@@ -992,6 +992,7 @@ cmdAttachInterface(vshControl *ctl, const vshCmd *cmd)
+     case VIR_DOMAIN_NET_TYPE_SERVER:
+     case VIR_DOMAIN_NET_TYPE_CLIENT:
+     case VIR_DOMAIN_NET_TYPE_MCAST:
++    case VIR_DOMAIN_NET_TYPE_UDP:
+     case VIR_DOMAIN_NET_TYPE_INTERNAL:
+     case VIR_DOMAIN_NET_TYPE_HOSTDEV:
+     case VIR_DOMAIN_NET_TYPE_LAST:

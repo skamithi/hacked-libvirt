@@ -1,0 +1,34 @@
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:52 -0400
+Subject: storage-default-permission-mode-to-0711
+
+---
+ src/storage/storage_backend.h  | 2 +-
+ tests/storagepoolxml2xmltest.c | 1 -
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/src/storage/storage_backend.h b/src/storage/storage_backend.h
+index 39c00b1..bd7d96e 100644
+--- a/src/storage/storage_backend.h
++++ b/src/storage/storage_backend.h
+@@ -177,7 +177,7 @@ int virStorageBackendVolOpen(const char *path, struct stat *sb,
+     ATTRIBUTE_RETURN_CHECK
+     ATTRIBUTE_NONNULL(1) ATTRIBUTE_NONNULL(2);
+ 
+-# define VIR_STORAGE_DEFAULT_POOL_PERM_MODE 0755
++# define VIR_STORAGE_DEFAULT_POOL_PERM_MODE 0711
+ # define VIR_STORAGE_DEFAULT_VOL_PERM_MODE  0600
+ 
+ int virStorageBackendUpdateVolInfo(virStorageVolDefPtr vol,
+diff --git a/tests/storagepoolxml2xmltest.c b/tests/storagepoolxml2xmltest.c
+index bec1b8f..5e9f9b9 100644
+--- a/tests/storagepoolxml2xmltest.c
++++ b/tests/storagepoolxml2xmltest.c
+@@ -83,7 +83,6 @@ mymain(void)
+     DO_TEST("pool-iscsi");
+     DO_TEST("pool-iscsi-auth");
+     DO_TEST("pool-netfs");
+-    DO_TEST("pool-netfs-gluster");
+     DO_TEST("pool-scsi");
+     DO_TEST("pool-scsi-type-scsi-host");
+     DO_TEST("pool-scsi-type-fc-host");

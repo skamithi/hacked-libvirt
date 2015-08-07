@@ -1,12 +1,17 @@
-Author: Serge Hallyn <serge.hallyn@canonical.com>
-Description: include stdint.h to provide a definition for
-   uint64_t, which is now used in linux/fs.h.
-Forwarded: no
-Index: libvirt-1.1.4/src/lxc/lxc_container.c
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:52 -0400
+Subject: 9021-fix-uint64_t
+
 ===================================================================
---- libvirt-1.1.4.orig/src/lxc/lxc_container.c	2013-11-12 11:48:35.607867024 -0600
-+++ libvirt-1.1.4/src/lxc/lxc_container.c	2013-11-12 11:48:35.595867025 -0600
-@@ -42,6 +42,7 @@
+---
+ src/lxc/lxc_container.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/lxc/lxc_container.c b/src/lxc/lxc_container.c
+index 9a9ae5c..20fbdb3 100644
+--- a/src/lxc/lxc_container.c
++++ b/src/lxc/lxc_container.c
+@@ -43,6 +43,7 @@
  #include <linux/unistd.h>
  
  /* For MS_MOVE */

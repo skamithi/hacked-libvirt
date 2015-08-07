@@ -1,13 +1,15 @@
-Description: add unix channels for nserials as well
- We had added it for channels, but it is also needed for serials.  Add
- it for serials, parallels, and consoles as well.
-Author: Serge Hallyn <serge.hallyn@ubuntu.com>
-Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/libvirt/+bug/1015154
+From: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Date: Fri, 7 Aug 2015 17:07:53 -0400
+Subject: 9040-virt-aa-helper-add-unix-channels
 
-Index: libvirt-1.2.15/src/security/virt-aa-helper.c
-===================================================================
---- libvirt-1.2.15.orig/src/security/virt-aa-helper.c
-+++ libvirt-1.2.15/src/security/virt-aa-helper.c
+---
+ src/security/virt-aa-helper.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/security/virt-aa-helper.c b/src/security/virt-aa-helper.c
+index 7d5dbc7..8f815a7 100644
+--- a/src/security/virt-aa-helper.c
++++ b/src/security/virt-aa-helper.c
 @@ -965,8 +965,10 @@ get_files(vahControl * ctl)
              (ctl->def->serials[i]->source.type == VIR_DOMAIN_CHR_TYPE_PTY ||
               ctl->def->serials[i]->source.type == VIR_DOMAIN_CHR_TYPE_DEV ||
