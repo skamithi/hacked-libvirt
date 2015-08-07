@@ -1,6 +1,4 @@
-libvirt (1.2.2-1~1.gbp610c7d) UNRELEASED; urgency=medium
-
-  ** SNAPSHOT build @610c7d4e7aca07c1c8a1cddf592faefd6a43216c **
+libvirt (1.2.2-0ubuntu13.1.14-udp) trusty; urgency=medium
 
   [ stanley karunditu ]
   * remove dependency for libxl (xen stuff) so that it can compile cleanly
@@ -18,7 +16,7 @@ libvirt (1.2.2-1~1.gbp610c7d) UNRELEASED; urgency=medium
 
   [ Stanley Karunditu ]
 
- -- stanley karunditu <stanleyk@cumulusnetworks.com>  Fri, 07 Aug 2015 16:02:01 -0400
+ -- Stanley Karunditu <stanleyk@stanleyk-x1carbon>  Fri, 07 Aug 2015 16:03:17 -0400
 
 libvirt (1.2.2-0ubuntu13.1.14) trusty; urgency=medium
 
