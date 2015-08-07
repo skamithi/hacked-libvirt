@@ -1,3 +1,19 @@
+libvirt (1.2.2-1~1.gbp89f2b3) UNRELEASED; urgency=medium
+
+  ** SNAPSHOT build @89f2b3061dfa555342696841b2e9975b08368203 **
+
+  [ stanley karunditu ]
+  * remove dependency for libxl (xen stuff) so that it can compile cleanly
+  * add new patch in testing code that hinders compilation on ubuntu 14.04 amd64 laptop to complete
+  * add udp unicast support (maybe)
+  * Revert "add udp unicast support (maybe)"
+  * add udp socket support
+  * add localaddr to udp support
+
+  [ Stanley Karunditu ]
+
+ -- stanley karunditu <stanleyk@cumulusnetworks.com>  Fri, 07 Aug 2015 14:02:49 -0400
+
 libvirt (1.2.2-0ubuntu13.1.14) trusty; urgency=medium
 
   [ Seyeong Kim ]
