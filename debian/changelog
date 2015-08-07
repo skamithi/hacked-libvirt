@@ -1,6 +1,6 @@
-libvirt (1.2.2-1~1.gbp89f2b3) UNRELEASED; urgency=medium
+libvirt (1.2.2-1~1.gbp610c7d) UNRELEASED; urgency=medium
 
-  ** SNAPSHOT build @89f2b3061dfa555342696841b2e9975b08368203 **
+  ** SNAPSHOT build @610c7d4e7aca07c1c8a1cddf592faefd6a43216c **
 
   [ stanley karunditu ]
   * remove dependency for libxl (xen stuff) so that it can compile cleanly
@@ -9,10 +9,16 @@ libvirt (1.2.2-1~1.gbp89f2b3) UNRELEASED; urgency=medium
   * Revert "add udp unicast support (maybe)"
   * add udp socket support
   * add localaddr to udp support
+  * update changelog
+  * update patch
+  * update patches
+  * update patch
+  * update patches
+  * fix error where udp socket is created using localhost instead of localaddr
 
   [ Stanley Karunditu ]
 
- -- stanley karunditu <stanleyk@cumulusnetworks.com>  Fri, 07 Aug 2015 14:02:49 -0400
+ -- stanley karunditu <stanleyk@cumulusnetworks.com>  Fri, 07 Aug 2015 16:02:01 -0400
 
 libvirt (1.2.2-0ubuntu13.1.14) trusty; urgency=medium
 
@@ -27,9 +33,9 @@ libvirt (1.2.2-0ubuntu13.1.13) trusty; urgency=medium
   [ Seyeong Kim ]
   * virObjectUnref() libvirtd killed by SIGSEGV (LP: #1464175)
     - upstream, util: identity: Harden virIdentitySetCurrent()
-    - upstream, daemon: Clear fake domain def object that is used to check 
+    - upstream, daemon: Clear fake domain def object that is used to check
       ACL prior to use
-    - upstream, rpc: Don't unref identity object while callbacks still can 
+    - upstream, rpc: Don't unref identity object while callbacks still can
       be executed
 
   [ Edward Hope-Morley ]
@@ -199,7 +205,7 @@ libvirt (1.2.2-0ubuntu12) trusty; urgency=low
 libvirt (1.2.2-0ubuntu11) trusty; urgency=medium
 
   * debian/patches/recognize-trusty-machine-type.patch: Revert patch
-    since it was causing issues with virtio deivces. (LP: #1304107) 
+    since it was causing issues with virtio deivces. (LP: #1304107)
 
  -- Chuck Short <zulcss@ubuntu.com>  Tue, 08 Apr 2014 12:51:55 -0400
 
@@ -252,7 +258,7 @@ libvirt (1.2.2-0ubuntu7) trusty; urgency=low
 
 libvirt (1.2.2-0ubuntu6) trusty; urgency=medium
 
-  * debian/libvirt-bin.dirs: Add /var/log/libvirt/libxl. 
+  * debian/libvirt-bin.dirs: Add /var/log/libvirt/libxl.
 
  -- Chuck Short <zulcss@ubuntu.com>  Mon, 24 Mar 2014 14:32:54 -0400
 
@@ -265,7 +271,7 @@ libvirt (1.2.2-0ubuntu5) trusty; urgency=low
 
 libvirt (1.2.2-0ubuntu4) trusty; urgency=medium
 
-  * debian/patches/arm-cpu-baseline.patch: Implement a stub cpuArchDriver.baseline() 
+  * debian/patches/arm-cpu-baseline.patch: Implement a stub cpuArchDriver.baseline()
     handler for arm.
 
  -- Chuck Short <zulcss@ubuntu.com>  Mon, 17 Mar 2014 10:59:49 -0400
@@ -326,14 +332,14 @@ libvirt (1.2.1-0ubuntu8) trusty; urgency=medium
 
 libvirt (1.2.1-0ubuntu7) trusty; urgency=low
 
-  * debian/patches/nwfilter-locking.patch: Dropped causes ftbfs. 
+  * debian/patches/nwfilter-locking.patch: Dropped causes ftbfs.
 
  -- Chuck Short <zulcss@ubuntu.com>  Thu, 13 Feb 2014 10:07:56 -0700
 
 libvirt (1.2.1-0ubuntu6) trusty; urgency=medium
 
   * debian/control: Move pm-utils from suggests to Recommends.
-    (LP: #1274772) 
+    (LP: #1274772)
   * debian/patches/patches/nwfilter-locking.patch: Fix nwfilter locking
     causing libvirt to crash. (LP: #1228977)
 
@@ -362,7 +368,7 @@ libvirt (1.2.1-0ubuntu3) trusty; urgency=medium
 libvirt (1.2.1-0ubuntu2) trusty; urgency=medium
 
   * debian/patches/rbd-storage-format.patch: Make image format 2 the default
-    for RBD. 
+    for RBD.
 
  -- Chuck Short <zulcss@ubuntu.com>  Fri, 17 Jan 2014 10:31:37 -0500
 
@@ -421,7 +427,7 @@ libvirt (1.1.4-0ubuntu5) trusty; urgency=medium
 
 libvirt (1.1.4-0ubuntu4) trusty; urgency=low
 
-  * debian/libvirt-dev.install: Add missing libvirt-lxc.so. 
+  * debian/libvirt-dev.install: Add missing libvirt-lxc.so.
 
  -- Chuck Short <zulcss@ubuntu.com>  Thu, 21 Nov 2013 13:10:58 -0500
 
@@ -550,8 +556,8 @@ libvirt (1.1.1-0ubuntu3) saucy; urgency=low
 
 libvirt (1.1.1-0ubuntu2) saucy; urgency=low
 
-  * debian/patches/fix-remote-client-segfault.patch: Fix segfault when 
-    using a remote client. 
+  * debian/patches/fix-remote-client-segfault.patch: Fix segfault when
+    using a remote client.
 
  -- Chuck Short <zulcss@ubuntu.com>  Mon, 19 Aug 2013 10:33:08 -0400
 
@@ -559,7 +565,7 @@ libvirt (1.1.1-0ubuntu1) saucy; urgency=low
 
   [ Chuck Short ]
   * New usptream version:
-    - Dropped: 
+    - Dropped:
       + debian/patches/CVE-2013-2218-fix-crash-listing-network-interfaces-with-filters:
         no longer needed.
       + debian/patches/ubuntu-xen-hypervisor-4.3.patch: no longer needed.
@@ -614,14 +620,14 @@ libvirt (1.0.6-0ubuntu1) saucy; urgency=low
     + Dropped patches:
       - debian/patches/vnc-socket.patch: Dropped no longer needed.
       - debian/patches/Add-sanitytest.py.patch: Dropped no longer needed.
-   * debian/libvirt-bin.postinst: Make sure qemu.conf isn't world readable 
+   * debian/libvirt-bin.postinst: Make sure qemu.conf isn't world readable
      by default.
 
  -- Chuck Short <zulcss@ubuntu.com>  Mon, 03 Jun 2013 11:27:02 -0500
 
 libvirt (1.0.5-0ubuntu1) saucy; urgency=low
 
-  * New upstream release: 
+  * New upstream release:
     + Dropped patches:
       - debian/patches/fix-virterror-namechange
       - debian/patches/apparmor-use-apparmor-setfdlabel
@@ -663,7 +669,7 @@ libvirt (1.0.2-0ubuntu10) raring; urgency=low
 libvirt (1.0.2-0ubuntu9) raring; urgency=low
 
   * debian/patches/prevent-lxc-shutdown-host.patch: Backport fix
-    from upstream to prevent lxc-containets shutting down the host. 
+    from upstream to prevent lxc-containets shutting down the host.
 
  -- Chuck Short <zulcss@ubuntu.com>  Mon, 25 Mar 2013 09:28:47 -0500
 
@@ -725,14 +731,14 @@ libvirt (1.0.2-0ubuntu3) raring; urgency=low
 libvirt (1.0.2-0ubuntu2) raring; urgency=low
 
   * debian/patches/fix-virterror-namechange: Include virterror otherwise
-    python-libvirt wont be able to find any error codes. 
+    python-libvirt wont be able to find any error codes.
 
  -- Chuck Short <zulcss@ubuntu.com>  Fri, 01 Feb 2013 13:10:58 -0600
 
 libvirt (1.0.2-0ubuntu1) raring; urgency=low
 
   [ Chuck Short ]
-  * New upstream release: 
+  * New upstream release:
     + Dropped patches:
       - debian/patches/Add_RESUME_event_listener_to_qemu_monitor.patch
       - debian/patches/build-work-around-broken-kernel-header.patch
@@ -826,7 +832,7 @@ libvirt (1.0.0-0ubuntu2) raring; urgency=low
 libvirt (1.0.0-0ubuntu1) raring; urgency=low
 
   [ Chuck Short ]
-  * New upstream version: 
+  * New upstream version:
     + droppped:
       - debian/patches/CVE-2012-3445.patch
       - debian/patches/fix-cve-2012-4423
@@ -947,7 +953,7 @@ libvirt (0.9.13-0ubuntu2) quantal; urgency=low
 
 libvirt (0.9.13-0ubuntu1) quantal; urgency=low
 
-  * New upstream version: 
+  * New upstream version:
   * debian/rules: Remove .la files
   * debian/control: Dropped debian vcs info.
   * Dropped:
@@ -960,7 +966,7 @@ libvirt (0.9.13-0ubuntu1) quantal; urgency=low
   * Re-diffed:
     - debian/patches/9002-better_default_uri_virsh.patch
   * Added:
-    - debian/patches/add-libvirt-highbank-support.patch: Add highbank 
+    - debian/patches/add-libvirt-highbank-support.patch: Add highbank
       CPU detection support.
     - debian/patches/fix-lxc-container-unmounting.patch: Fix container
       mounting.
@@ -1000,7 +1006,7 @@ libvirt (0.9.12-0ubuntu2) quantal; urgency=low
   * Warn user about bad pc-0.12 machine type, and help user transition.
     (LP: #1001625)
     - qemu-warn-on-pc-0.12.patch: When defining or starting a VM which uses the
-      pc-0.12 machine type, warn in libvirtd.log. 
+      pc-0.12 machine type, warn in libvirtd.log.
     - debian/libvirt-migrate-qemu-machinetype: automatically migrate QEMU VMs
       to newest machine type.  This is not done automatically as there will
       be some users who have good reason to stay with pc-0.12.
@@ -1179,7 +1185,7 @@ libvirt (0.9.8-2ubuntu5) precise; urgency=low
 libvirt (0.9.8-2ubuntu4) precise; urgency=low
 
   * debian/patches/fix-ubuntu-xen-qemu-dm-patch.patch:
-    Update patch due to failing tests. 
+    Update patch due to failing tests.
 
  -- Chuck Short <zulcss@ubuntu.com>  Fri, 20 Jan 2012 16:05:45 -0500
 
@@ -1200,7 +1206,7 @@ libvirt (0.9.8-2ubuntu2) precise; urgency=low
 
 libvirt (0.9.8-2ubuntu1) precise; urgency=low
 
-  * Merge from Debian Unstable, remaining changes are: 
+  * Merge from Debian Unstable, remaining changes are:
     - debian/control:
       * set X-Python-Version to 2.7, as 2.6 is not in oneiric.
       * set ubuntu maintainer
@@ -1293,7 +1299,7 @@ libvirt (0.9.8-2ubuntu1) precise; urgency=low
       'kvm' (debian/patches/ubuntu/enable-kvm-spice.patch)
     . debian/apparmor/libvirt-qemu:
       * prepend 'owner' to /run/shm/spice.* rule
-      * add more needed spice perms 
+      * add more needed spice perms
 
  -- Chuck Short <zulcss@ubuntu.com>  Fri, 13 Jan 2012 15:11:48 +0100
 
@@ -1353,7 +1359,7 @@ libvirt (0.9.7-2ubuntu15) precise; urgency=low
 libvirt (0.9.7-2ubuntu14) precise; urgency=low
 
   * debian/apparmor/usr.lib.libvirt.virt-aa-helper: Update for nova.
-    (LP: #907269) 
+    (LP: #907269)
 
  -- Chuck Short <zulcss@ubuntu.com>  Wed, 11 Jan 2012 09:50:26 -0500
 
@@ -1610,7 +1616,7 @@ libvirt (0.9.6-2ubuntu2) precise; urgency=low
 
   * Move creation of /var/log/libvirt/{lxc,uml,qemu} dirs from libvirt-bin.dirs
     to libvirt-bin.postinst.  Otherwise after a 'apt-get remove libvirt-bin',
-    that dir will be removed (if empty) but /etc/logrotate.d/libvirtd will 
+    that dir will be removed (if empty) but /etc/logrotate.d/libvirtd will
     still try to rotate it and raise errors. (LP: #886770)
   * debian/rules: Fix a bug in the new logic for installing upstream-supplied
     logrotate files.  (LP: #887312)
@@ -1648,7 +1654,7 @@ libvirt (0.9.6-1ubuntu3) precise; urgency=low
 
 libvirt (0.9.6-1ubuntu2) precise; urgency=low
 
-  * debian/patches/lxc-use-own-ptyfns.patch: Re-add dropped patch. 
+  * debian/patches/lxc-use-own-ptyfns.patch: Re-add dropped patch.
 
  -- Chuck Short <zulcss@ubuntu.com>  Fri, 21 Oct 2011 10:30:36 -0400
 
@@ -1894,8 +1900,8 @@ libvirt (0.9.2-4ubuntu14) oneiric; urgency=low
 
 libvirt (0.9.2-4ubuntu13) oneiric; urgency=low
 
-  * debian/patches/arm-startup-fies.patch: Fix typo in patch. 
-    (LP: #845764) 
+  * debian/patches/arm-startup-fies.patch: Fix typo in patch.
+    (LP: #845764)
 
  -- Chuck Short <zulcss@ubuntu.com>  Fri, 09 Sep 2011 14:41:53 -0400
 
@@ -2158,7 +2164,7 @@ libvirt (0.9.1-1ubuntu3) oneiric; urgency=low
 
 libvirt (0.9.1-1ubuntu2) oneiric; urgency=low
 
-  * Depend on libxen-dev rather than libxen3-dev. 
+  * Depend on libxen-dev rather than libxen3-dev.
 
  -- Chuck Short <zulcss@ubuntu.com>  Mon, 13 Jun 2011 12:48:52 -0400
 
@@ -2366,7 +2372,7 @@ libvirt (0.8.8-1ubuntu7) oneiric; urgency=low
 libvirt (0.8.8-1ubuntu6) natty; urgency=low
 
   * debian/patches/allows-lxc-containers-with-lxcguest.patch:
-    Pass "libvirt" to lxc containers, so that libvirt can 
+    Pass "libvirt" to lxc containers, so that libvirt can
     work with lxcguest. (LP: #757752)
 
  -- Chuck Short <zulcss@ubuntu.com>  Mon, 11 Apr 2011 13:44:03 -0400
@@ -2402,8 +2408,8 @@ libvirt (0.8.8-1ubuntu3) natty; urgency=low
 
 libvirt (0.8.8-1ubuntu2) natty; urgency=low
 
-  * debian/control: Demoted package ebtables from Recommends 
-    to Suggests for binary package, libvirt-bin. 
+  * debian/control: Demoted package ebtables from Recommends
+    to Suggests for binary package, libvirt-bin.
 
  -- Dave Walker (Daviey) <DaveWalker@ubuntu.com>  Tue, 01 Mar 2011 13:46:35 +0000
 
@@ -2671,7 +2677,7 @@ libvirt (0.8.3-3) unstable; urgency=low
 libvirt (0.8.3-2) unstable; urgency=low
 
   * [4097bbd] New patch 0007-Fix-block-statistics-with-newer-versions-
-    of-Xen.patch. Fix block statistics with newer versions of Xen 
+    of-Xen.patch. Fix block statistics with newer versions of Xen
     (Closes: #596004) - thanks to Gerald Turner for the patch
   * [d554da3] Explain disk image probing changes (Closes: #594962)
 
@@ -3577,12 +3583,12 @@ libvirt (0.7.4-1) unstable; urgency=low
 
   [ Laurent Léonard ]
   * [8f2761b] Imported Upstream version 0.7.4
-  * [20b6b3d] Drop patches. 
+  * [20b6b3d] Drop patches.
       * 0005-Fix-SELinux-linking-issues.patch - fixed upstream.
       * 0006-Don-t-let-parent-of-daemon-exit-until-basic-initiali.patch -
         fixed upstream.
       * 0007-Only-remove-masquerade-roles-for-VIR_NETWORK_FORWARD.patch -
-        applied upstream. 
+        applied upstream.
       * 0008-Fix-qemu-session.patch - fixed upstream.
   * [e41f8c6] Update libvirt0 symbols.
   * [f184e28] Revert "switch to new source format 3.0 (quilt)" This reverts
@@ -4119,7 +4125,7 @@ libvirt (0.6.3-3) unstable; urgency=low
 
   * [4087b7d] disable lxc on ia64 to work around FTBFS until we have
               access to a test machine
-  * [df5f5a0] pull some kvm/qemu related patches from upstream 
+  * [df5f5a0] pull some kvm/qemu related patches from upstream
               (Closes: #529324)
 
  -- Guido Günther <agx@sigxcpu.org>  Tue, 19 May 2009 19:14:57 +0200
@@ -4212,7 +4218,7 @@ libvirt (0.6.1-0ubuntu2) jaunty; urgency=low
   * Add fix for event loop hang (LP: #344195)
     http://article.gmane.org/gmane.comp.emulators.libvirt/12437
   * Add fix for Xen events handling.
-    http://git.et.redhat.com/?p=libvirt.git;a=commit;h=124cfcbc2bcd1b71b51e720b9bfc7d8e69e8af89 
+    http://git.et.redhat.com/?p=libvirt.git;a=commit;h=124cfcbc2bcd1b71b51e720b9bfc7d8e69e8af89
 
  -- Soren Hansen <soren@ubuntu.com>  Fri, 13 Mar 2009 16:51:33 +0100
 
@@ -4277,7 +4283,7 @@ libvirt (0.6.0-1) experimental; urgency=low
                 0007-don-t-fail-on-missing-locales.patch
   * [d80a176] adjust remaining patches to new upstream version
   * [208c924] add minimal workaround for qemu startup race
-  * [6e8caa0] restart libvirt daemon on upgrades if possible 
+  * [6e8caa0] restart libvirt daemon on upgrades if possible
     (Closes: #492694, #499008)
 
  -- Guido Günther <agx@sigxcpu.org>  Thu, 05 Feb 2009 18:40:10 +0100
@@ -4346,7 +4352,7 @@ libvirt (0.5.1-4) experimental; urgency=low
 libvirt (0.5.1-3) experimental; urgency=low
 
   * [d30438c] create libvirt log directory (Closes: #508129)
-  * [417a23c] qemu: fix parallel/serial mode "tcp" and "unix" 
+  * [417a23c] qemu: fix parallel/serial mode "tcp" and "unix"
     (Closes: #507608)
 
  -- Guido Günther <agx@sigxcpu.org>  Thu, 11 Dec 2008 12:38:01 +0100
@@ -4411,8 +4417,8 @@ libvirt (0.4.6-7) unstable; urgency=low
 
   * [ea12bd9] create /var/run/libvirt fixes /var/run on tmpfs
     (Closes: #507578)
-  * [97e5706] also look for /usr/bin/kvm (Closes: #507547) 
-  * [311b4c1] increase initial qemu monitor read timeout 
+  * [97e5706] also look for /usr/bin/kvm (Closes: #507547)
+  * [311b4c1] increase initial qemu monitor read timeout
     (Closes: #499720)
   * [fbe4e00] open qemu monitor log O_APPEND instead of O_TRUNC
   * [f8ce017] raise error on invalid volume format
@@ -4500,7 +4506,7 @@ libvirt (0.4.6-3) experimental; urgency=low
 libvirt (0.4.6-2) experimental; urgency=low
 
   * [2039095] tighten libvirt dependency
-  * [06dbe8a] qemu/kvm: fix domain block stats for virtio and scsi devices 
+  * [06dbe8a] qemu/kvm: fix domain block stats for virtio and scsi devices
 
  -- Guido Günther <agx@sigxcpu.org>  Thu, 02 Oct 2008 22:03:05 +0200
 
@@ -4510,7 +4516,7 @@ libvirt (0.4.6-1) experimental; urgency=low
   * [0c840ab] disable numactl
   * [ca2c5cb] cleanup doc installation (Closes: #492075)
   * [714ab94] drop 0004-for-kvm-determine-maxVCPUs-at-runtime.patch - applied
-    upstream 
+    upstream
   * [e7563a8] drop 0005-fix-crash-when-no-emulator-is-defined-for-kvm-
     qemu.patch - fixed upstream
 
@@ -4551,7 +4557,7 @@ libvirt (0.4.4-3ubuntu3) intrepid; urgency=low
 
 libvirt (0.4.4-3ubuntu2) intrepid; urgency=low
 
-  * Make QEmu a suggested package of libvirt0 rather than a recommended one. 
+  * Make QEmu a suggested package of libvirt0 rather than a recommended one.
   * Make kvm a recommended package of libvirt0.
 
  -- Soren Hansen <soren@ubuntu.com>  Mon, 11 Aug 2008 16:18:03 +0200
@@ -4707,7 +4713,7 @@ libvirt (0.4.2-5) unstable; urgency=low
 
 libvirt (0.4.2-4) unstable; urgency=low
 
-  * only build-dep on qemu on architectures that have it  
+  * only build-dep on qemu on architectures that have it
     (Closes: #476290)
   * the packages containing the daemon should suggest polkit
 
@@ -4715,7 +4721,7 @@ libvirt (0.4.2-4) unstable; urgency=low
 
 libvirt (0.4.2-3) unstable; urgency=low
 
-  * drop the {build-,}dependency on open-iscsi too 
+  * drop the {build-,}dependency on open-iscsi too
   * suggest policykit
 
  -- Guido Guenther <agx@sigxcpu.org>  Mon, 14 Apr 2008 15:27:20 +0200
@@ -4754,7 +4760,7 @@ libvirt (0.4.1-1) experimental; urgency=low
        * rediff the rest
   * new patches:
        * no-mac.diff: don't set mac address on tun device since it breaks kvm
-  * bump shlibs version 
+  * bump shlibs version
 
  -- Guido Guenther <agx@sigxcpu.org>  Fri, 07 Mar 2008 10:17:21 +0100
 
@@ -4771,7 +4777,7 @@ libvirt (0.4.0-5) unstable; urgency=low
     enable xen support in the default build (Closes: #453826)
   * recommend netcat-openbsd for unix domain socket support (Closes: #453627)
   * README.Debian: document necessary xend options
-  * fix spelling of Python 
+  * fix spelling of Python
 
  -- Guido Guenther <agx@sigxcpu.org>  Wed, 20 Feb 2008 11:14:22 +0100
 
