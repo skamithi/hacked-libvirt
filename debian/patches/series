@@ -53,3 +53,4 @@ add-localaddr-attribute.patch
 typo-in-domain_conf.c-change-localaddr-to-destaddr.patch
 fix-typo.patch
 add-missing-subsite.xsl-from-docs.patch
+fix-typo-from-localhost-to-localaddr.patch

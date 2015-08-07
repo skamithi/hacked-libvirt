@@ -1,0 +1,21 @@
+From: stanley karunditu <stanleyk@cumulusnetworks.com>
+Date: Fri, 7 Aug 2015 15:38:31 -0400
+Subject: fix typo from localhost to localaddr
+
+---
+ src/qemu/qemu_command.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index e0f798a..c14fce1 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -5156,7 +5156,7 @@ qemuBuildHostNetStr(virDomainNetDefPtr net,
+        break;
+ 
+     case VIR_DOMAIN_NET_TYPE_UDP:
+-       virBufferAsprintf(&buf, "socket%cudp=%s:%d%clocalhost=%s:%d",
++       virBufferAsprintf(&buf, "socket%cudp=%s:%d%clocaladdr=%s:%d",
+                          type_sep,
+                          net->data.socket.destaddr,
+                          net->data.socket.destport,
