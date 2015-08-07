@@ -29,3 +29,4 @@ tests-add-vol-qcow2-zerocapacity-test-to-storagevolx.patch
 add-missing-doc-subsite.xsl.patch
 interface-type-add-udp-socket-support.patch
 move-subsite.xsl-to-docs-folder.put-in-wrong-place.patch
+comment-out-if-endif-statements-that-cause-compilati.patch

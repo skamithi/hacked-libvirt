@@ -1,0 +1,27 @@
+From: stanley karunditu <stanleyk@cumulusnetworks.com>
+Date: Fri, 7 Aug 2015 17:27:03 -0400
+Subject: comment out if endif statements that cause compilation to fail
+
+---
+ tests/virnetsockettest.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tests/virnetsockettest.c b/tests/virnetsockettest.c
+index 1f283a3..281d748 100644
+--- a/tests/virnetsockettest.c
++++ b/tests/virnetsockettest.c
+@@ -501,12 +501,12 @@ mymain(void)
+     if (virtTestRun("Socket UNIX Addrs", testSocketUNIXAddrs, NULL) < 0)
+         ret = -1;
+ 
+-#if 0
++//#if 0
+     if (virtTestRun("Socket External Command /dev/zero", testSocketCommandNormal, NULL) < 0)
+         ret = -1;
+     if (virtTestRun("Socket External Command /dev/does-not-exist", testSocketCommandFail, NULL) < 0)
+         ret = -1;
+-#endif
++//#endif
+ 
+     struct testSSHData sshData1 = {
+         .nodename = "somehost",
