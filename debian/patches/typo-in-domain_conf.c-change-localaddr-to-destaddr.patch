@@ -1,0 +1,21 @@
+From: stanley karunditu <stanleyk@cumulusnetworks.com>
+Date: Fri, 7 Aug 2015 14:15:48 -0400
+Subject: typo in domain_conf.c change localaddr to destaddr
+
+---
+ src/conf/domain_conf.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/conf/domain_conf.c b/src/conf/domain_conf.c
+index e09fa28..21afbf8 100644
+--- a/src/conf/domain_conf.c
++++ b/src/conf/domain_conf.c
+@@ -1425,7 +1425,7 @@ void virDomainNetDefFree(virDomainNetDefPtr def)
+     case VIR_DOMAIN_NET_TYPE_MCAST:
+     case VIR_DOMAIN_NET_TYPE_UDP:
+         VIR_FREE(def->data.socket.address);
+-        VIR_FREE(def->data.socket.localaddr);
++        VIR_FREE(def->data.socket.destaddr);
+         break;
+ 
+     case VIR_DOMAIN_NET_TYPE_NETWORK:

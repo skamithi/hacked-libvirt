@@ -3,8 +3,8 @@ Date: Wed, 5 Aug 2015 02:00:54 -0400
 Subject: 9002-default_uri_virsh_to_system
 
 ---
- src/libvirt.c    |  4 ++++
- 2 files changed, 19 insertions(+)
+ src/libvirt.c | 4 ++++
+ 1 file changed, 4 insertions(+)
 
 diff --git a/src/libvirt.c b/src/libvirt.c
 index dcf6b53..3b99c1c 100644
@@ -26,5 +26,5 @@ index dcf6b53..3b99c1c 100644
 +        VIR_DEBUG("Falling back to uri qemu:///system");
 +        *name = fallback;
      }
-
+ 
      ret = 0;
