@@ -1,0 +1,21 @@
+From: stanley karunditu <stanleyk@cumulusnetworks.com>
+Date: Fri, 7 Aug 2015 14:21:39 -0400
+Subject: fix typo
+
+---
+ src/qemu/qemu_command.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/qemu/qemu_command.c b/src/qemu/qemu_command.c
+index 45d0901..e0f798a 100644
+--- a/src/qemu/qemu_command.c
++++ b/src/qemu/qemu_command.c
+@@ -5159,7 +5159,7 @@ qemuBuildHostNetStr(virDomainNetDefPtr net,
+        virBufferAsprintf(&buf, "socket%cudp=%s:%d%clocalhost=%s:%d",
+                          type_sep,
+                          net->data.socket.destaddr,
+-                         net->data.soclet.destport,
++                         net->data.socket.destport,
+                          type_sep,
+                          net->data.socket.address,
+                          net->data.socket.port);

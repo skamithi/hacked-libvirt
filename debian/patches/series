@@ -51,3 +51,4 @@ remove-conditional-in-test-so-that-compilation-on-ub.patch
 interface-type-add-udp-socket-support.patch
 add-localaddr-attribute.patch
 typo-in-domain_conf.c-change-localaddr-to-destaddr.patch
+fix-typo.patch
