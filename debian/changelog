@@ -1,4 +1,4 @@
-libvirt (1.2.2-1-udp) trusty; urgency=medium
+libvirt (1.2.2-1) trusty; urgency=medium
 
   [ stanley karunditu ]
   * remove dependency for libxl (xen stuff) so that it can compile cleanly
