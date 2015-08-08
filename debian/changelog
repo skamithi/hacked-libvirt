@@ -1,3 +1,15 @@
+libvirt (1.2.16-2ubuntu6~1.gbp1ae9df) UNRELEASED; urgency=medium
+
+  ** SNAPSHOT build @1ae9dfae0f3584fbead99a7b71682e195ded4791 **
+
+  [ stanley karunditu ]
+  * subsite.xsl was put in the wrong place..move to docs folder
+  * add patch to comment out code in tests that causes compilation to fail
+
+  [ Stanley Karunditu ]
+
+ -- stanley karunditu <stanleyk@cumulusnetworks.com>  Fri, 07 Aug 2015 17:28:36 -0400
+
 libvirt (1.2.16-2ubuntu5) wily; urgency=medium
 
   * debian/control changes:
